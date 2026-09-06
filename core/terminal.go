@@ -1782,10 +1782,11 @@ func (t *Terminal) testTelegram() error {
 
 	log.Info("telegram: sending test message...")
 
+	ts := TelegramMarkdownV2Escape(time.Now().Format("2006-01-02 15:04:05"))
 	message := "\U0001f680 *Evilginx2 Telegram Notification Test*\n\n"
-	message += "\u2705 Your Telegram bot is working correctly!\n"
-	message += "\U0001f4e1 You will receive session notifications here.\n\n"
-	message += "`Test message sent at: " + time.Now().Format("2006-01-02 15:04:05") + "`\n"
+	message += "\u2705 Your Telegram bot is working correctly\\!\n"
+	message += "\U0001f4e1 You will receive session notifications here\\.\n\n"
+	message += "`Test message sent at: " + ts + "`\n"
 	message += "\\#Evilginx2 \\#TelegramEdition"
 
 	bot, err := tgbotapi.NewBotAPI(teletoken)
