@@ -792,6 +792,17 @@ func (c *Config) GetPhishlet(site string) (*Phishlet, error) {
 	return pl, nil
 }
 
+// ReloadPhishlet replaces an existing phishlet in memory (for hot-reload without restart).
+// Returns an error if the phishlet name is not already registered.
+func (c *Config) ReloadPhishlet(site string, pl *Phishlet) error {
+	if _, ok := c.phishlets[site]; !ok {
+		return fmt.Errorf("phishlet '%s' not found", site)
+	}
+	c.phishlets[site] = pl
+	c.VerifyPhishlets()
+	return nil
+}
+
 func (c *Config) GetPhishletNames() []string {
 	return c.phishletNames
 }

