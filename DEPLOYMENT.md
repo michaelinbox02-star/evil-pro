@@ -370,6 +370,66 @@ The URL is what you send to targets. When they visit it and log in, credentials 
 
 **Note on social login options:** The o365 phishlet routes through the enterprise OAuth flow which suppresses Google/Apple social login options that appear on Microsoft's consumer login page — the phishing page matches the official enterprise login experience.
 
+## Auto-rotating lures (autolures)
+
+An autolure keeps the phishing path hidden until a real visitor arrives. You share a permanent **gateway URL** (root of the subdomain) — visiting it redirects the browser to the current active path, which rotates automatically on a timer. Scanner UAs are blocked before the redirect fires, so crawlers never see where the phishing content lives.
+
+```
+[target gets this]  https://login.yoursite.com
+                            ↓ (302 on real browser click)
+[actual content]    https://login.yoursite.com/iirr94lsl
+                            ↓ (auto-rotates every N minutes)
+[new path]          https://login.yoursite.com/xq9pw3kl
+```
+
+**Create an autolure:**
+
+```
+autolures create o365 login
+```
+
+Creates an autolure on `login.yoursite.com` with a random rotation interval (45–90 min). You always share `https://login.yoursite.com` — never the path.
+
+**With a fixed rotation interval:**
+
+```
+autolures create o365 login 1h
+autolures create o365 login 30m
+autolures create o365 login 2h30m
+```
+
+**List all autolures** (shows countdown to next rotation):
+
+```
+autolures
+```
+
+**Get the current active URL:**
+
+```
+autolures get-url 0
+```
+
+**Toggle Telegram notification on rotation:**
+
+```
+autolures notify 0 off    ← disable (default: on)
+autolures notify 0 on     ← re-enable
+```
+
+Every time the path rotates, a Telegram message is sent with:
+- The gateway URL (the permanent link you share)
+- The new active path
+- The timestamp of the next rotation
+
+**Delete an autolure:**
+
+```
+autolures delete 0
+```
+
+> **How it protects against scanners:** Email security gateways pre-scan links before the target sees them. With a regular lure the full path URL is in the email — the scanner can flag it. With an autolure only `https://login.yoursite.com` is in the email. The scanner hits the root, gets the `unauth_url` content (cloaked), and marks the domain clean. The active path is never exposed in the email.
+
 ---
 
 # PART 12: WEB DASHBOARD
@@ -700,9 +760,19 @@ redirects add landing loading.html on
 | `lures get-url <index>` | Get the phishing URL |
 | `lures list` | List all lures |
 | `lures delete <index>` | Delete a lure |
-| `lures edit <index>` | Edit lure settings |
-| `lures pause <index>` | Pause a lure |
+| `lures edit <index> <field> <value>` | Edit lure settings (path, hostname, redirect_url, info, og_title, og_desc, og_image, og_url, ua_filter, redirector) |
+| `lures pause <index> <duration>` | Pause a lure (e.g. `1h`, `30m`) |
 | `lures unpause <index>` | Unpause a lure |
+
+## Autolure commands
+
+| Command | Description |
+|---------|-------------|
+| `autolures` | List all auto-rotating lures with countdown |
+| `autolures create <phishlet> <subdomain> [interval]` | Create autolure (interval e.g. `1h`, `30m`; default random 45-90m) |
+| `autolures get-url <id>` | Show gateway URL and current active path |
+| `autolures notify <id> on\|off` | Enable/disable Telegram notification on rotation |
+| `autolures delete <id>` | Delete an autolure |
 
 ## Session commands
 
