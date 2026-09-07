@@ -272,7 +272,7 @@ func main() {
 		dashboardCfg.Password = savedPass
 	}
 
-	dashboardServer, err := core.NewDashboardServer(dashboardCfg, db)
+	dashboardServer, err := core.NewDashboardServer(dashboardCfg, db, cfg)
 	if err != nil {
 		log.Warning("dashboard: failed to initialize: %v", err)
 	} else {

