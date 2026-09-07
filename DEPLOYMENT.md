@@ -390,6 +390,23 @@ phishlets reload o365
 
 The change takes effect immediately. If the phishlet was enabled, active hostnames and certificates are refreshed automatically. If the YAML has a syntax error, the existing phishlet stays in memory untouched.
 
+## Refresh all phishlets (and pick up new ones)
+
+To reload every phishlet YAML at once — and also pick up any new `.yaml` files you've dropped into the phishlets directory since startup:
+
+```
+phishlets refresh
+```
+
+What it does:
+- Scans the phishlets directory for all `.yaml` files
+- **New files** (not yet in memory): parsed and registered immediately — no restart needed
+- **Existing phishlets**: reloaded from disk, picking up any edits
+- Child phishlets (created with `phishlets create`) are skipped — they derive from their parent
+- If any enabled phishlet was updated, active hostnames and certificates refresh automatically
+
+**Hostname collision warning:** If two phishlets in your directory target the same real domain (e.g. two Microsoft O365 variants), refresh will emit a `[war] hostname collision` warning. This is expected — just make sure only one of them is enabled at a time (`phishlets disable <name>`), otherwise lure routing becomes ambiguous.
+
 ## Auto-rotating lures (autolures)
 
 An autolure keeps the phishing path hidden until a real visitor arrives. You share a permanent **gateway URL** (root of the subdomain) — visiting it redirects the browser to the current active path, which rotates automatically on a timer. Scanner UAs are blocked before the redirect fires, so crawlers never see where the phishing content lives.
@@ -493,7 +510,9 @@ Changes take effect immediately — the next login attempt will require the new 
 
 - Session table: ID, phishlet, username, password, IP, token status, timestamp
 - Click any row to see full detail: cookies, tokens, GeoIP data
-- **Inject Session** button — appears in the detail panel when tokens are present; exports cookies in Cookie-Editor JSON format for direct browser import
+- **Inject Session** button — appears in the detail panel when tokens are present. Opens a takeover modal with two paths:
+  - **Browser import:** downloads cookies as Cookie-Editor JSON; click "Open Target Site" to open the real login page in a new tab, then import via the Cookie-Editor extension and reload
+  - **Curl / Burp:** click "Copy Cookie Header" to copy a ready-to-paste `Cookie: name=val; ...` string for use with curl or Burp Suite
 - Search by username, password, IP, phishlet
 - Export to CSV or JSON
 - Dark mode toggle
@@ -770,7 +789,8 @@ redirects add landing loading.html on
 | `phishlets disable <name>` | Disable a phishlet |
 | `phishlets hide <name>` | Hide phishlet (redirect all non-lure traffic) |
 | `phishlets unhide <name>` | Unhide phishlet |
-| `phishlets reload <name>` | Re-read phishlet YAML from disk without restarting |
+| `phishlets reload <name>` | Re-read a single phishlet YAML from disk without restarting |
+| `phishlets refresh` | Re-read ALL phishlet YAMLs and register any new `.yaml` files added since startup |
 | `phishlets list` | List all phishlets and status |
 
 ## Lure commands
@@ -813,6 +833,7 @@ redirects add landing loading.html on
 | `blacklist noadd` | Redirect but don't add to blacklist |
 | `blacklist off` | Disable blacklist |
 | `blacklist log on/off` | Toggle verbose blacklist logging |
+| `blacklist delete <ip>` | Remove an IP from the blacklist immediately (in-memory + config file) |
 
 > **Scanner UA cloaking is automatic** — known crawlers and security scanners (GSB, PhishTank, curl, python-requests, link previewers, etc.) are intercepted before any phishing logic runs and served the `unauth_url` content. Set `blacklist unauth` and `config unauth_url` to activate.
 
@@ -919,6 +940,20 @@ journalctl -u evilginx | grep geoip
 ```
 
 Ensure the `-geoip-db` flag points to the directory containing the `.mmdb` files, not to the files themselves.
+
+## Hostname collision warning after phishlets refresh
+
+```
+[war] phishlets: hostname 'login.microsoftonline.com' collision between 'Microsoft2024' and 'o365new' phishlets
+```
+
+Two phishlets in your directory target the same real domain. This is fine as long as only one is enabled at a time. Disable the one you're not using:
+
+```
+phishlets disable Microsoft2024
+```
+
+If both are enabled simultaneously, lure routing becomes ambiguous — incoming requests for that domain may be routed to the wrong phishlet.
 
 ## Build fails
 
