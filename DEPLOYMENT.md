@@ -370,6 +370,26 @@ The URL is what you send to targets. When they visit it and log in, credentials 
 
 **Note on social login options:** The o365 phishlet routes through the enterprise OAuth flow which suppresses Google/Apple social login options that appear on Microsoft's consumer login page — the phishing page matches the official enterprise login experience.
 
+## Clone a lure
+
+Duplicate a lure with all its settings (hostname, redirect URL, OG tags, etc.) but a fresh random path:
+
+```
+lures clone 0
+```
+
+Useful when running multiple campaigns with the same phishlet configuration — clone the base lure once, then send different URLs to different targets without setting everything up from scratch.
+
+## Reload a phishlet without restarting
+
+After editing a phishlet YAML file (updating a JS injection, fixing a subfilter, etc.), reload it live:
+
+```
+phishlets reload o365
+```
+
+The change takes effect immediately. If the phishlet was enabled, active hostnames and certificates are refreshed automatically. If the YAML has a syntax error, the existing phishlet stays in memory untouched.
+
 ## Auto-rotating lures (autolures)
 
 An autolure keeps the phishing path hidden until a real visitor arrives. You share a permanent **gateway URL** (root of the subdomain) — visiting it redirects the browser to the current active path, which rotates automatically on a timer. Scanner UAs are blocked before the redirect fires, so crawlers never see where the phishing content lives.
@@ -750,6 +770,7 @@ redirects add landing loading.html on
 | `phishlets disable <name>` | Disable a phishlet |
 | `phishlets hide <name>` | Hide phishlet (redirect all non-lure traffic) |
 | `phishlets unhide <name>` | Unhide phishlet |
+| `phishlets reload <name>` | Re-read phishlet YAML from disk without restarting |
 | `phishlets list` | List all phishlets and status |
 
 ## Lure commands
@@ -759,6 +780,7 @@ redirects add landing loading.html on
 | `lures create <phishlet> [subdomain]` | Create lure; optionally pin to a subdomain |
 | `lures get-url <index>` | Get the phishing URL |
 | `lures list` | List all lures |
+| `lures clone <index>` | Duplicate a lure with all its settings and a new random path |
 | `lures delete <index>` | Delete a lure |
 | `lures edit <index> <field> <value>` | Edit lure settings (path, hostname, redirect_url, info, og_title, og_desc, og_image, og_url, ua_filter, redirector) |
 | `lures pause <index> <duration>` | Pause a lure (e.g. `1h`, `30m`) |
