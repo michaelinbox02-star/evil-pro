@@ -511,12 +511,57 @@ Changes take effect immediately — the next login attempt will require the new 
 - Session table: ID, phishlet, username, password, IP, token status, timestamp
 - Click any row to see full detail: cookies, tokens, GeoIP data
 - **Inject Session** button — appears in the detail panel when tokens are present. Opens a takeover modal with two paths:
-  - **Browser import:** downloads cookies as Cookie-Editor JSON; click "Open Target Site" to open the real login page in a new tab, then import via the Cookie-Editor extension and reload
-  - **Curl / Burp:** click "Copy Cookie Header" to copy a ready-to-paste `Cookie: name=val; ...` string for use with curl or Burp Suite
+  - **With the Evilginx Session Injector extension (recommended):** one-click — cookies are injected directly into your browser (including HttpOnly cookies) and the target site opens in a new tab already logged in. See **Part 12a** below for install steps.
+  - **Without extension (fallback):** downloads cookies as Cookie-Editor JSON; click "Open Target Site", import via Cookie-Editor, reload
+  - **Curl / Burp:** click "Copy Cookie Header" to copy a ready-to-paste `Cookie: name=val; ...` string
 - Search by username, password, IP, phishlet
 - Export to CSV or JSON
 - Dark mode toggle
 - Auto-refresh every 5 seconds
+
+---
+
+# PART 12a: SESSION INJECTOR BROWSER EXTENSION
+
+The `extension/` folder in the repo is a Manifest V3 Chromium extension that automates session takeover — no Cookie-Editor needed. It injects cookies directly via the browser's native API, which works for HttpOnly cookies that JavaScript cannot touch.
+
+## Install (one-time, on the machine you use to access the dashboard)
+
+Pull the latest repo on that machine, then:
+
+1. Open **Brave** or **Chrome** → address bar → `brave://extensions` or `chrome://extensions`
+2. Enable **Developer mode** toggle (top-right corner)
+3. Click **Load unpacked**
+4. Select the `extension/` folder inside the repo
+5. The extension loads immediately — no browser restart needed
+
+> If you only have the repo on the VPS, copy the `extension/` folder to your local machine via SCP:
+> ```bash
+> scp -r root@YOUR_VPS_IP:/root/evilginx2/extension ./extension
+> ```
+> Then load it from the local copy.
+
+## Using it
+
+1. Open the dashboard and click any session row that shows a token indicator
+2. The **"Injector Active"** green badge appears next to the Inject Session button — this confirms the extension is detected
+3. Click **Inject Session**
+4. Cookies are injected into your browser and the real target site opens in a new tab, already authenticated
+
+The modal shows how many cookies were injected and flags any that failed. If any failed, the session may still work — not all cookies are required for authentication.
+
+## What it does vs. Cookie-Editor
+
+| | Session Injector extension | Cookie-Editor (manual) |
+|--|---------------------------|------------------------|
+| HttpOnly cookies | ✅ Injected automatically | ✅ Also works |
+| Steps required | 1 click | Download → open tab → import → reload |
+| Target URL | Opens automatically | You click "Open Target Site" |
+| Setup | Load unpacked once | Install from Chrome Web Store |
+
+## Updating the extension after a repo pull
+
+The extension code is in `extension/` — if it changes after a pull, go to `chrome://extensions`, find "Evilginx Session Injector", and click the **refresh icon** on its card.
 
 ---
 
