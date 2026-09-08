@@ -508,16 +508,19 @@ Changes take effect immediately — the next login attempt will require the new 
 
 ## Dashboard features
 
+- **Swipe Panel ⚡ sidebar** — fixed left sidebar with quick-filter nav (All / With Tokens / No Tokens with live counts), dynamic phishlet list, and a social link placeholder at the bottom you can update later
+- Six compact stats cards: Total, Tokens, No Tokens, Unique IPs, Phishlets, Last Capture
 - Session table: ID, phishlet, username, password, IP, token status, timestamp
-- Click any row to see full detail: cookies, tokens, GeoIP data
+- Click any row to expand the detail panel: credentials, GeoIP, user-agent, full token JSON
 - **Inject Session** button — appears in the detail panel when tokens are present. Opens a takeover modal with two paths:
-  - **With the Evilginx Session Injector extension (recommended):** one-click — cookies are injected directly into your browser (including HttpOnly cookies) and the target site opens in a new tab already logged in. See **Part 12a** below for install steps.
+  - **With the Session Injector extension (recommended):** one-click — cookies are injected directly into your browser (including HttpOnly cookies) and the target site opens in a new tab already logged in. See **Part 12a** below for install steps.
   - **Without extension (fallback):** downloads cookies as Cookie-Editor JSON; click "Open Target Site", import via Cookie-Editor, reload
   - **Curl / Burp:** click "Copy Cookie Header" to copy a ready-to-paste `Cookie: name=val; ...` string
-- Search by username, password, IP, phishlet
+- Search by username, password, IP, user-agent, phishlet
+- Bulk select and delete
 - Export to CSV or JSON
-- Dark mode toggle
-- Auto-refresh every 5 seconds
+- Dark/light mode toggle
+- Auto-refresh every 10 seconds
 
 ---
 
@@ -544,11 +547,23 @@ Pull the latest repo on that machine, then:
 ## Using it
 
 1. Open the dashboard and click any session row that shows a token indicator
-2. The **"Injector Active"** green badge appears next to the Inject Session button — this confirms the extension is detected
+2. The **"● Injector"** green badge appears next to the Inject Session button — this confirms the extension is detected
 3. Click **Inject Session**
 4. Cookies are injected into your browser and the real target site opens in a new tab, already authenticated
 
 The modal shows how many cookies were injected and flags any that failed. If any failed, the session may still work — not all cookies are required for authentication.
+
+## Extension popup
+
+Click the ⚡ Session Injector icon in your Chrome toolbar to open the popup at any time. It shows:
+
+- **Connection status** — green dot when the dashboard is open in a tab
+- **Selected session** — the session you most recently clicked (phishlet, ID, token status)
+- **Last inject result** — cookie count, target URL, and time of the last injection
+
+The popup updates live while it is open. Use **Open Dashboard** to jump straight to the dashboard tab.
+
+After a successful inject the toolbar icon briefly shows a green badge with the number of cookies that were set.
 
 ## What it does vs. Cookie-Editor
 
@@ -561,7 +576,7 @@ The modal shows how many cookies were injected and flags any that failed. If any
 
 ## Updating the extension after a repo pull
 
-The extension code is in `extension/` — if it changes after a pull, go to `chrome://extensions`, find "Evilginx Session Injector", and click the **refresh icon** on its card.
+The extension code is in `extension/` — if it changes after a pull, go to `chrome://extensions`, find **Session Injector**, and click the **refresh icon** on its card.
 
 ---
 
