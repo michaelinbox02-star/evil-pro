@@ -1,4 +1,4 @@
-// Evilginx Session Injector — background service worker
+// Session Injector — background service worker
 // Receives cookie arrays from the content script and injects them via
 // chrome.cookies.set(), which can set HttpOnly cookies that JS cannot touch.
 
@@ -29,7 +29,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         value:          cookie.value,
         domain:         cookie.domain,
         path:           cookie.path || '/',
-        secure:         cookie.secure  || false,
+        secure:         cookie.secure   || false,
         httpOnly:       cookie.httpOnly || false,
         sameSite,
         expirationDate: cookie.expirationDate || (Math.floor(Date.now() / 1000) + 86400 * 365),
@@ -51,6 +51,13 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 
     if (targetUrl) {
       await chrome.tabs.create({ url: targetUrl, active: true });
+    }
+
+    // Flash the badge green on success.
+    if (results.success > 0) {
+      chrome.action.setBadgeText({ text: String(results.success) });
+      chrome.action.setBadgeBackgroundColor({ color: '#00c96a' });
+      setTimeout(() => chrome.action.setBadgeText({ text: '' }), 5000);
     }
 
     sendResponse(results);
