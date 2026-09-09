@@ -16,7 +16,7 @@ import (
 )
 
 const (
-	authCookieName  = "evilginx_session"
+	authCookieName  = "_sid"
 	authTokenPrefix = "auth_session:"
 	sessionTTLHours = 24
 
