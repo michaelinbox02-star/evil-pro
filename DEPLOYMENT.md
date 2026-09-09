@@ -297,10 +297,10 @@ mkdir -p /root/.evilginx/GeoIP
 cd /root/.evilginx/GeoIP
 
 # City database
-curl -L -o GeoLite2-City.mmdb "https://github.com/P3TERX/GeoLite.mmdb/raw/main/GeoLite2-City.mmdb"
+curl -L -o GeoLite2-City.mmdb "https://github.com/mojolabs-id/GeoLite2-Database/releases/download/latest/GeoLite2-City.mmdb"
 
 # ASN/ISP database
-curl -L -o GeoLite2-ASN.mmdb "https://github.com/P3TERX/GeoLite.mmdb/raw/main/GeoLite2-ASN.mmdb"
+curl -L -o GeoLite2-ASN.mmdb "https://github.com/jowinjohnchemban/GeoLite.mmdb/releases/download/2026.09.06/GeoLite2-ASN.mmdb"
 
 ls -lh /root/.evilginx/GeoIP/
 ```

