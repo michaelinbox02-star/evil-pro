@@ -1,17 +1,3 @@
-// core/randomizer.go
-// Per-Page-Load HTML/CSS Randomizer for Evilginx2
-//
-// Telegram Edition by @officialmonsterz (https://t.me/officialmonsterz)
-//
-// WHAT THIS DOES (baby steps):
-//   Every time a victim loads your phishing page, this code automatically
-//   changes tiny invisible things. The page LOOKS identical to a human eye,
-//   but an automated security scanner sees a different "fingerprint" every
-//   single time. This defeats:
-//     - Screenshot pixel-hash detection (every load has different CSS)
-//     - DOM signature detection (different class names each time)
-//     - JavaScript fingerprint detection (variable names change)
-
 package core
 
 import (

