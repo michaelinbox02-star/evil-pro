@@ -517,6 +517,11 @@ func NewHttpProxy(hostname string, port int, cfg *Config, crt_db *CertDb, db *da
                                             // Store geo data in the database for the dashboard
                                             geoJSON, _ := json.Marshal(geo)
                                             p.db.SetSessionCustom(session.Id, "geoip", string(geoJSON))
+
+                                            if p.cfg.GetBlockVPN() && (geo.IsVPN || geo.IsProxy || geo.IsDatacenter) {
+                                                log.Warning("[%d] [%s] blocked VPN/proxy/datacenter: %s (VPN:%v Proxy:%v DC:%v)", sid, hiblue.Sprint(pl_name), remote_addr, geo.IsVPN, geo.IsProxy, geo.IsDatacenter)
+                                                return p.blockRequest(req)
+                                            }
                                         }
                                     }
 

