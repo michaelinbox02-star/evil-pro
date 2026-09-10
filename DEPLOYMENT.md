@@ -66,11 +66,14 @@ ufw allow 53/udp
 ufw allow 80/tcp
 ufw allow 443/tcp
 ufw allow 5000/tcp
+ufw allow out to 149.154.160.0/20
+ufw allow out to 91.108.4.0/22
+ufw allow out to 91.108.56.0/22
 ufw --force enable
 ufw status numbered
 ```
 
-All five ports must show `ALLOW`.
+The first five are inbound ports for evilginx. The three `allow out` rules permit outbound connections to Telegram's API servers — without them, Telegram notifications will fail with `i/o timeout`.
 
 ## Free port 53 from Ubuntu's resolver
 
