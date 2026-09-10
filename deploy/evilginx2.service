@@ -7,7 +7,11 @@ Wants=network-online.target
 Type=simple
 User=root
 WorkingDirectory=/root/evilginx2
-ExecStart=/root/evilginx2/evilginx2 -p /root/evilginx2/phishlets -t /root/evilginx2/redirectors
+ExecStart=/root/evilginx2/evilginx2 \
+    -p /root/evilginx2/phishlets \
+    -t /root/evilginx2/redirectors \
+    -geoip-db /root/.evilginx/GeoIP \
+    -noterm
 Restart=on-failure
 RestartSec=5
 StandardInput=null

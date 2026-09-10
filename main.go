@@ -5,11 +5,13 @@ import (
 	"fmt"
 	_log "log"
 	"os"
+	"os/signal"
 	"os/user"
 	"path/filepath"
 	"regexp"
 	"strings"
-	
+	"syscall"
+
 
 	"github.com/caddyserver/certmagic"
 	"github.com/fatih/color"
@@ -30,6 +32,7 @@ var feed_enabled = flag.Bool("feed", false, "Enable live feed (requires separate
 var turnstile = flag.String("turnstile", "", "Cloudflare Turnstile sitekey:secretkey to enable CAPTCHA challenge")
 var geoip_db = flag.String("geoip-db", "", "Path to directory containing GeoLite2-City.mmdb (download from https://dev.maxmind.com/geoip/geolite2-free-geolocation-data)")
 var block_vpn = flag.Bool("block-vpn", false, "Block visitors connecting from VPNs, proxies, or datacenters")
+var noterm = flag.Bool("noterm", false, "Run in headless/daemon mode without interactive terminal (for systemd)")
 var block_countries = flag.String("block-countries", "", "Comma-separated list of country ISO codes to block (e.g., RU,CN,IR,KP)")
 
 // Dashboard flags
@@ -306,5 +309,12 @@ func main() {
 		}
 	}()
 
-	t.DoWork()
+	if *noterm {
+		sigChan := make(chan os.Signal, 1)
+		signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
+		<-sigChan
+		log.Info("shutting down...")
+	} else {
+		t.DoWork()
+	}
 }
