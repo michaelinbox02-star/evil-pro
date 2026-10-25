@@ -1,0 +1,8 @@
+{
+  "title": "Document Preview",
+  "description": "File-preview card with an animated percentage bar and rotating status. Reads as a document/PDF hand-off.",
+  "category": "document",
+  "delay": 4,
+  "accent": "#111111",
+  "logo": "file"
+}

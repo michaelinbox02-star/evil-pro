@@ -1,0 +1,8 @@
+{
+  "title": "DocuSign Redirect",
+  "description": "Light document-signing look with the DocuSign wordmark, progress bar and countdown. Great before a DocuSign/O365 lure.",
+  "category": "document",
+  "delay": 3,
+  "accent": "#4c00ff",
+  "logo": "docusign"
+}

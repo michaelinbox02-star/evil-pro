@@ -22,14 +22,14 @@ const panelLoginHTML = `<!DOCTYPE html>
 <html lang="en" data-theme="dark">
 <head>
 <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Sign in · evil-pro</title>
+<title>Sign in · evil-pro dashboard</title>
 <link rel="icon" href="/favicon.ico">
 <link rel="stylesheet" href="/static/login.css">
 </head>
 <body>
 <form class="box" id="form">
-  <div class="brand"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"><rect width="32" height="32" rx="8" fill="#6366f1"/><path d="M18 6 9 18h5l-1 8 9-12h-5z" fill="#fff"/></svg><h1>evil-pro control panel</h1></div>
-  <div class="sub">Authorized testing infrastructure</div>
+  <div class="brand"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"><rect width="32" height="32" rx="8" fill="#6366f1"/><path d="M18 6 9 18h5l-1 8 9-12h-5z" fill="#fff"/></svg><h1>evil-pro dashboard</h1></div>
+  <div class="sub">Session capture · cookie takeover</div>
   <label for="u">Username</label>
   <input id="u" name="u" autocomplete="username" autofocus>
   <label for="p">Password</label>
@@ -210,13 +210,16 @@ textarea{font-family:var(--mono);font-size:11.5px;resize:vertical}
 .muted{color:var(--muted)}.dim{color:var(--dim)}
 .right{text-align:right}.center{text-align:center}
 .mt8{margin-top:8px}.mt14{margin-top:14px}.mb8{margin-bottom:8px}.mb14{margin-bottom:14px}
-.actions{display:flex;gap:6px;flex-wrap:wrap}`
+.actions{display:flex;gap:6px;flex-wrap:wrap}
+.bulk{display:flex;align-items:center;gap:8px}
+.chk{width:14px;height:14px;accent-color:var(--accent);cursor:pointer}
+.clickable{cursor:pointer}`
 
 const panelIndexHTML = `<!DOCTYPE html>
 <html lang="en" data-theme="dark">
 <head>
 <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>evil-pro · control panel</title>
+<title>evil-pro · dashboard</title>
 <link rel="icon" href="/favicon.ico">
 <link rel="stylesheet" href="/static/app.css">
 </head>
@@ -225,7 +228,7 @@ const panelIndexHTML = `<!DOCTYPE html>
   <aside class="side" id="side">
     <div class="side-head">
       <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"><rect width="32" height="32" rx="8" fill="#6366f1"/><path d="M18 6 9 18h5l-1 8 9-12h-5z" fill="#fff"/></svg>
-      <div class="side-brand">evil-pro<small>control panel</small></div>
+      <div class="side-brand">evil-pro<small>dashboard</small></div>
     </div>
     <nav class="nav" id="nav"></nav>
     <div class="side-foot">

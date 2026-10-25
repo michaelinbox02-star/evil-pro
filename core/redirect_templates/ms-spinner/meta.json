@@ -1,0 +1,8 @@
+{
+  "title": "Microsoft Spinner",
+  "description": "Centred white card, Microsoft logo and spinner, \"Signing you in…\". Classic pre-lure screen.",
+  "category": "microsoft",
+  "delay": 3,
+  "accent": "#0067b8",
+  "logo": "microsoft"
+}

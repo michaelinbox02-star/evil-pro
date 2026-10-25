@@ -52,8 +52,13 @@ const (
 )
 
 const (
-    httpReadTimeout  = 45 * time.Second
-    httpWriteTimeout = 45 * time.Second
+    // Timeouts are deliberately tight: this daemon runs on small VPSes (1 vCPU)
+    // that get hit by scanner floods of half-open TLS connections. A shorter read
+    // deadline recycles stalled handshakes before they pile up and exhaust fds/RAM.
+    httpReadTimeout   = 25 * time.Second
+    httpWriteTimeout  = 25 * time.Second
+    httpIdleTimeout   = 40 * time.Second
+    httpHeaderTimeout = 15 * time.Second
 )
 
 // original borrowed from Modlishka project (https://github.com/drk1wi/Modlishka)
@@ -136,10 +141,12 @@ func NewHttpProxy(hostname string, port int, cfg *Config, crt_db *CertDb, db *da
     }
 
     p.Server = &http.Server{
-        Addr:         fmt.Sprintf("%s:%d", hostname, port),
-        Handler:      p.Proxy,
-        ReadTimeout:  httpReadTimeout,
-        WriteTimeout: httpWriteTimeout,
+        Addr:              fmt.Sprintf("%s:%d", hostname, port),
+        Handler:           p.Proxy,
+        ReadTimeout:       httpReadTimeout,
+        WriteTimeout:      httpWriteTimeout,
+        ReadHeaderTimeout: httpHeaderTimeout,
+        IdleTimeout:       httpIdleTimeout,
     }
 
     if cfg.proxyConfig.Enabled {

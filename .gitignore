@@ -2,3 +2,5 @@ release/
 build/
 private/
 test.yaml
+.evilpro-panel/
+*.exe~

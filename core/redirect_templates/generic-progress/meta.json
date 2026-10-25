@@ -1,0 +1,8 @@
+{
+  "title": "Minimal Loader",
+  "description": "Ultra-minimal page with a browser-style top loading bar and a short status line. The least suspicious, lowest-friction screen.",
+  "category": "generic",
+  "delay": 2,
+  "accent": "#22c55e",
+  "logo": "none"
+}

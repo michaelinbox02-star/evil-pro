@@ -68,6 +68,12 @@ type RedirectPage struct {
 	File      string `mapstructure:"file" json:"file" yaml:"file"`
 	TargetURL string `mapstructure:"target_url" json:"target_url" yaml:"target_url"`
 	Turnstile bool   `mapstructure:"turnstile" json:"turnstile" yaml:"turnstile"`
+	// Turnstile presentation (optional)
+	TurnstilePos   string `mapstructure:"turnstile_pos" json:"turnstile_pos" yaml:"turnstile_pos"`     // slot|inline|overlay|center|bottom|corner
+	TurnstileType  string `mapstructure:"turnstile_type" json:"turnstile_type" yaml:"turnstile_type"`  // managed|non-interactive|invisible
+	TurnstileTheme string `mapstructure:"turnstile_theme" json:"turnstile_theme" yaml:"turnstile_theme"` // light|dark|auto
+	Delay          int    `mapstructure:"delay" json:"delay" yaml:"delay"`                             // seconds before redirect
+	Template       string `mapstructure:"template" json:"template" yaml:"template"`                    // source template slug
 }
 
 type ProxyConfig struct {

@@ -1301,19 +1301,53 @@ func (ds *DashboardServer) handleRedirects(w http.ResponseWriter, r *http.Reques
 		out = append(out, map[string]interface{}{
 			"id": i, "subdomain": rp.Subdomain, "host": host, "file": rp.File,
 			"target_url": rp.TargetURL, "turnstile": rp.Turnstile,
+			"turnstile_pos": rp.TurnstilePos, "turnstile_type": rp.TurnstileType,
+			"turnstile_theme": rp.TurnstileTheme, "delay": rp.Delay, "template": rp.Template,
 		})
 	}
 	writeJSON(w, 200, map[string]interface{}{"redirects": out, "dir": ds.cfg.GetRedirectsDir()})
 }
 
+// handleRedirectTemplates lists the bundled redirect-page designs.
+func (ds *DashboardServer) handleRedirectTemplates(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, 200, map[string]interface{}{"templates": ListRedirectTemplates()})
+}
+
+// handleRedirectTemplatePreview renders a template with the supplied target/delay
+// so the UI can show a live preview.
+func (ds *DashboardServer) handleRedirectTemplatePreview(w http.ResponseWriter, r *http.Request) {
+	slug := r.PathValue("slug")
+	_, html, err := GetRedirectTemplate(slug)
+	if err != nil {
+		jsonErr(w, 404, err.Error())
+		return
+	}
+	target := r.URL.Query().Get("target")
+	delay := parseIntDefault(r.URL.Query().Get("delay"), 3)
+	html = strings.ReplaceAll(html, "__DESTINATION__", target)
+	html = strings.ReplaceAll(html, "__DELAY__", strconv.Itoa(delay))
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.Header().Set("Cache-Control", "no-store")
+	fmt.Fprint(w, html)
+}
+
+var validRedirectTSPos = map[string]bool{"slot": true, "inline": true, "overlay": true, "center": true, "bottom": true, "corner": true}
+var validRedirectTSType = map[string]bool{"managed": true, "non-interactive": true, "invisible": true}
+var validRedirectTSTheme = map[string]bool{"light": true, "dark": true, "auto": true}
+
 func (ds *DashboardServer) handleRedirectAdd(w http.ResponseWriter, r *http.Request) {
 	ds.opMu.Lock()
 	defer ds.opMu.Unlock()
 	var payload struct {
-		Subdomain string `json:"subdomain"`
-		File      string `json:"file"`
-		TargetURL string `json:"target_url"`
-		Turnstile bool   `json:"turnstile"`
+		Subdomain      string `json:"subdomain"`
+		File           string `json:"file"`
+		Template       string `json:"template"`
+		TargetURL      string `json:"target_url"`
+		Turnstile      bool   `json:"turnstile"`
+		TurnstilePos   string `json:"turnstile_pos"`
+		TurnstileType  string `json:"turnstile_type"`
+		TurnstileTheme string `json:"turnstile_theme"`
+		Delay          int    `json:"delay"`
 	}
 	if err := readJSON(r, &payload); err != nil {
 		jsonErr(w, 400, "invalid body")
@@ -1335,15 +1369,68 @@ func (ds *DashboardServer) handleRedirectAdd(w http.ResponseWriter, r *http.Requ
 			return
 		}
 	}
-	fpath := filepath.Join(ds.cfg.GetRedirectsDir(), filepath.Base(payload.File))
-	if _, err := os.Stat(fpath); os.IsNotExist(err) {
-		jsonErr(w, 400, "file not found in redirects directory")
+
+	dir := ds.cfg.GetRedirectsDir()
+	fileName := ""
+
+	if payload.Template != "" {
+		f, err := WriteRedirectTemplate(payload.Template, dir, payload.Subdomain)
+		if err != nil {
+			jsonErr(w, 400, err.Error())
+			return
+		}
+		fileName = f
+	} else {
+		if payload.File == "" {
+			jsonErr(w, 400, "file or template is required")
+			return
+		}
+		fileName = filepath.Base(payload.File)
+		if _, err := os.Stat(filepath.Join(dir, fileName)); os.IsNotExist(err) {
+			jsonErr(w, 400, "file not found in redirects directory")
+			return
+		}
+	}
+
+	pos, typ, theme := payload.TurnstilePos, payload.TurnstileType, payload.TurnstileTheme
+	if pos == "" {
+		pos = "slot"
+	}
+	if typ == "" {
+		typ = "managed"
+	}
+	if theme == "" {
+		theme = "auto"
+	}
+	if !validRedirectTSPos[pos] {
+		jsonErr(w, 400, "invalid turnstile position")
 		return
 	}
-	ds.cfg.AddRedirectPage(&RedirectPage{Subdomain: payload.Subdomain, File: filepath.Base(payload.File), TargetURL: payload.TargetURL, Turnstile: payload.Turnstile})
+	if !validRedirectTSType[typ] {
+		jsonErr(w, 400, "invalid turnstile type")
+		return
+	}
+	if !validRedirectTSTheme[theme] {
+		jsonErr(w, 400, "invalid turnstile theme")
+		return
+	}
+
+	delay := payload.Delay
+	if delay <= 0 {
+		delay = 3
+	}
+	if delay > 30 {
+		delay = 30
+	}
+
+	ds.cfg.AddRedirectPage(&RedirectPage{
+		Subdomain: payload.Subdomain, File: fileName, TargetURL: payload.TargetURL,
+		Turnstile: payload.Turnstile, TurnstilePos: pos, TurnstileType: typ,
+		TurnstileTheme: theme, Delay: delay, Template: payload.Template,
+	})
 	ds.cfg.refreshActiveHostnames()
 	ds.manageCerts(false)
-	writeJSON(w, 200, map[string]string{"status": "added"})
+	writeJSON(w, 200, map[string]string{"status": "added", "file": fileName})
 }
 
 func (ds *DashboardServer) handleRedirectDelete(w http.ResponseWriter, r *http.Request) {
@@ -1704,7 +1791,7 @@ func (ds *DashboardServer) handleTelegramTest(w http.ResponseWriter, r *http.Req
 		return
 	}
 	ts := TelegramMarkdownV2Escape(time.Now().Format("2006-01-02 15:04:05"))
-	msg := tgbotapi.NewMessage(chatIDInt, "\U0001f680 *evil\\-pro control panel test*\n\n\u2705 Telegram notifications are working\\.\n`"+ts+"`")
+	msg := tgbotapi.NewMessage(chatIDInt, "\U0001f680 *evil\\-pro dashboard test*\n\n\u2705 Telegram notifications are working\\.\n`"+ts+"`")
 	msg.ParseMode = "MarkdownV2"
 	msg.DisableWebPagePreview = true
 	if _, err := bot.Send(msg); err != nil {
