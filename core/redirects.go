@@ -1,6 +1,7 @@
 package core
 
 import (
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"os"
@@ -8,6 +9,39 @@ import (
 	"strconv"
 	"strings"
 )
+
+// applyTemplateVars fills the branding placeholders of a template page using the
+// page's overrides, falling back to the template defaults and finally to generic
+// values. Values are HTML-escaped; the message list becomes a JS array literal.
+func applyTemplateVars(html string, rp *RedirectPage) string {
+	d := TemplateDefaults(rp.Template)
+
+	brand := firstNonEmpty(rp.Brand, d.Brand, "Secure redirect")
+	title := firstNonEmpty(rp.Title, d.TitleText, "Redirecting you securely.")
+	subtitle := firstNonEmpty(rp.Subtitle, d.Subtitle, "Please wait while we transfer you to the requested page.")
+	accent := sanitizeHex(firstNonEmpty(rp.Accent, d.Accent), "#111111")
+	button := firstNonEmpty(rp.Button, d.Button, "Open file")
+	logo := firstNonEmpty(rp.Logo, d.Logo, "mark")
+
+	msgs := rp.Messages
+	if len(msgs) == 0 {
+		msgs = d.Messages
+	}
+	if len(msgs) == 0 {
+		msgs = []string{"Preparing…", "Almost there…"}
+	}
+
+	html = strings.ReplaceAll(html, "__ACCENT__", accent)
+	html = strings.ReplaceAll(html, "__BRAND__", htmlAttrEscape(brand))
+	html = strings.ReplaceAll(html, "__TITLE__", htmlAttrEscape(title))
+	html = strings.ReplaceAll(html, "__SUBTITLE__", htmlAttrEscape(subtitle))
+	html = strings.ReplaceAll(html, "__BUTTON__", htmlAttrEscape(button))
+	html = strings.ReplaceAll(html, "__LOGO__", logoHTML(logo))
+
+	mb, _ := json.Marshal(msgs)
+	html = strings.ReplaceAll(html, "__MSGS__", strings.ReplaceAll(string(mb), "<", "\\u003C"))
+	return html
+}
 
 // ServeRedirectPage reads the redirect page file, substitutes the destination /
 // delay placeholders, injects the optional Cloudflare Turnstile gate and writes
@@ -48,7 +82,8 @@ func ServeRedirectPage(w http.ResponseWriter, r *http.Request, rp *RedirectPage,
 	tsEnabled := rp.Turnstile && siteKey != ""
 
 	if strings.Contains(html, "__DESTINATION__") {
-		// template page: substitute placeholders, let the page drive the redirect
+		// template page: substitute branding + placeholders, let the page drive the redirect
+		html = applyTemplateVars(html, rp)
 		html = strings.ReplaceAll(html, "__DESTINATION__", jsStringEscape(target))
 		html = strings.ReplaceAll(html, "__DELAY__", strconv.Itoa(delay))
 		html = injectTurnstile(html, rp, siteKey, tsEnabled)

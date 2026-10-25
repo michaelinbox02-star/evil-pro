@@ -1,8 +1,13 @@
 {
   "title": "Microsoft Spinner",
-  "description": "Centred white card, Microsoft logo and spinner, \"Signing you in…\". Classic pre-lure screen.",
+  "description": "Centred white card, Microsoft logo and spinner. Classic pre-lure screen.",
   "category": "microsoft",
   "delay": 3,
   "accent": "#0067b8",
-  "logo": "microsoft"
+  "logo": "microsoft",
+  "brand": "Microsoft",
+  "title_text": "Signing you in…",
+  "subtitle": "Please wait while we take you to your account.",
+  "button": "Continue",
+  "messages": ["Signing you in…"]
 }

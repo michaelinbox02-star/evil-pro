@@ -1,8 +1,13 @@
 {
   "title": "DocuSign Redirect",
-  "description": "Light document-signing look with the DocuSign wordmark, progress bar and countdown. Great before a DocuSign/O365 lure.",
+  "description": "Light document-signing look with the DocuSign wordmark, progress bar and countdown.",
   "category": "document",
   "delay": 3,
   "accent": "#4c00ff",
-  "logo": "docusign"
+  "logo": "docusign",
+  "brand": "docusign",
+  "title_text": "Redirecting you securely.",
+  "subtitle": "Please wait while we transfer you to the requested document.",
+  "button": "Continue",
+  "messages": ["Preparing destination…", "Verifying document…", "Securing session…", "Almost there…"]
 }

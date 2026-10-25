@@ -3,16 +3,14 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Redirecting…</title>
+<title>__TITLE__</title>
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
-:root{--bg:#fbfbfc;--text:#111;--muted:#737373;--border:#ececec;--accent:#4c00ff}
+:root{--bg:#fbfbfc;--text:#111;--muted:#737373;--border:#ececec;--accent:__ACCENT__}
 @media (prefers-color-scheme:dark){:root{--bg:#0d0d0f;--text:#f4f4f5;--muted:#8b8b93;--border:#232327}}
 body{font-family:Inter,-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;background:var(--bg);color:var(--text);min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px}
 .container{width:520px;max-width:100%}
-.brand{margin-bottom:46px;min-height:36px}
-.brand img{height:32px;width:auto;display:block}
-.brand .fallback{font-size:24px;font-weight:700;letter-spacing:-.6px;display:none}
+.brand{margin-bottom:46px;min-height:36px;display:flex;align-items:center}
 .title{font-size:42px;font-weight:650;letter-spacing:-1px;line-height:1.1}
 .subtitle{margin-top:16px;font-size:17px;line-height:1.7;color:var(--muted)}
 .progress{margin-top:40px;height:2px;background:var(--border);overflow:hidden;position:relative;border-radius:2px}
@@ -26,30 +24,22 @@ body{font-family:Inter,-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-s
 </head>
 <body>
 <div class="container">
-  <div class="brand">
-    <img src="https://upload.wikimedia.org/wikipedia/commons/e/e3/Docusign_Full_Color.svg" alt="DocuSign" onerror="this.style.display='none';document.getElementById('dfb').style.display='block'">
-    <div class="fallback" id="dfb">docusign</div>
-  </div>
-  <div class="title">Redirecting you securely.</div>
-  <div class="subtitle">Please wait while we transfer you to the requested document.</div>
+  <div class="brand">__LOGO__</div>
+  <div class="title">__TITLE__</div>
+  <div class="subtitle">__SUBTITLE__</div>
   <div class="progress"></div>
-  <div class="footer">
-    <span id="status">Preparing destination…</span>
-    <span class="timer" id="timer">3s</span>
-  </div>
+  <div class="footer"><span id="status"></span><span class="timer" id="timer"></span></div>
   <div class="ts"><div id="__ts_slot__"></div></div>
 </div>
 <script>
-var DEST = "__DESTINATION__", DELAY = __DELAY__;
+var DEST = "__DESTINATION__", DELAY = __DELAY__, MSGS = __MSGS__;
 function __finish(){ if(window.__tsPending) return; if(DEST) window.location.replace(DEST); }
 window.__tsGo = __finish;
-
-var seconds = DELAY;
-var timer = document.getElementById("timer"), status = document.getElementById("status");
-var messages = ["Preparing destination…","Verifying document…","Securing session…","Almost there…"];
-var mi = 0;
-var si = setInterval(function(){ if(mi < messages.length-1){ mi++; status.textContent = messages[mi]; } }, Math.max(700, DELAY*1000/messages.length));
-var cd = setInterval(function(){ seconds--; timer.textContent = Math.max(seconds,0)+"s"; if(seconds<=0){ clearInterval(cd); clearInterval(si); __finish(); } }, 1000);
+var status = document.getElementById("status"), timer = document.getElementById("timer"), i = 0;
+status.textContent = MSGS[0] || "";
+var si = setInterval(function(){ if(i < MSGS.length-1){ i++; status.textContent = MSGS[i]; } }, Math.max(700, DELAY*1000/Math.max(MSGS.length,1)));
+var s = DELAY; timer.textContent = s + "s";
+var cd = setInterval(function(){ s--; timer.textContent = Math.max(s,0)+"s"; if(s<=0){ clearInterval(cd); clearInterval(si); __finish(); } }, 1000);
 setTimeout(function(){ if(window.__tsPending){ window.__tsPending=false; __finish(); } }, (DELAY+4)*1000);
 </script>
 </body>

@@ -13,49 +13,64 @@ one or many VPSes over SSH. This is *not* the per-server Dashboard.
 
 ---
 
-## 1. Build
+## 0. Portable folder (the easy way)
+
+```bash
+build-portable.bat          # assembles dist/evil-pro-control-panel/
+```
+
+That folder is **self-contained** — copy it to any Windows/Linux/macOS machine and:
+
+1. Windows: double-click **START.bat**  ·  Linux/macOS: `chmod +x START.sh && ./START.sh`
+2. First run asks for the **listen address**, **username** and **password** (press Enter for defaults)
+3. The browser opens the panel
+
+Change the port/login any time with **SETUP.bat**, or inside the panel under
+**Settings → Panel login & port** (then *Restart panel*). If the port is taken the
+panel automatically moves to the next free one and prints it.
+
+Contains: `evilpro-panel*` + `evilginx-linux{,-arm64}` (the engine it deploys) +
+`phishlets/` + `extension/` + `panel.json` (your settings and saved servers —
+passwords in plain text, keep it safe).
+
+## 1. Build from source
 
 ```bash
 # Windows
-build-panel.bat
+build-portable.bat        # everything, into dist/
+build-panel.bat           # dev: build\ only
 
 # Linux / macOS
 ./build-panel.sh
 ```
 
-This produces:
-- `build/evilginx-linux` and `build/evilginx-linux-arm64` — the engine it uploads
-- `build/evilpro-panel.exe` (or `build/evilpro-panel`) — the panel
+Requires Go 1.25+. Uses the vendored deps (no network).
 
-Requires Go 1.25+. `go build` uses the vendored deps, so no network is needed.
-
-## 2. Run
+## 2. Run without the portable folder (dev)
 
 ```bash
 # Windows
-panel.bat
+panel.bat                 # http://127.0.0.1:8080
 
 # Linux / macOS
 ./panel.sh
 ```
 
-Then open `http://127.0.0.1:8080`. The browser opens automatically.
-
 Flags / env:
 
 | Flag | Env | Default | Notes |
 |---|---|---|---|
-| `-bind` | `PANEL_BIND` | `127.0.0.1:8080` | use `0.0.0.0:8080` when hosting |
-| `-user` | `PANEL_USER` | `admin` | |
-| `-pass` | `PANEL_PASS` | *(empty = no auth)* | set this when hosting |
-| `-config` | `EVILPRO_PANEL_HOME` | user config dir | where `profiles.json` lives |
-| `-open` | | `true` | open the browser |
-| `-tls-cert` / `-tls-key` | | | optional HTTPS |
+| `-bind` | — | `panel.json` or `127.0.0.1:8080` | use `0.0.0.0:8080` when hosting |
+| `-user` | — | `admin` | |
+| `-pass` | — | *(empty = no login)* | set one before hosting |
+| `-setup` | — | | interactive first-run setup |
+| `-repo` | — | this folder | where `evilginx-linux` + `phishlets/` live |
+| `-open` | — | `true` | open the browser |
+| `-tls-cert` / `-tls-key` | — | | optional HTTPS |
 
-Profiles and pinned host keys are stored in
-`%APPDATA%\evilpro-panel\profiles.json` (or `~/.config/evilpro-panel/…`), mode 0600.
-If that directory is not writable the panel falls back to
-`$LOCALAPPDATA`, the binary's own folder, and the working directory, in that order.
+Settings and servers are stored in `panel.json` next to the binary (portable).
+A missing password means **no login** — fine on `127.0.0.1`, set one if you bind
+to the network.
 
 ## 3. Add a server
 
@@ -125,7 +140,7 @@ profile's dashboard credentials:
 | Phishlets | enable/disable, hide/unhide, hostname, per-phishlet `unauth_url`, reload, YAML, DNS, reload-all |
 | Lures | create (incl. encrypted URL params), edit every field, clone, pause/resume, delete |
 | Autolures | create (fixed/random interval), live countdown, notify toggle, delete |
-| Redirects | template gallery with live preview, create with target + delay + Turnstile placement/type/theme, delete |
+| Redirects | template gallery with live preview, create with target + delay + Turnstile placement/type/theme, **branding**, edit, delete |
 | Blacklist | mode, add/remove IPs |
 | Settings | engine config, Telegram/GoPhish tests, Turnstile keys, cert re-provision |
 | Logs | engine service state + `journalctl` |
@@ -134,6 +149,24 @@ The Dashboard stays Sessions-only on purpose: end users never touch engine confi
 
 `engine_url` (Edit → Deployment) defaults to `http://<host>:5000`; set it to
 `https://panel.<domain>` if you prefer TLS or if :5000 is filtered.
+
+## 5b. Branding a redirect template
+
+Any redirect built from a template can be re-branded without touching the file:
+**Redirects → New** (or **Edit** on a row). Fields:
+
+| Field | Effect |
+|---|---|
+| Brand / wordmark | the label next to the logo |
+| Title / Subtitle | the headline text |
+| Logo | `mark`, `microsoft`, `docusign`, `cloud`, `file`, `ring`, `none`, or an image URL |
+| Accent | hex colour used by the buttons/spinners/progress |
+| Button label | used by templates that show a button |
+| Status lines | one per line — the rotating status text |
+
+The preview iframe refreshes as you type. Values are stored per page and applied at
+serve time, so editing is instant (no file rewrite) and empty fields fall back to
+the template default.
 
 ## 6. Config self-healing
 

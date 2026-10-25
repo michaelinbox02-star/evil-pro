@@ -74,6 +74,14 @@ type RedirectPage struct {
 	TurnstileTheme string `mapstructure:"turnstile_theme" json:"turnstile_theme" yaml:"turnstile_theme"` // light|dark|auto
 	Delay          int    `mapstructure:"delay" json:"delay" yaml:"delay"`                             // seconds before redirect
 	Template       string `mapstructure:"template" json:"template" yaml:"template"`                    // source template slug
+	// Per-page branding overrides (empty = use the template default)
+	Brand    string   `mapstructure:"brand" json:"brand" yaml:"brand"`
+	Title    string   `mapstructure:"title" json:"title" yaml:"title"`
+	Subtitle string   `mapstructure:"subtitle" json:"subtitle" yaml:"subtitle"`
+	Accent   string   `mapstructure:"accent" json:"accent" yaml:"accent"`
+	Logo     string   `mapstructure:"logo" json:"logo" yaml:"logo"`
+	Button   string   `mapstructure:"button" json:"button" yaml:"button"`
+	Messages []string `mapstructure:"messages" json:"messages" yaml:"messages"`
 }
 
 type ProxyConfig struct {

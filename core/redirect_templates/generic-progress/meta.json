@@ -1,8 +1,13 @@
 {
   "title": "Minimal Loader",
-  "description": "Ultra-minimal page with a browser-style top loading bar and a short status line. The least suspicious, lowest-friction screen.",
+  "description": "Ultra-minimal page with a browser-style top loading bar. The least suspicious screen.",
   "category": "generic",
   "delay": 2,
   "accent": "#22c55e",
-  "logo": "none"
+  "logo": "none",
+  "brand": "Secure redirect",
+  "title_text": "Taking you there…",
+  "subtitle": "Please hold on a second.",
+  "button": "Continue",
+  "messages": ["Please hold on a second.", "Almost done…", "Redirecting…"]
 }

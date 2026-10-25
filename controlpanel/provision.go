@@ -96,40 +96,86 @@ func fileExists(p string) bool {
 	return err == nil && !st.IsDir()
 }
 
+// buildEnv gives the local `go build` a cache/temp inside the app folder, so it
+// works even when the process has no write access to the user profile.
+func buildEnv() []string {
+	root := appRoot()
+	cache := filepath.Join(root, ".gocache")
+	tmp := filepath.Join(root, ".gotmp")
+	_ = os.MkdirAll(cache, 0o755)
+	_ = os.MkdirAll(tmp, 0o755)
+	env := append([]string{}, os.Environ()...)
+	env = append(env, "GOCACHE="+cache, "GOTMPDIR="+tmp, "GOFLAGS=")
+	return env
+}
+
+// binaryCandidates lists the places a prebuilt engine binary may live, in order.
+func (a *App) binaryCandidates(goarch string) []string {
+	set := a.store.Settings()
+	name := "evilginx-linux"
+	if goarch == "arm64" {
+		name = "evilginx-linux-arm64"
+	}
+	var cands []string
+	if goarch == "arm64" && set.BinArm64 != "" {
+		cands = append(cands, set.BinArm64)
+	}
+	if goarch == "amd64" && set.BinAmd64 != "" {
+		cands = append(cands, set.BinAmd64)
+	}
+	cands = append(cands,
+		filepath.Join(set.RepoDir, "build", name),
+		filepath.Join(appRoot(), name),
+		filepath.Join(set.RepoDir, name),
+	)
+	return cands
+}
+
 func (a *App) resolveBinary(arch string) (string, error) {
 	set := a.store.Settings()
-	var path, goarch string
+	var goarch string
 	switch arch {
 	case "x86_64", "amd64":
-		path, goarch = set.BinAmd64, "amd64"
+		goarch = "amd64"
 	case "aarch64", "arm64":
-		path, goarch = set.BinArm64, "arm64"
+		goarch = "arm64"
 	default:
 		return "", fmt.Errorf("unsupported remote architecture: %s", arch)
 	}
-	if path != "" && fileExists(path) {
-		return path, nil
+
+	for _, c := range a.binaryCandidates(goarch) {
+		if fileExists(c) {
+			return c, nil
+		}
 	}
 	if !set.AutoBuild {
-		return "", fmt.Errorf("binary not found at %s and auto-build is off", path)
+		return "", fmt.Errorf("no %s binary found (looked in %v) and auto-build is off", goarch, a.binaryCandidates(goarch))
 	}
 	if _, err := exec.LookPath("go"); err != nil {
-		return "", fmt.Errorf("binary not found at %s and 'go' is not installed locally", path)
+		return "", fmt.Errorf("no %s binary bundled and 'go' is not installed locally", goarch)
 	}
-	if path == "" {
-		path = filepath.Join(set.RepoDir, "build", "evilginx-linux-"+goarch)
+
+	out := filepath.Join(appRoot(), "evilginx-linux")
+	if goarch == "arm64" {
+		out = filepath.Join(appRoot(), "evilginx-linux-arm64")
 	}
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return "", err
+	if set.RepoDir != "" && fileExists(filepath.Join(set.RepoDir, "go.mod")) {
+		out = filepath.Join(set.RepoDir, "build", "evilginx-linux")
+		if goarch == "arm64" {
+			out = filepath.Join(set.RepoDir, "build", "evilginx-linux-arm64")
+		}
 	}
-	cmd := exec.Command("go", "build", "-mod=mod", "-o", path, ".")
+	_ = os.MkdirAll(filepath.Dir(out), 0o755)
+
+	cmd := exec.Command("go", "build", "-mod=mod", "-o", out, ".")
 	cmd.Dir = set.RepoDir
-	cmd.Env = append(os.Environ(), "GOOS=linux", "GOARCH="+goarch, "CGO_ENABLED=0")
-	out, err := cmd.CombinedOutput()
+	cmd.Env = append(buildEnv(), "GOOS=linux", "GOARCH="+goarch, "CGO_ENABLED=0")
+	o, err := cmd.CombinedOutput()
 	if err != nil {
-		return "", fmt.Errorf("go build failed: %v\n%s", err, string(out))
+		_ = os.Remove(out)
+		return "", fmt.Errorf("go build (%s) failed: %v\n%s", goarch, err, string(o))
 	}
-	return path, nil
+	return out, nil
 }
 
 func (a *App) phishletFiles(p *Profile) (map[string][]byte, error) {

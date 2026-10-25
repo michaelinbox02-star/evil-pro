@@ -2,28 +2,24 @@
 setlocal
 cd /d "%~dp0"
 
+REM Dev launcher: builds if needed, then runs from the repo.
+REM For a portable copy, run build-portable.bat and use dist\evil-pro-control-panel\START.bat
+
 if not exist "build\evilpro-panel.exe" (
-  echo Control panel binary not found - building it first...
+  echo building the control panel...
   call build-panel.bat || goto :err
 )
 
-if "%PANEL_BIND%"=="" set PANEL_BIND=127.0.0.1:8080
-if "%PANEL_USER%"=="" set PANEL_USER=admin
+set BIND=%~1
+if "%BIND%"=="" set BIND=127.0.0.1:8080
 
 echo.
-echo   evil-pro control panel
-echo   ----------------------
-echo   URL   : http://%PANEL_BIND%
-echo   user  : %PANEL_USER%  (password from PANEL_PASS or empty = none)
-echo   store : %%APPDATA%%\evilpro-panel\profiles.json
+echo   evil-pro control panel  ^-^>  http://%BIND%
+echo   login is stored in build\panel.json (empty password = open)
 echo.
-echo   TIP: to host it, set PANEL_BIND=0.0.0.0:8080 and PANEL_PASS=secret
-echo.
-
-"build\evilpro-panel.exe" -bind "%PANEL_BIND%" -user "%PANEL_USER%" -pass "%PANEL_PASS%"
+"build\evilpro-panel.exe" -bind "%BIND%" -repo "%~dp0"
 goto :eof
 
 :err
-echo.
-echo Build failed. Make sure Go is installed and in PATH.
+echo build failed - is Go installed?
 pause

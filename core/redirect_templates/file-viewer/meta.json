@@ -1,8 +1,13 @@
 {
   "title": "File Ready (cloud)",
-  "description": "Cloud file-sharing card (OneDrive / Drive / SharePoint feel): file chip, size, share icon and \"Open file\". Ideal for document-delivery emails.",
+  "description": "Cloud file-sharing card (OneDrive / Drive feel): file chip, progress and a button. Ideal for document-delivery emails.",
   "category": "file",
   "delay": 4,
   "accent": "#0a66c2",
-  "logo": "cloud"
+  "logo": "cloud",
+  "brand": "Cloud storage",
+  "title_text": "Your file is ready",
+  "subtitle": "A shared document has been prepared for you. It will open automatically.",
+  "button": "Open file",
+  "messages": ["Preparing secure link…", "Verifying permissions…", "Almost ready…"]
 }

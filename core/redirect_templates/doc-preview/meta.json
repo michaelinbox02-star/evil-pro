@@ -1,8 +1,13 @@
 {
   "title": "Document Preview",
-  "description": "File-preview card with an animated percentage bar and rotating status. Reads as a document/PDF hand-off.",
+  "description": "File-preview card with an animated percentage bar. Reads as a document/PDF hand-off.",
   "category": "document",
   "delay": 4,
   "accent": "#111111",
-  "logo": "file"
+  "logo": "file",
+  "brand": "Document",
+  "title_text": "Preparing your document",
+  "subtitle": "Securing connection",
+  "button": "Continue",
+  "messages": ["Initializing…", "Establishing secure connection…", "Preparing document…", "Loading preview…", "Redirecting…"]
 }

@@ -60,8 +60,12 @@ type Profile struct {
 	Version    string `json:"version,omitempty"`
 }
 
-// Settings are panel-wide preferences.
+// Settings are panel-wide preferences, stored in panel.json next to the binary so
+// the whole folder stays portable.
 type Settings struct {
+	Bind      string `json:"bind"`
+	User      string `json:"user"`
+	Pass      string `json:"pass"`
 	BinAmd64  string `json:"bin_amd64"`
 	BinArm64  string `json:"bin_arm64"`
 	RepoDir   string `json:"repo_dir"`
@@ -80,56 +84,73 @@ type Store struct {
 	data storeFile
 }
 
-// configDir picks the first writable directory from a list of candidates, so the
-// panel works whether it runs from a normal shell, a restricted sandbox, or a
-// service account with a locked-down profile.
-func configDir() (string, error) {
-	var candidates []string
-	if configDirOverride != "" {
-		candidates = append(candidates, configDirOverride)
-	}
-	if v := os.Getenv("EVILPRO_PANEL_HOME"); v != "" {
-		candidates = append(candidates, v)
-	}
-	if d, err := os.UserConfigDir(); err == nil && d != "" {
-		candidates = append(candidates, filepath.Join(d, appDirName))
-	}
-	if v := os.Getenv("LOCALAPPDATA"); v != "" {
-		candidates = append(candidates, filepath.Join(v, appDirName))
-	}
-	if v := os.Getenv("XDG_CONFIG_HOME"); v != "" {
-		candidates = append(candidates, filepath.Join(v, appDirName))
-	}
+// appRoot is the folder holding the executable — the portable home of the panel.
+func appRoot() string {
 	if exe, err := os.Executable(); err == nil {
-		candidates = append(candidates, filepath.Join(filepath.Dir(exe), "."+appDirName))
+		return filepath.Dir(exe)
 	}
-	if wd, err := os.Getwd(); err == nil {
-		candidates = append(candidates, filepath.Join(wd, "."+appDirName))
-	}
-	candidates = append(candidates, filepath.Join(os.TempDir(), appDirName))
-
-	for _, c := range candidates {
-		if err := os.MkdirAll(c, 0o700); err != nil {
-			continue
-		}
-		probe := filepath.Join(c, ".write-probe")
-		if err := os.WriteFile(probe, []byte("ok"), 0o600); err != nil {
-			continue
-		}
-		_ = os.Remove(probe)
-		return c, nil
-	}
-	return "", fmt.Errorf("no writable config directory found (tried %d locations)", len(candidates))
+	wd, _ := os.Getwd()
+	return wd
 }
 
-func NewStore() (*Store, error) {
-	dir, err := configDir()
-	if err != nil {
-		return nil, err
+// userConfigDir is the legacy per-user location (used only for migration).
+func userConfigDir() string {
+	if d, err := os.UserConfigDir(); err == nil && d != "" {
+		return filepath.Join(d, appDirName)
 	}
-	s := &Store{path: filepath.Join(dir, "profiles.json")}
+	return os.TempDir()
+}
+
+// writable reports whether dir can be written to.
+func writable(dir string) bool {
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return false
+	}
+	p := filepath.Join(dir, ".write-probe")
+	if err := os.WriteFile(p, []byte("ok"), 0o600); err != nil {
+		return false
+	}
+	_ = os.Remove(p)
+	return true
+}
+
+// NewStore loads panel.json from the executable's folder (portable). Legacy
+// profiles.json files are migrated automatically.
+func NewStore() (*Store, error) {
+	root := appRoot()
+	if !writable(root) {
+		root = userConfigDir()
+		_ = os.MkdirAll(root, 0o700)
+	}
+	s := &Store{path: filepath.Join(root, "panel.json")}
+	s.data.Settings = defaultSettings()
+
+	if _, err := os.Stat(s.path); os.IsNotExist(err) {
+		for _, legacy := range []string{
+			filepath.Join(appRoot(), "profiles.json"),
+			filepath.Join(userConfigDir(), "profiles.json"),
+		} {
+			b, rerr := os.ReadFile(legacy)
+			if rerr != nil {
+				continue
+			}
+			var d storeFile
+			if json.Unmarshal(b, &d) == nil {
+				if d.Settings == (Settings{}) {
+					d.Settings = defaultSettings()
+				}
+				s.data = d
+				_ = os.Remove(legacy)
+				break
+			}
+		}
+	}
+
 	if err := s.load(); err != nil {
 		return nil, err
+	}
+	if s.data.Settings.Bind == "" {
+		s.data.Settings.Bind = defaultSettings().Bind
 	}
 	return s, nil
 }
@@ -157,11 +178,13 @@ func (s *Store) load() error {
 }
 
 func defaultSettings() Settings {
-	wd, _ := os.Getwd()
+	root := appRoot()
 	return Settings{
-		BinAmd64:  filepath.Join(wd, "build", "evilginx-linux"),
-		BinArm64:  filepath.Join(wd, "build", "evilginx-linux-arm64"),
-		RepoDir:   wd,
+		Bind:      "127.0.0.1:8080",
+		User:      "admin",
+		BinAmd64:  filepath.Join(root, "evilginx-linux"),
+		BinArm64:  filepath.Join(root, "evilginx-linux-arm64"),
+		RepoDir:   root,
 		AutoBuild: true,
 	}
 }
@@ -193,6 +216,9 @@ func (s *Store) SetSettings(v Settings) error {
 func (s *Store) List() []*Profile {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if s.data.Profiles == nil {
+		return []*Profile{}
+	}
 	out := make([]*Profile, len(s.data.Profiles))
 	copy(out, s.data.Profiles)
 	sort.Slice(out, func(i, j int) bool { return strings.ToLower(out[i].Name) < strings.ToLower(out[j].Name) })

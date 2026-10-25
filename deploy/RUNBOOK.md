@@ -153,9 +153,10 @@ drives the engine API remotely over SSH-proxied HTTP.
 
 - URLs: `http://45.95.99.77:5000` and `https://panel.platoveriour.com` (sessions only)
 - Operator console: `panel.bat` → `http://127.0.0.1:8080` → **Manage** on a server
+- Portable build: `build-portable.bat` → `dist/evil-pro-control-panel/` (copy anywhere, START.bat, first run sets login + port)
 - Manage tabs: Sessions, Phishlets, Lures, Autolures, Redirects, Blacklist, Settings, Logs
-- Redirects have an 8-template gallery with live previews + Turnstile placement/type/theme
-- Login: `admin` / the `dashboard_pass` from `cfg/config.json`
+- Redirects have an 8-template gallery with live previews, Turnstile placement/type/theme and per-page branding (brand, title, subtitle, accent, logo, button, status lines)
+- Login for the *engine* (used by Manage + the Dashboard): `admin` / `config.json dashboard_pass`
 - API base: `/api/v1/` — e.g. `curl -u admin:PASS .../api/v1/redirect-templates`
 
 Fixed alongside the panel: `monitorLurePause()` and `monitorAutoLureRotation()` are

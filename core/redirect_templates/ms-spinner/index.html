@@ -3,34 +3,28 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Signing you in…</title>
+<title>__TITLE__</title>
 <style>
-:root{--bg:#f3f3f3;--card:#fff;--fg:#1b1b1b;--muted:#666;--accent:#0067b8}
+:root{--bg:#f3f3f3;--card:#fff;--fg:#1b1b1b;--muted:#666;--accent:__ACCENT__}
 @media (prefers-color-scheme:dark){:root{--bg:#1b1b1b;--card:#252525;--fg:#f3f3f3;--muted:#a0a0a0}}
 *{box-sizing:border-box;margin:0;padding:0}
 html,body{height:100%}
 body{font-family:"Segoe UI",-apple-system,BlinkMacSystemFont,system-ui,sans-serif;background:var(--bg);color:var(--fg);display:flex;align-items:center;justify-content:center;padding:20px}
 .card{width:440px;max-width:100%;background:var(--card);padding:44px;box-shadow:0 2px 6px rgba(0,0,0,.1)}
 @media (prefers-color-scheme:dark){.card{border:1px solid #333;box-shadow:none}}
-.logo{width:108px;margin-bottom:24px}
+.logo{min-height:30px;margin-bottom:22px}
 h1{font-size:24px;font-weight:600;margin-bottom:10px}
 p{font-size:15px;color:var(--muted)}
-.spin{margin-top:32px;width:22px;height:22px;border:2px solid rgba(0,103,184,.25);border-top-color:var(--accent);border-radius:50%;animation:s .9s linear infinite}
+.spin{margin-top:32px;width:22px;height:22px;border:2px solid color-mix(in srgb,var(--accent) 25%,transparent);border-top-color:var(--accent);border-radius:50%;animation:s .9s linear infinite}
 .ts{margin-top:22px}
 @keyframes s{to{transform:rotate(360deg)}}
 </style>
 </head>
 <body>
 <div class="card">
-  <svg class="logo" viewBox="0 0 108 24" xmlns="http://www.w3.org/2000/svg" aria-label="Microsoft">
-    <rect x="0" y="1" width="10" height="10" fill="#f25022"/>
-    <rect x="11" y="1" width="10" height="10" fill="#7fba00"/>
-    <rect x="0" y="12" width="10" height="10" fill="#00a4ef"/>
-    <rect x="11" y="12" width="10" height="10" fill="#ffb900"/>
-    <text x="27" y="18" font-family="Segoe UI,sans-serif" font-size="17" font-weight="600" fill="#5e5e5e">Microsoft</text>
-  </svg>
-  <h1>Signing you in…</h1>
-  <p>Please wait while we take you to your account.</p>
+  <div class="logo">__LOGO__</div>
+  <h1>__TITLE__</h1>
+  <p>__SUBTITLE__</p>
   <div class="spin"></div>
   <div class="ts"><div id="__ts_slot__"></div></div>
 </div>

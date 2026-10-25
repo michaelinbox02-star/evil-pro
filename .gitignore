@@ -1,6 +1,9 @@
 release/
 build/
+dist/
 private/
 test.yaml
 .evilpro-panel/
+.gocache/
+.gotmp/
 *.exe~

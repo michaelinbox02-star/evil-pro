@@ -200,6 +200,7 @@ func (ds *DashboardServer) buildMux() http.Handler {
 	api("GET", "/api/v1/redirect-templates", ds.handleRedirectTemplates)
 	api("GET", "/api/v1/redirect-templates/{slug}", ds.handleRedirectTemplatePreview)
 	api("POST", "/api/v1/redirects", ds.handleRedirectAdd)
+	api("POST", "/api/v1/redirects/{id}/edit", ds.handleRedirectEdit)
 	api("DELETE", "/api/v1/redirects/{id}", ds.handleRedirectDelete)
 	api("GET", "/api/v1/redirects/files", ds.handleRedirectFiles)
 

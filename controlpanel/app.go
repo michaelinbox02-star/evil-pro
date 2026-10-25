@@ -73,6 +73,8 @@ type App struct {
 	user string
 	pass string
 
+	bindAddr string
+
 	mu     sync.Mutex
 	tokens map[string]int64
 
@@ -81,6 +83,21 @@ type App struct {
 
 func NewApp(st *Store, user, pass string) *App {
 	return &App{store: st, jobs: newJobRegistry(), user: user, pass: pass, tokens: map[string]int64{}, started: time.Now()}
+}
+
+// SetCredentials updates the login at runtime (used by the settings screen).
+func (a *App) SetCredentials(user, pass string) {
+	a.mu.Lock()
+	a.user = user
+	a.pass = pass
+	a.tokens = map[string]int64{}
+	a.mu.Unlock()
+}
+
+func (a *App) creds() (string, string) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return a.user, a.pass
 }
 
 // ---------------------------------------------------------------------------
@@ -117,7 +134,9 @@ func rndHex(n int) string {
 // auth
 // ---------------------------------------------------------------------------
 
-func (a *App) authEnabled() bool { return a.user != "" || a.pass != "" }
+// authEnabled reports whether a login is required. A password is what turns it
+// on: empty password = open panel (fine on 127.0.0.1, set one before hosting).
+func (a *App) authEnabled() bool { return a.pass != "" }
 
 func (a *App) tokenValid(t string) bool {
 	a.mu.Lock()
@@ -151,7 +170,8 @@ func (a *App) auth(next http.Handler) http.Handler {
 			next.ServeHTTP(w, r)
 			return
 		}
-		if u, p, ok := r.BasicAuth(); ok && u == a.user && p == a.pass {
+		user, pass := a.creds()
+		if u, p, ok := r.BasicAuth(); ok && u == user && p == pass {
 			next.ServeHTTP(w, r)
 			return
 		}
@@ -172,7 +192,8 @@ func (a *App) handleLogin(w http.ResponseWriter, r *http.Request) {
 		jsonErr(w, 400, "invalid body")
 		return
 	}
-	if a.user != b.Username || a.pass != b.Password {
+	user, pass := a.creds()
+	if user != b.Username || pass != b.Password {
 		jsonErr(w, 401, "invalid credentials")
 		return
 	}
@@ -206,6 +227,9 @@ func (a *App) buildMux() http.Handler {
 
 	h("GET", "/", a.handleIndex)
 	h("GET", "/api/state", a.handleState)
+	h("GET", "/api/panel/settings", a.handleState)
+	h("POST", "/api/panel/settings", a.handlePanelSettings)
+	h("POST", "/api/panel/restart", a.handlePanelRestart)
 	h("GET", "/api/profiles", a.handleProfiles)
 	h("POST", "/api/profiles", a.handleProfileSave)
 	h("GET", "/api/profiles/{id}", a.handleProfileGet)

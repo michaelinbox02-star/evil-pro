@@ -1303,6 +1303,8 @@ func (ds *DashboardServer) handleRedirects(w http.ResponseWriter, r *http.Reques
 			"target_url": rp.TargetURL, "turnstile": rp.Turnstile,
 			"turnstile_pos": rp.TurnstilePos, "turnstile_type": rp.TurnstileType,
 			"turnstile_theme": rp.TurnstileTheme, "delay": rp.Delay, "template": rp.Template,
+			"brand": rp.Brand, "title": rp.Title, "subtitle": rp.Subtitle,
+			"accent": rp.Accent, "logo": rp.Logo, "button": rp.Button, "messages": rp.Messages,
 		})
 	}
 	writeJSON(w, 200, map[string]interface{}{"redirects": out, "dir": ds.cfg.GetRedirectsDir()})
@@ -1314,7 +1316,7 @@ func (ds *DashboardServer) handleRedirectTemplates(w http.ResponseWriter, r *htt
 }
 
 // handleRedirectTemplatePreview renders a template with the supplied target/delay
-// so the UI can show a live preview.
+// and any branding overrides so the UI can show a live preview.
 func (ds *DashboardServer) handleRedirectTemplatePreview(w http.ResponseWriter, r *http.Request) {
 	slug := r.PathValue("slug")
 	_, html, err := GetRedirectTemplate(slug)
@@ -1322,13 +1324,69 @@ func (ds *DashboardServer) handleRedirectTemplatePreview(w http.ResponseWriter, 
 		jsonErr(w, 404, err.Error())
 		return
 	}
-	target := r.URL.Query().Get("target")
-	delay := parseIntDefault(r.URL.Query().Get("delay"), 3)
+	q := r.URL.Query()
+	rp := &RedirectPage{
+		Template: slug,
+		Brand:    q.Get("brand"),
+		Title:    q.Get("title"),
+		Subtitle: q.Get("subtitle"),
+		Accent:   q.Get("accent"),
+		Logo:     q.Get("logo"),
+		Button:   q.Get("button"),
+	}
+	if m := q.Get("messages"); m != "" {
+		for _, s := range strings.Split(m, "|") {
+			rp.Messages = append(rp.Messages, s)
+		}
+	}
+	if t := q.Get("turnstile"); t == "1" {
+		rp.Turnstile = true
+		rp.TurnstilePos = q.Get("turnstile_pos")
+		rp.TurnstileType = q.Get("turnstile_type")
+		rp.TurnstileTheme = q.Get("turnstile_theme")
+	}
+	target := q.Get("target")
+	delay := parseIntDefault(q.Get("delay"), 3)
+
+	html = applyTemplateVars(html, rp)
 	html = strings.ReplaceAll(html, "__DESTINATION__", target)
 	html = strings.ReplaceAll(html, "__DELAY__", strconv.Itoa(delay))
+	if rp.Turnstile {
+		html = injectTurnstile(html, rp, turnstilePublicKey, true)
+	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-store")
 	fmt.Fprint(w, html)
+}
+
+// fillBranding copies template defaults into any empty branding field so the page
+// keeps working (and stays editable) even if the template is later removed.
+func fillBranding(rp *RedirectPage) {
+	if rp.Template == "" {
+		return
+	}
+	d := TemplateDefaults(rp.Template)
+	if rp.Brand == "" {
+		rp.Brand = d.Brand
+	}
+	if rp.Title == "" {
+		rp.Title = d.TitleText
+	}
+	if rp.Subtitle == "" {
+		rp.Subtitle = d.Subtitle
+	}
+	if rp.Accent == "" {
+		rp.Accent = d.Accent
+	}
+	if rp.Logo == "" {
+		rp.Logo = d.Logo
+	}
+	if rp.Button == "" {
+		rp.Button = d.Button
+	}
+	if len(rp.Messages) == 0 {
+		rp.Messages = d.Messages
+	}
 }
 
 var validRedirectTSPos = map[string]bool{"slot": true, "inline": true, "overlay": true, "center": true, "bottom": true, "corner": true}
@@ -1339,15 +1397,22 @@ func (ds *DashboardServer) handleRedirectAdd(w http.ResponseWriter, r *http.Requ
 	ds.opMu.Lock()
 	defer ds.opMu.Unlock()
 	var payload struct {
-		Subdomain      string `json:"subdomain"`
-		File           string `json:"file"`
-		Template       string `json:"template"`
-		TargetURL      string `json:"target_url"`
-		Turnstile      bool   `json:"turnstile"`
-		TurnstilePos   string `json:"turnstile_pos"`
-		TurnstileType  string `json:"turnstile_type"`
-		TurnstileTheme string `json:"turnstile_theme"`
-		Delay          int    `json:"delay"`
+		Subdomain      string   `json:"subdomain"`
+		File           string   `json:"file"`
+		Template       string   `json:"template"`
+		TargetURL      string   `json:"target_url"`
+		Turnstile      bool     `json:"turnstile"`
+		TurnstilePos   string   `json:"turnstile_pos"`
+		TurnstileType  string   `json:"turnstile_type"`
+		TurnstileTheme string   `json:"turnstile_theme"`
+		Delay          int      `json:"delay"`
+		Brand          string   `json:"brand"`
+		Title          string   `json:"title"`
+		Subtitle       string   `json:"subtitle"`
+		Accent         string   `json:"accent"`
+		Logo           string   `json:"logo"`
+		Button         string   `json:"button"`
+		Messages       []string `json:"messages"`
 	}
 	if err := readJSON(r, &payload); err != nil {
 		jsonErr(w, 400, "invalid body")
@@ -1427,10 +1492,101 @@ func (ds *DashboardServer) handleRedirectAdd(w http.ResponseWriter, r *http.Requ
 		Subdomain: payload.Subdomain, File: fileName, TargetURL: payload.TargetURL,
 		Turnstile: payload.Turnstile, TurnstilePos: pos, TurnstileType: typ,
 		TurnstileTheme: theme, Delay: delay, Template: payload.Template,
+		Brand: payload.Brand, Title: payload.Title, Subtitle: payload.Subtitle,
+		Accent: payload.Accent, Logo: payload.Logo, Button: payload.Button, Messages: payload.Messages,
 	})
+	if pages := ds.cfg.GetRedirectPages(); len(pages) > 0 {
+		fillBranding(pages[len(pages)-1])
+	}
 	ds.cfg.refreshActiveHostnames()
 	ds.manageCerts(false)
 	writeJSON(w, 200, map[string]string{"status": "added", "file": fileName})
+}
+
+// handleRedirectEdit updates an existing redirect page (target, delay, turnstile
+// and branding).
+func (ds *DashboardServer) handleRedirectEdit(w http.ResponseWriter, r *http.Request) {
+	ds.opMu.Lock()
+	defer ds.opMu.Unlock()
+	id, err := strconv.Atoi(r.PathValue("id"))
+	if err != nil {
+		jsonErr(w, 400, "invalid id")
+		return
+	}
+	pages := ds.cfg.GetRedirectPages()
+	if id < 0 || id >= len(pages) {
+		jsonErr(w, 404, "redirect not found")
+		return
+	}
+	rp := pages[id]
+	var payload struct {
+		TargetURL      *string  `json:"target_url"`
+		Turnstile      *bool    `json:"turnstile"`
+		TurnstilePos   *string  `json:"turnstile_pos"`
+		TurnstileType  *string  `json:"turnstile_type"`
+		TurnstileTheme *string  `json:"turnstile_theme"`
+		Delay          *int     `json:"delay"`
+		Brand          *string  `json:"brand"`
+		Title          *string  `json:"title"`
+		Subtitle       *string  `json:"subtitle"`
+		Accent         *string  `json:"accent"`
+		Logo           *string  `json:"logo"`
+		Button         *string  `json:"button"`
+		Messages       []string `json:"messages"`
+	}
+	if err := readJSON(r, &payload); err != nil {
+		jsonErr(w, 400, "invalid body")
+		return
+	}
+	if payload.TargetURL != nil {
+		if *payload.TargetURL != "" {
+			if _, err := url.ParseRequestURI(*payload.TargetURL); err != nil {
+				jsonErr(w, 400, "invalid target url")
+				return
+			}
+		}
+		rp.TargetURL = *payload.TargetURL
+	}
+	if payload.Turnstile != nil {
+		rp.Turnstile = *payload.Turnstile
+	}
+	if payload.TurnstilePos != nil && validRedirectTSPos[*payload.TurnstilePos] {
+		rp.TurnstilePos = *payload.TurnstilePos
+	}
+	if payload.TurnstileType != nil && validRedirectTSType[*payload.TurnstileType] {
+		rp.TurnstileType = *payload.TurnstileType
+	}
+	if payload.TurnstileTheme != nil && validRedirectTSTheme[*payload.TurnstileTheme] {
+		rp.TurnstileTheme = *payload.TurnstileTheme
+	}
+	if payload.Delay != nil && *payload.Delay > 0 && *payload.Delay <= 30 {
+		rp.Delay = *payload.Delay
+	}
+	if payload.Brand != nil {
+		rp.Brand = *payload.Brand
+	}
+	if payload.Title != nil {
+		rp.Title = *payload.Title
+	}
+	if payload.Subtitle != nil {
+		rp.Subtitle = *payload.Subtitle
+	}
+	if payload.Accent != nil {
+		rp.Accent = *payload.Accent
+	}
+	if payload.Logo != nil {
+		rp.Logo = *payload.Logo
+	}
+	if payload.Button != nil {
+		rp.Button = *payload.Button
+	}
+	if payload.Messages != nil {
+		rp.Messages = payload.Messages
+	}
+	// empty branding falls back to the template defaults
+	fillBranding(rp)
+
+	writeJSON(w, 200, map[string]string{"status": "updated"})
 }
 
 func (ds *DashboardServer) handleRedirectDelete(w http.ResponseWriter, r *http.Request) {

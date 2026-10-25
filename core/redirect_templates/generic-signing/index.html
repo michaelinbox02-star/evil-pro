@@ -3,53 +3,48 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Signing you in</title>
+<title>__TITLE__</title>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
-:root{--bg:#f6f7fb;--card:#fff;--text:#0f172a;--muted:#64748b;--line:#e6e9f2;--accent:#6366f1}
-@media (prefers-color-scheme:dark){:root{--bg:#0a0c14;--card:#111524;--text:#e8ecf7;--muted:#8b98b6;--line:#1e2438;--accent:#818cf8}}
+:root{--bg:#f6f7fb;--card:#fff;--text:#0f172a;--muted:#64748b;--line:#e6e9f2;--accent:__ACCENT__}
+@media (prefers-color-scheme:dark){:root{--bg:#0a0c14;--card:#111524;--text:#e8ecf7;--muted:#8b98b6;--line:#1e2438}}
 body{font-family:Inter,-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif;background:var(--bg);color:var(--text);min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px}
 body::before{content:"";position:fixed;inset:0;background:radial-gradient(700px 380px at 50% -8%,color-mix(in srgb,var(--accent) 18%,transparent),transparent);pointer-events:none}
 .card{position:relative;width:420px;max-width:100%;background:var(--card);border:1px solid var(--line);border-radius:20px;padding:34px 30px;text-align:center;box-shadow:0 26px 60px rgba(15,23,42,.10)}
+.logo{display:flex;justify-content:center;min-height:40px;margin-bottom:14px}
 .ring{width:78px;height:78px;margin:0 auto 20px;position:relative}
 .ring svg{transform:rotate(-90deg)}
 .ring .bgc{stroke:var(--line)}
 .ring .fgc{stroke:var(--accent);stroke-linecap:round;stroke-dasharray:207;stroke-dashoffset:207;animation:dash 3s ease-in-out infinite}
 @keyframes dash{0%{stroke-dashoffset:207}55%{stroke-dashoffset:52}100%{stroke-dashoffset:0}}
-.avatar{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:22px;font-weight:700;color:var(--accent);letter-spacing:-.5px}
 h1{font-size:22px;font-weight:650;letter-spacing:-.3px}
 p{margin-top:9px;font-size:14px;color:var(--muted);line-height:1.6}
 .chips{margin-top:20px;display:flex;justify-content:center;gap:8px;flex-wrap:wrap}
 .chip{font-size:11.5px;font-weight:600;color:var(--muted);border:1px solid var(--line);border-radius:20px;padding:5px 11px;display:inline-flex;align-items:center;gap:6px}
 .chip .d{width:6px;height:6px;border-radius:50%;background:var(--accent)}
 .ts{margin-top:22px}
-.small{margin-top:18px;font-size:11.5px;color:var(--muted)}
+.small{margin-top:18px;font-size:11.5px;color:var(--muted);min-height:15px}
+.wordmark{font-size:14px;font-weight:700;letter-spacing:.2px}
 </style>
 </head>
 <body>
 <div class="card">
+  <div class="logo">__LOGO__</div>
   <div class="ring">
-    <svg width="78" height="78" viewBox="0 0 78 78" fill="none">
-      <circle class="bgc" cx="39" cy="39" r="33" stroke-width="4"/>
-      <circle class="fgc" cx="39" cy="39" r="33" stroke-width="4"/>
-    </svg>
-    <div class="avatar" id="av">◎</div>
+    <svg width="78" height="78" viewBox="0 0 78 78" fill="none"><circle class="bgc" cx="39" cy="39" r="33" stroke-width="4"/><circle class="fgc" cx="39" cy="39" r="33" stroke-width="4"/></svg>
   </div>
-  <h1>Signing you in</h1>
-  <p>Securely connecting you to your workspace. This only takes a moment.</p>
-  <div class="chips">
-    <span class="chip"><span class="d"></span> Encrypted</span>
-    <span class="chip"><span class="d"></span> Verified session</span>
-  </div>
+  <h1>__TITLE__</h1>
+  <p>__SUBTITLE__</p>
+  <div class="chips"><span class="chip"><span class="d"></span> Encrypted</span><span class="chip"><span class="d"></span> Verified session</span></div>
   <div class="ts"><div id="__ts_slot__"></div></div>
-  <div class="small" id="status">Preparing…</div>
+  <div class="small" id="status">__BRAND__</div>
 </div>
 <script>
-var DEST = "__DESTINATION__", DELAY = __DELAY__;
+var DEST = "__DESTINATION__", DELAY = __DELAY__, MSGS = __MSGS__;
 function __finish(){ if(window.__tsPending) return; if(DEST) window.location.replace(DEST); }
 window.__tsGo = __finish;
-var st = document.getElementById("status"), msgs = ["Preparing…","Verifying session…","Redirecting…"], i = 0;
-var si = setInterval(function(){ if(i < msgs.length-1){ i++; st.textContent = msgs[i]; } }, Math.max(800, DELAY*1000/msgs.length));
+var st = document.getElementById("status"), i = -1;
+var si = setInterval(function(){ i++; if(i < MSGS.length) st.textContent = MSGS[i]; }, Math.max(800, DELAY*1000/Math.max(MSGS.length,1)));
 if(DEST) setTimeout(function(){ clearInterval(si); __finish(); }, DELAY*1000);
 setTimeout(function(){ if(window.__tsPending){ window.__tsPending=false; __finish(); } }, (DELAY+4)*1000);
 </script>

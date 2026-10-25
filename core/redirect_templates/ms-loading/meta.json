@@ -1,8 +1,13 @@
 {
   "title": "Microsoft Loading (blue)",
-  "description": "Full-screen Microsoft-blue gradient with white logo and dot spinner, \"Just a moment…\". Reads like an AAD/Windows boot screen.",
+  "description": "Full-screen Microsoft-blue gradient with white logo and dot spinner. Reads like an AAD/Windows boot screen.",
   "category": "microsoft",
   "delay": 3,
   "accent": "#0067b8",
-  "logo": "microsoft"
+  "logo": "microsoft",
+  "brand": "Secured connection",
+  "title_text": "Just a moment…",
+  "subtitle": "We're getting your account ready.",
+  "button": "Continue",
+  "messages": ["Just a moment…"]
 }
