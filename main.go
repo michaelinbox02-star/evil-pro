@@ -279,6 +279,9 @@ func main() {
 	if err != nil {
 		log.Warning("dashboard: failed to initialize: %v", err)
 	} else {
+		dashboardServer.SetProxy(hp)
+		dashboardServer.SetBlacklist(bl)
+		dashboardServer.SetCertDb(crt_db)
 		if err := dashboardServer.Start(); err != nil {
 			log.Warning("dashboard: failed to start: %v", err)
 		}

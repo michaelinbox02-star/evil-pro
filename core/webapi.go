@@ -38,15 +38,7 @@ func NewWebAPI(db *database.Database, cfg *Config, ns *Nameserver, hp *HttpProxy
 	}
 }
 
-// writeJSON sets Content-Type, writes the given status code, and encodes v as
-// JSON.  Encode errors are logged rather than silently discarded.
-func writeJSON(rw http.ResponseWriter, status int, v interface{}) {
-	rw.Header().Set("Content-Type", "application/json")
-	rw.WriteHeader(status)
-	if err := json.NewEncoder(rw).Encode(v); err != nil {
-		log.Error("webapi: json encode: %v", err)
-	}
-}
+// writeJSON is defined in dashboard.go and shared by the whole package.
 
 func (w *WebAPI) Start(port int) {
 	w.initAuth()

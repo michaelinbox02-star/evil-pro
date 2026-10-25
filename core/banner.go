@@ -11,6 +11,9 @@ const (
 	VERSION = "4.0.0"
 )
 
+// COMMIT is overridden at build time via -ldflags "-X .../core.COMMIT=<sha>".
+var COMMIT = "dev"
+
 func putAsciiArt(s string) {
 	for _, c := range s {
 		d := string(c)
