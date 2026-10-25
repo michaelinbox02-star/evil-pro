@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -261,38 +262,35 @@ func (ds *DashboardServer) tokenValid(tok string) bool {
 	if tok == "" {
 		return false
 	}
-	ds.mu.Lock()
-	defer ds.mu.Unlock()
-	t, ok := ds.tokens[tok]
-	if !ok {
+	val, err := ds.db.GetAuthToken(tok)
+	if err != nil || val == "" {
 		return false
 	}
-	if time.Now().After(t.expires) {
-		delete(ds.tokens, tok)
+	parts := strings.SplitN(val, "|", 2)
+	if len(parts) != 2 {
+		return false
+	}
+	exp, err := strconv.ParseInt(parts[1], 10, 64)
+	if err != nil {
+		return false
+	}
+	if time.Now().Unix() > exp {
+		ds.db.DeleteAuthToken(tok)
 		return false
 	}
 	return true
 }
 
+// newToken issues a token persisted in the database so logins survive a restart.
 func (ds *DashboardServer) newToken(user string) string {
 	tok := GenRandomToken()
-	ds.mu.Lock()
-	defer ds.mu.Unlock()
-	// opportunistic purge
-	now := time.Now()
-	for k, v := range ds.tokens {
-		if now.After(v.expires) {
-			delete(ds.tokens, k)
-		}
-	}
-	ds.tokens[tok] = &authToken{user: user, expires: now.Add(panelTokenTTL)}
+	exp := time.Now().Add(panelTokenTTL).Unix()
+	_ = ds.db.StoreAuthToken(tok, user+"|"+strconv.FormatInt(exp, 10))
 	return tok
 }
 
 func (ds *DashboardServer) dropToken(tok string) {
-	ds.mu.Lock()
-	delete(ds.tokens, tok)
-	ds.mu.Unlock()
+	_ = ds.db.DeleteAuthToken(tok)
 }
 
 // ---------------------------------------------------------------------------
