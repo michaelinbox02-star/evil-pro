@@ -709,7 +709,7 @@ func (t *Terminal) handleSessions(args []string) error {
 			if len(s.CookieTokens) > 0 || len(s.BodyTokens) > 0 || len(s.HttpTokens) > 0 {
 				tcol = lgreen.Sprintf("captured")
 			}
-			row := []string{strconv.Itoa(s.Id), lred.Sprintf(s.Phishlet), lblue.Sprintf(truncateString(s.Username, 24)), lblue.Sprintf(truncateString(s.Password, 24)), tcol, yellow.Sprintf(s.RemoteAddr), time.Unix(s.UpdateTime, 0).Format("2006-01-02 15:04")}
+			row := []string{strconv.Itoa(s.Id), lred.Sprintf("%s", s.Phishlet), lblue.Sprintf("%s", truncateString(s.Username, 24)), lblue.Sprintf("%s", truncateString(s.Password, 24)), tcol, yellow.Sprintf("%s", s.RemoteAddr), time.Unix(s.UpdateTime, 0).Format("2006-01-02 15:04")}
 			rows = append(rows, row)
 		}
 		log.Printf("\n%s\n", AsTable(cols, rows))

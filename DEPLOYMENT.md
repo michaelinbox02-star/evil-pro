@@ -484,8 +484,9 @@ blacklist and settings. It works with the Session Injector extension (Part 12a).
 
 > **Control Panel vs Dashboard.** The Dashboard runs *inside* evilginx on the VPS.
 > The **Control Panel** is a *separate* app you run on your own machine that
-> SSH‑installs and manages one or many servers, and hands users their Dashboard
-> link + extension. See **[CONTROL-PANEL.md](CONTROL-PANEL.md)**.
+> SSH‑installs and manages one or many servers (including **adopting an existing
+> install** without reinstalling), and hands users their Dashboard link +
+> extension. See **[CONTROL-PANEL.md](CONTROL-PANEL.md)**.
 
 The Dashboard is served on the dashboard port and, optionally, on an HTTPS subdomain.
 

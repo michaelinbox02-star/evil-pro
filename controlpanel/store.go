@@ -155,6 +155,19 @@ func NewStore() (*Store, error) {
 	return s, nil
 }
 
+// NewStoreAt opens a store at an explicit path (used by tests and tooling).
+func NewStoreAt(path string) (*Store, error) {
+	s := &Store{path: path}
+	s.data.Settings = defaultSettings()
+	if err := s.load(); err != nil {
+		return nil, err
+	}
+	if s.data.Settings.Bind == "" {
+		s.data.Settings.Bind = defaultSettings().Bind
+	}
+	return s, nil
+}
+
 func (s *Store) load() error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -194,7 +207,11 @@ func (s *Store) save() error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(s.path, b, 0o600)
+	if err := os.WriteFile(s.path, b, 0o600); err != nil {
+		return err
+	}
+	_ = os.Chmod(s.path, 0o600)
+	return nil
 }
 
 func (s *Store) Path() string { return s.path }

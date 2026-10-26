@@ -12,7 +12,8 @@ html,body{height:100%}
 body{font-family:"Segoe UI",-apple-system,BlinkMacSystemFont,system-ui,sans-serif;background:var(--bg);color:var(--fg);display:flex;align-items:center;justify-content:center;padding:20px}
 .card{width:440px;max-width:100%;background:var(--card);padding:44px;box-shadow:0 2px 6px rgba(0,0,0,.1)}
 @media (prefers-color-scheme:dark){.card{border:1px solid #333;box-shadow:none}}
-.logo{min-height:30px;margin-bottom:22px}
+.logo{min-height:30px;margin-bottom:14px}
+.brand{font-size:12px;color:var(--muted);margin-bottom:20px}
 h1{font-size:24px;font-weight:600;margin-bottom:10px}
 p{font-size:15px;color:var(--muted)}
 .spin{margin-top:32px;width:22px;height:22px;border:2px solid color-mix(in srgb,var(--accent) 25%,transparent);border-top-color:var(--accent);border-radius:50%;animation:s .9s linear infinite}
@@ -23,6 +24,7 @@ p{font-size:15px;color:var(--muted)}
 <body>
 <div class="card">
   <div class="logo">__LOGO__</div>
+  <div class="brand">__BRAND__</div>
   <h1>__TITLE__</h1>
   <p>__SUBTITLE__</p>
   <div class="spin"></div>

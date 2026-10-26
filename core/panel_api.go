@@ -1812,8 +1812,25 @@ func (ds *DashboardServer) applyConfig(key, value string) error {
 	c := ds.cfg
 	switch key {
 	case "domain":
+		value = strings.ToLower(strings.TrimSpace(value))
+		if value == c.GetBaseDomain() {
+			break // no change -> do not wipe phishlet state
+		}
+		// ResetAllSites() clears every phishlet's hostname/enabled flag, so remember
+		// what was on and re-apply it against the new domain.
+		var prevEnabled []string
+		for _, s := range c.GetPhishletNames() {
+			if c.IsSiteEnabled(s) {
+				prevEnabled = append(prevEnabled, s)
+			}
+		}
 		c.SetBaseDomain(value)
 		c.ResetAllSites()
+		for _, s := range prevEnabled {
+			if c.SetSiteHostname(s, value) {
+				_ = c.SetSiteEnabled(s)
+			}
+		}
 		ds.manageCerts(false)
 	case "external_ipv4":
 		c.SetServerExternalIP(value)

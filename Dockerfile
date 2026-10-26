@@ -1,19 +1,15 @@
 # Stage 1: Build
-FROM golang:1.22-alpine AS builder
+FROM golang:1.25-alpine AS builder
 
 RUN apk add --no-cache git ca-certificates build-base
 
 WORKDIR /src
 
-# Copy go.mod and go.sum first for better caching
-COPY go.mod go.sum ./
-RUN go mod download
-
-# Copy source code
+# Uses the vendored dependencies, so no network is needed
 COPY . .
 
-# Build evilginx2
-RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o /build/evilginx .
+# Build the evil-pro engine (linux/amd64)
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -mod=mod -ldflags="-s -w" -o /build/evilginx .
 
 # Stage 2: Runtime
 FROM alpine:latest
@@ -46,4 +42,4 @@ EXPOSE 53 80 443 5000
 VOLUME ["/home/evilginx/.evilginx"]
 
 ENTRYPOINT ["evilginx"]
-CMD ["-p", "/home/evilginx/phishlets", "-t", "/home/evilginx/redirectors"]
+CMD ["-p", "/home/evilginx/phishlets", "-t", "/home/evilginx/redirectors", "-noterm"]

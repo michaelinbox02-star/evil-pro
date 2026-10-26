@@ -61,6 +61,20 @@ var S = {
 };
 
 /* ---------------- layout ---------------- */
+var ICO = {
+  sessions: '<circle cx="9" cy="8" r="3.2"/><path d="M3.5 19c0-3 2.5-5 5.5-5s5.5 2 5.5 5"/><path d="M15 6.5h4M15 10h4M15 13.5h4"/>',
+  refresh: '<path d="M20 12a8 8 0 1 1-2.3-5.7"/><path d="M20 4v4h-4"/>',
+  theme: '<path d="M12 3v1.5M12 19.5V21M4.2 4.2l1 1M18.8 18.8l1 1M3 12h1.5M19.5 12H21M4.2 19.8l1-1M18.8 5.2l1-1"/><circle cx="12" cy="12" r="3.4"/>',
+  logout: '<path d="M15 4h3a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-3"/><path d="M10 8l-4 4 4 4M6 12h9"/>',
+  csv: '<path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/>',
+  menu: '<path d="M4 7h16M4 12h16M4 17h16"/>',
+  shield: '<path d="M12 3l7 3v5.2c0 4.3-2.9 8.1-7 9.3-4.1-1.2-7-5-7-9.3V6z"/>'
+};
+function ico(n, cls) {
+  if (!ICO[n]) return '';
+  return '<svg class="ic ' + (cls || '') + '" viewBox="0 0 24 24">' + ICO[n] + '</svg>';
+}
+
 function renderChrome() {
   var stats = S.stats || { total_sessions: 0, with_tokens: 0, no_tokens: 0, unique_ips: 0, active_sessions: 0 };
   var rate = stats.total_sessions ? Math.round(stats.with_tokens / stats.total_sessions * 100) : 0;
@@ -71,7 +85,7 @@ function renderChrome() {
     '</div>' +
     '<nav class="nav">' +
       '<div class="nav-group">Monitor</div>' +
-      '<div class="nav-item active"><span class="ico">⌘</span><span>Sessions</span><span class="count">' + stats.total_sessions + '</span></div>' +
+      '<div class="nav-item active">' + ico('sessions') + '<span>Sessions</span><span class="count">' + stats.total_sessions + '</span></div>' +
     '</nav>' +
     '<div class="side-foot">' +
       '<span><span class="dot" id="liveDot"></span> live</span>' +
@@ -81,11 +95,11 @@ function renderChrome() {
   $('#pageTitle').textContent = 'Sessions';
   $('#pageDesc').textContent = stats.with_tokens + ' with tokens · ' + stats.unique_ips + ' unique IPs · ' + stats.active_sessions + ' active now';
   $('#topActions').innerHTML =
-    '<button class="btn sm" data-act="theme">◐</button>' +
-    '<button class="btn sm" data-act="export" data-id="csv">CSV</button>' +
+    '<button class="btn sm" data-act="theme" title="Toggle light/dark">' + ico('theme') + '</button>' +
+    '<button class="btn sm" data-act="export" data-id="csv">' + ico('csv') + ' CSV</button>' +
     '<button class="btn sm" data-act="export" data-id="json">JSON</button>' +
-    '<button class="btn sm" data-act="refresh">Refresh</button>' +
-    '<button class="btn sm" data-act="logout">Logout</button>';
+    '<button class="btn sm" data-act="refresh">' + ico('refresh') + ' Refresh</button>' +
+    '<button class="btn sm" data-act="logout">' + ico('logout') + ' Logout</button>';
 }
 
 /* ---------------- sessions ---------------- */

@@ -263,8 +263,9 @@ func (a *App) handleTest(w http.ResponseWriter, r *http.Request) {
 	}
 	c, err := dial(p, func(fp string) { a.pinHostKey(p.ID, fp) })
 	if err != nil {
-		a.store.Update(p.ID, func(pp *Profile) { pp.LastError = err.Error(); pp.LastStatus = "unreachable" })
-		jsonErr(w, 400, err.Error())
+		msg := classifySSH(err)
+		a.store.Update(p.ID, func(pp *Profile) { pp.LastError = msg; pp.LastStatus = "unreachable" })
+		jsonErr(w, 400, msg)
 		return
 	}
 	defer c.Close()
@@ -278,7 +279,11 @@ func (a *App) handleTest(w http.ResponseWriter, r *http.Request) {
 		pp.LastError = ""
 		pp.LastSeen = time.Now().Unix()
 	})
-	writeJSON(w, 200, map[string]interface{}{"status": "ok", "probe": pr, "host_key": p.HostKeyFP})
+	// also check whether an existing deployment is there
+	disc := a.Discover(p)
+	writeJSON(w, 200, map[string]interface{}{
+		"status": "ok", "probe": pr, "host_key": p.HostKeyFP, "discovery": disc,
+	})
 }
 
 func (a *App) handleStatus(w http.ResponseWriter, r *http.Request) {
@@ -340,8 +345,16 @@ func (a *App) handleInstall(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if p.DashboardPass == "" {
-		p.DashboardPass = rndHex(6)
-		_, _ = a.store.Upsert(p)
+		// an existing install already has credentials - learn them instead of
+		// inventing new ones
+		a.syncCredsFromServer(p)
+		if np := a.store.Get(p.ID); np != nil {
+			p = np
+		}
+		if p.DashboardPass == "" {
+			p.DashboardPass = rndHex(6)
+			_, _ = a.store.Upsert(p)
+		}
 	}
 	j := a.StartInstall(p, o)
 	writeJSON(w, 200, map[string]string{"job": j.ID})
@@ -381,6 +394,16 @@ func (a *App) handleUninstall(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	j := a.StartUninstall(p)
+	writeJSON(w, 200, map[string]string{"job": j.ID})
+}
+
+func (a *App) handleRepair(w http.ResponseWriter, r *http.Request) {
+	p := a.store.Get(r.PathValue("id"))
+	if p == nil {
+		jsonErr(w, 404, "profile not found")
+		return
+	}
+	j := a.StartRepair(p)
 	writeJSON(w, 200, map[string]string{"job": j.ID})
 }
 
@@ -445,8 +468,31 @@ func (a *App) handleEngineProxy(w http.ResponseWriter, r *http.Request) {
 	}
 	resp, err := client.Do(req)
 	if err != nil {
-		jsonErr(w, 502, "engine unreachable: "+err.Error())
+		jsonErr(w, 502, "engine unreachable at "+base+": "+err.Error())
 		return
+	}
+	// A 401 usually means the profile is out of date (adopted server, changed
+	// credentials). Pull them from the server and retry once.
+	if resp.StatusCode == http.StatusUnauthorized {
+		_ = resp.Body.Close()
+		a.syncCredsFromServer(p)
+		if np := a.store.Get(p.ID); np != nil {
+			req2, _ := http.NewRequestWithContext(r.Context(), r.Method, target, bytes.NewReader(body))
+			if ct := r.Header.Get("Content-Type"); ct != "" {
+				req2.Header.Set("Content-Type", ct)
+			}
+			if np.DashboardUser != "" || np.DashboardPass != "" {
+				req2.SetBasicAuth(np.DashboardUser, np.DashboardPass)
+			}
+			resp, err = client.Do(req2)
+			if err == nil {
+				p = np
+			}
+		}
+		if err != nil {
+			jsonErr(w, 502, "engine unreachable at "+base+": "+err.Error())
+			return
+		}
 	}
 	defer resp.Body.Close()
 	for k, vs := range resp.Header {

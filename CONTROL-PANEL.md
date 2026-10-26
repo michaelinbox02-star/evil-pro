@@ -110,6 +110,31 @@ Every step streams into a live log. Failures stop the job with the exact command
 > DNS must already point the domain (and `*`) at the server, or use the
 > Cloudflare option. TLS otherwise relies on ACME per‑host certificates.
 
+## 4a. Adopt an existing server (no reinstall)
+
+If evil-pro is already running on a VPS (deployed earlier, by hand, or from another
+machine), you do **not** need to reinstall it:
+
+1. **Add server** → host, SSH port, user, password (or key). Domain can stay blank.
+2. Save, then click **Scan** (or **Connect**).
+3. The panel SSHes in, locates the install (systemd unit → install dir, config,
+   certificate, service state) and shows what it found: domain, phishlet,
+   dashboard login, ports, certificate and whether the engine API is reachable.
+4. Click **Adopt this server** — nothing on the VPS is touched; the panel just
+   imports the settings (including the engine's dashboard credentials) so
+   **Manage** works immediately.
+
+**Repair config** re-applies the essentials (phishlet bound to the domain and
+enabled, anti-GSB flags) and restarts — useful if something rewrote the config.
+
+Related behaviour:
+
+- `Update` never overwrites an existing `config.json` unless you tick *fresh*.
+- install / update / repair read the server's own dashboard credentials back into
+  the profile, so Manage never 401s after a reconnect.
+- A 401 from the engine makes the panel re-read the credentials and retry once.
+- VPS rebuilt and the host key changed → **Edit → clear pinned host key**.
+
 ## 5. Daily use
 
 Per server card:
