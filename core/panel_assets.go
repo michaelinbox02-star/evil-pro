@@ -1,24 +1,29 @@
 package core
 
-const panelFavicon = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"><rect width="32" height="32" rx="8" fill="#6366f1"/><path d="M18 6 9 18h5l-1 8 9-12h-5z" fill="#fff"/></svg>`
+import "strings"
+
+const panelFavicon = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"><rect width="32" height="32" rx="7" fill="#16181d"/><path d="M18 5.5 9.5 18h5.2l-1 8.5L22.5 14h-5.4z" fill="none" stroke="#3b82f6" stroke-width="2.2" stroke-linejoin="round" stroke-linecap="round"/></svg>`
+
+// brandMark is the flat monoline bolt used in the sidebar and on the login card.
+const brandMark = `<svg class="mark" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M13.4 2.6 6 13.2h4.6L9.4 21.4 17 10.6h-4.6z" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round" stroke-linecap="round"/></svg>`
 
 const panelLoginCSS = `*{box-sizing:border-box;margin:0;padding:0}
-:root{--bg:#0a0d16;--panel:#111524;--border:#1e2438;--text:#e6ebf5;--muted:#7c89a6;--accent:#6366f1;--accent-h:#4f46e5;--err:#f87171}
-body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif;background:var(--bg);color:var(--text);min-height:100vh;display:flex;align-items:center;justify-content:center;background-image:radial-gradient(900px 500px at 50% -10%,rgba(99,102,241,.16),transparent)}
-.box{width:340px;background:var(--panel);border:1px solid var(--border);border-radius:16px;padding:28px 26px;box-shadow:0 30px 70px rgba(0,0,0,.5)}
-.brand{display:flex;align-items:center;gap:10px;margin-bottom:4px}
-.brand svg{width:30px;height:30px;border-radius:8px}
-.brand h1{font-size:15px;font-weight:700;letter-spacing:-.2px}
-.sub{color:var(--muted);font-size:12px;margin-bottom:22px}
-label{display:block;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);margin:14px 0 6px}
-input{width:100%;padding:10px 12px;border-radius:9px;border:1px solid var(--border);background:#0c1019;color:var(--text);font-size:13px;outline:none;transition:border-color .15s}
-input:focus{border-color:var(--accent)}
-button{width:100%;margin-top:20px;padding:11px;border:none;border-radius:9px;background:var(--accent);color:#fff;font-size:13px;font-weight:600;cursor:pointer;transition:background .15s}
+:root{--bg:#0e1116;--panel:#12161c;--border:#232a33;--text:#e6eaf0;--muted:#9aa5b1;--accent:#2563eb;--accent-h:#1d4ed8;--err:#f87171}
+body{font-family:Inter,-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,system-ui,sans-serif;background:var(--bg);color:var(--text);min-height:100vh;display:flex;align-items:center;justify-content:center}
+.box{width:330px;background:var(--panel);border:1px solid var(--border);border-radius:10px;padding:26px 24px;box-shadow:0 18px 48px rgba(0,0,0,.45)}
+.brand{display:flex;align-items:center;gap:9px;margin-bottom:3px}
+.brand svg.mark{width:20px;height:20px;color:#3b82f6}
+.brand h1{font-size:14px;font-weight:600}
+.sub{color:#6b7683;font-size:11.5px;margin-bottom:20px}
+label{display:block;font-size:10.5px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:#6b7683;margin:13px 0 5px}
+input{width:100%;padding:8px 10px;border-radius:6px;border:1px solid var(--border);background:#0e1116;color:var(--text);font-size:13px;outline:none;transition:border-color .12s}
+input:focus{border-color:var(--accent);box-shadow:0 0 0 2px rgba(59,130,246,.12)}
+button{width:100%;margin-top:18px;padding:9px;border:none;border-radius:6px;background:var(--accent);color:#fff;font-size:13px;font-weight:500;cursor:pointer;transition:background .12s}
 button:hover{background:var(--accent-h)}
 button:disabled{opacity:.6;cursor:default}
-.err{margin-top:14px;font-size:12px;color:var(--err);min-height:16px}`
+.err{margin-top:12px;font-size:12px;color:var(--err);min-height:15px}`
 
-const panelLoginHTML = `<!DOCTYPE html>
+const panelLoginHTMLRaw = `<!DOCTYPE html>
 <html lang="en" data-theme="dark">
 <head>
 <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
@@ -28,7 +33,7 @@ const panelLoginHTML = `<!DOCTYPE html>
 </head>
 <body>
 <form class="box" id="form">
-  <div class="brand"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"><rect width="32" height="32" rx="8" fill="#6366f1"/><path d="M18 6 9 18h5l-1 8 9-12h-5z" fill="#fff"/></svg><h1>evil-pro dashboard</h1></div>
+  <div class="brand"><!--mark--><h1>evil-pro dashboard</h1></div>
   <div class="sub">Session capture · cookie takeover</div>
   <label for="u">Username</label>
   <input id="u" name="u" autocomplete="username" autofocus>
@@ -53,6 +58,9 @@ document.getElementById('form').addEventListener('submit', async function(e){
 </script>
 </body></html>`
 
+// panelLoginHTML is the raw login page with the shared brand mark injected.
+var panelLoginHTML = strings.Replace(panelLoginHTMLRaw, "<!--mark-->", brandMark, 1)
+
 const panelCSS = `*{box-sizing:border-box;margin:0;padding:0}
 :root{
 --bg:#0e1116;--surface:#12161c;--surface2:#161a21;--surface3:#1a1f27;--surface4:#1f2530;
@@ -73,7 +81,7 @@ svg.ic{width:15px;height:15px;flex-shrink:0;stroke:currentColor;fill:none;stroke
 /* sidebar */
 .side{width:var(--sb);flex-shrink:0;background:var(--surface);border-right:1px solid var(--border);display:flex;flex-direction:column;position:sticky;top:0;height:100vh}
 .side-head{padding:13px 14px;display:flex;align-items:center;gap:9px;border-bottom:1px solid var(--border)}
-.side-head svg.logo{width:22px;height:22px;border-radius:5px;flex-shrink:0}
+.side-head svg.mark{width:18px;height:18px;flex-shrink:0;color:var(--accent)}
 .side-brand{font-size:12.5px;font-weight:600;letter-spacing:-.1px;line-height:1.2}
 .side-brand small{display:block;font-size:10.5px;font-weight:400;color:var(--dim);letter-spacing:.02em}
 .nav{flex:1;overflow-y:auto;padding:8px 8px 12px}
@@ -118,12 +126,19 @@ svg.ic{width:15px;height:15px;flex-shrink:0;stroke:currentColor;fill:none;stroke
 .stat-value{font-size:20px;font-weight:600;font-family:var(--mono);margin-top:4px;line-height:1.15}
 .stat-value.ok{color:var(--ok)}.stat-value.warn{color:var(--warn)}.stat-value.accent{color:var(--accent)}
 .stat-sub{font-size:10.5px;color:var(--dim);margin-top:2px}
+.statcard{background:var(--surface2);border:1px solid var(--border);border-radius:var(--r2);padding:11px 13px;display:flex;gap:11px;align-items:flex-start}
+.statcard .chipico{width:26px;height:26px;border-radius:6px;background:var(--surface4);display:inline-flex;align-items:center;justify-content:center;color:var(--muted);flex-shrink:0}
+.statcard.hot .chipico{background:var(--accent-bg);color:var(--accent)}
+.statcard.live .chipico{background:var(--ok-bg);color:var(--ok)}
+.statcard .sl{font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--dim)}
+.statcard .sv{font-family:var(--mono);font-size:18px;font-weight:600;line-height:1.15;margin-top:2px}
+.statcard .ss{font-size:10.5px;color:var(--dim);margin-top:2px}
 .two{grid-template-columns:1.5fr 1fr}
 @media(max-width:1050px){.two{grid-template-columns:1fr}}
 
 /* tables */
 table{width:100%;border-collapse:collapse}
-th{text-align:left;font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--dim);padding:8px 12px;border-bottom:1px solid var(--border);white-space:nowrap;background:var(--surface3)}
+th{text-align:left;font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--dim);padding:8px 12px;border-bottom:1px solid var(--border);white-space:nowrap;background:transparent}
 td{padding:7px 12px;border-bottom:1px solid var(--border);vertical-align:middle}
 tbody tr:last-child td{border-bottom:none}
 tbody tr:hover{background:var(--surface3)}
@@ -225,7 +240,7 @@ const panelIndexHTML = `<!DOCTYPE html>
 <div id="app">
   <aside class="side" id="side">
     <div class="side-head">
-      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"><rect width="32" height="32" rx="8" fill="#6366f1"/><path d="M18 6 9 18h5l-1 8 9-12h-5z" fill="#fff"/></svg>
+      <svg class="mark" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M13.4 2.6 6 13.2h4.6L9.4 21.4 17 10.6h-4.6z" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round" stroke-linecap="round"/></svg>
       <div class="side-brand">evil-pro<small>dashboard</small></div>
     </div>
     <nav class="nav" id="nav"></nav>

