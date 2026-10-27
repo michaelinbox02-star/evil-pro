@@ -17,7 +17,8 @@
    pinned session card and to a tab group, so several windows are tellable apart.
    ========================================================================== */
 
-const DEFAULTS = { mode: 'normal', autoOpen: false, namePrefix: '', dashboardUrl: '', user: '', pass: '' };
+const SCHEMA = 2;
+const DEFAULTS = { mode: 'normal', autoOpen: false, namePrefix: '', tabGroups: false, dashboardUrl: '', user: '', pass: '', schema: SCHEMA };
 const K = {
   settings: 'settings',
   wins: 'winIds',
@@ -30,19 +31,87 @@ const K = {
 };
 const RECENT_MAX = 8;
 const SEEN_MAX = 400;
-const MODES = ['incognito', 'normal', 'here'];
+const MODES = ['incognito', 'normal', 'here', 'profile'];
+const HOST = 'com.evilpro.host';
 
 function normMode(m) {
   const v = String(m || '').toLowerCase();
   if (v === 'isolated' || v === 'incognito') return 'incognito';
   if (v === 'here') return 'here';
+  if (v === 'profile') return 'profile';
   return 'normal';
+}
+
+/* --------------------------------------------------------- native host ---- */
+// A real browser profile can only be created by a new browser process, so a small
+// native-messaging host does the launching (see extension/host). Everything degrades
+// to a normal window when it is not installed.
+let hostInfo = null;
+
+async function browserHint() {
+  try {
+    const b = navigator.brave;
+    if (b) {
+      const v = typeof b.isBrave === 'function' ? await b.isBrave() : b.isBrave();
+      if (v) return 'brave';
+    }
+  } catch (e) { /* not brave */ }
+  const ua = navigator.userAgent || '';
+  if (/Edg\//.test(ua)) return 'edge';
+  return 'chrome';
+}
+
+function sendNative(msg) {
+  return new Promise((resolve) => {
+    try {
+      chrome.runtime.sendNativeMessage(HOST, msg, (r) => {
+        const err = chrome.runtime.lastError;
+        if (err) resolve({ error: err.message });
+        else resolve(r || {});
+      });
+    } catch (e) { resolve({ error: String(e.message || e) }); }
+  });
+}
+
+async function pingHost() {
+  if (hostInfo) return hostInfo;
+  const r = await sendNative({ action: 'ping', browserHint: await browserHint() });
+  hostInfo = r && r.ok ? r : { error: r.error || 'host not installed' };
+  return hostInfo;
+}
+
+function b64url(str) {
+  return btoa(unescape(encodeURIComponent(str))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+
+// launch a dedicated profile via the host; returns null when unavailable
+async function launchProfile(payload, label) {
+  const info = await pingHost();
+  if (!info.ok) return null;
+  const packed = b64url(JSON.stringify({ u: payload.target_url, n: label, c: payload.cookies || [] }));
+  const r = await sendNative({
+    action: 'launch',
+    name: label,
+    browserHint: (await browserHint()),
+    payload: packed,
+  });
+  if (r.error) return { error: r.error };
+  return r;
 }
 
 /* ---------------------------------------------------------------- settings */
 async function getSettings() {
   const got = await chrome.storage.local.get(K.settings);
-  const s = Object.assign({}, DEFAULTS, got[K.settings] || {});
+  const raw = got[K.settings] || {};
+  const s = Object.assign({}, DEFAULTS, raw);
+  if (raw.schema !== SCHEMA) {
+    // v2.0 shipped incognito as the automatic default and stored it as
+    // "isolated". The operator asked for plain windows, so migrate exactly that
+    // legacy value once. A deliberate v2.1 "incognito" choice is kept.
+    if (raw.mode === 'isolated') s.mode = 'normal';
+    s.schema = SCHEMA;
+    await chrome.storage.local.set({ [K.settings]: s });
+  }
   s.mode = normMode(s.mode);
   return s;
 }
@@ -72,13 +141,13 @@ async function liveWindow(kind) {
   const e = map[kind];
   if (!e) return null;
   try {
-    await chrome.windows.get(e.id);
-    return { id: e.id, kind: e.kind || kind };
-  } catch (err) {
-    delete map[kind];
-    await saveWinMap(map);
-    return null;
-  }
+    // getAll() never throws for a missing id, unlike get()
+    const all = await chrome.windows.getAll();
+    if (all.some((w) => w.id === e.id)) return { id: e.id, kind: e.kind || kind };
+  } catch (err) { /* treat as gone */ }
+  delete map[kind];
+  await saveWinMap(map);
+  return null;
 }
 
 async function liveWindows() {
@@ -103,7 +172,8 @@ async function ensureWindow(kind) {
     try {
       w = await chrome.windows.create(Object.assign({ incognito: true }, base));
     } catch (e) {
-      // incognito unavailable (policy / user setting): degrade to a normal window
+      // incognito unavailable (policy / "allowed in private" off): use a normal
+      // window, but remember that we degraded so the UI can say so
       actual = 'normal';
       w = await chrome.windows.create(base);
     }
@@ -113,7 +183,7 @@ async function ensureWindow(kind) {
   const map = await winMap();
   map[want] = { id: w.id, kind: actual };
   await saveWinMap(map);
-  return { id: w.id, kind: actual };
+  return { id: w.id, kind: actual, degraded: actual !== want };
 }
 
 async function touchedMap() { return (await chrome.storage.local.get(K.touched))[K.touched] || {}; }
@@ -254,7 +324,7 @@ function infoOf(payload, where, label, winId) {
 }
 
 /* ------------------------------------------------------------------- window */
-async function openTabs(winId, payload, label) {
+async function openTabs(winId, payload, label, useGroups) {
   const cardURL = chrome.runtime.getURL('session-card.html');
   const tabs = await chrome.tabs.query({ windowId: winId });
   let card = tabs.find((t) => t.url && t.url.indexOf(cardURL) === 0);
@@ -262,11 +332,13 @@ async function openTabs(winId, payload, label) {
   let target = tabs.find((t) => t.id !== card.id && t.url && t.url.indexOf(cardURL) !== 0);
   if (target) await chrome.tabs.update(target.id, { url: payload.target_url, active: true });
   else target = await chrome.tabs.create({ windowId: winId, url: payload.target_url, active: true });
-  // name the window: group the tabs under a labelled chip
-  try {
-    const gid = await chrome.tabs.group({ tabIds: [card.id, target.id], createProperties: { windowId: winId } });
-    await chrome.tabGroups.update(gid, { title: label, color: 'blue' });
-  } catch (e) { /* older Chrome: the pinned card still carries the name */ }
+  // optional: label the window with a tab group (Firefox has no tabGroups API)
+  if (useGroups && chrome.tabs.group) {
+    try {
+      const gid = await chrome.tabs.group({ tabIds: [card.id, target.id], createProperties: { windowId: winId } });
+      if (chrome.tabGroups) await chrome.tabGroups.update(gid, { title: label, color: 'blue' });
+    } catch (e) { /* the pinned card still carries the name */ }
+  }
   return target;
 }
 
@@ -283,6 +355,22 @@ async function takeover(payload, mode, opts) {
     res = await applyCookies(cookies, undefined);
     res.where = 'this profile';
     if (payload.target_url) await chrome.tabs.create({ url: payload.target_url, active: true });
+  } else if (where === 'profile') {
+    const r = await launchProfile(Object.assign({}, payload, { cookies: cookies }), label);
+    if (r && !r.error) {
+      res = { success: cookies.length, failed: 0, cleared: 0, errors: [], where: 'own profile', profile: r.profile };
+    } else if (r && r.error) {
+      return { error: 'profile launch failed: ' + r.error };
+    } else {
+      // host missing -> behave like a normal window
+      const win = await ensureWindow('normal');
+      winId = win.id;
+      res = await applyCookies(cookies, undefined, domainsOf(cookies));
+      res.where = 'normal window (host not installed)';
+      if (payload.target_url) await openTabs(winId, payload, label, !!st.tabGroups);
+      await chrome.windows.update(winId, { focused: true });
+    }
+    await chrome.storage.local.set({ [K.active]: infoOf(payload, where, label, winId) });
   } else {
     const win = await ensureWindow(where);
     winId = win.id;
@@ -294,12 +382,13 @@ async function takeover(payload, mode, opts) {
     const domains = Array.from(new Set(allTouched(touched).concat(domainsOf(cookies))));
     res = await applyCookies(cookies, storeId, domains);
     res.where = win.kind === 'incognito' ? 'incognito window' : 'normal window';
+    res.degraded = !!win.degraded;
     touched[sname] = domains;
     await chrome.storage.local.set({
       [K.touched]: touched,
       [K.active]: infoOf(payload, where, label, winId),
     });
-    if (payload.target_url) await openTabs(winId, payload, label);
+    if (payload.target_url) await openTabs(winId, payload, label, !!st.tabGroups);
     await chrome.windows.update(winId, { focused: true });
   }
 
@@ -451,7 +540,9 @@ async function onMessage(msg) {
     case 'sessions': {
       const fresh = await seenNewSessions(msg.list || []);
       const st = await getSettings();
-      const withTokens = fresh.filter((s) => s.has_tokens);
+      // only count it as a capture when the login is actually confirmed
+      const usable = (x) => x.usable === undefined ? !!x.has_tokens : !!x.usable;
+      const withTokens = fresh.filter(usable);
       if (withTokens.length) {
         badge(String(withTokens.length), '#22c55e');
         setTimeout(() => badge('', null), 6000);
@@ -486,7 +577,17 @@ async function onMessage(msg) {
       const st = await getSettings();
       const won = await liveWindows();
       const got = await chrome.storage.local.get([K.recent, K.active, K.last]);
-      return { settings: st, windows: won, recent: got[K.recent] || [], active: got[K.active] || null, last: got[K.last] || null };
+      const host = await pingHost();
+      return {
+        settings: st, windows: won, recent: got[K.recent] || [], active: got[K.active] || null, last: got[K.last] || null,
+        host: { ok: !!host.ok, browser: host.browser || '', error: host.error || '', extId: host.extId || '' },
+      };
+    }
+    case 'hostInstall': {
+      hostInfo = null;
+      const r = await sendNative({ action: 'install' });
+      hostInfo = null;
+      return r;
     }
     case 'clearIsolated': {
       const touched = await touchedMap();

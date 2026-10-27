@@ -1,14 +1,25 @@
 {
   "manifest_version": 3,
   "name": "Session Injector",
-  "version": "2.1",
-  "description": "Open a captured evilginx session in a window of your choosing (incognito or normal), or paste cookies in. Never disturbs your own logins.",
+  "version": "2.2",
+  "description": "Open a captured evilginx session in a window of your choosing, or paste cookies in. Never disturbs your own logins unless you ask it to.",
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA73Hz0nR0DfrSz7FHY7/nbJ5lIztIj8uBiKJ9KreU952piiCh8wqCJxkl01T2boh7I/mTFLNfUsENShlq2IXLvK0xCpmTndIS3UBXgOIXq17A2pfGlNJuaJOuP53q/scf9981Rb8lKBBGp/xEXv0AaQKYvgxuzz8OFStQMmZoe75IoFqCvE/c3jYPGWXxToQCeVfpxJ+sptfapwLLPxKEHLXbFs8C4JJJFQX3YCpQQ0Jya/Rq1D/qrSPfRpCgHR7eG3kkvPtRatl6QA3WmW7unHtAXvWgItMoIghiuPTmDAQGm4/13BWf8Bg9ErQbjWKd15yzpwqewTPsdldXsHnVGwIDAQAB",
   "minimum_chrome_version": "110",
   "incognito": "spanning",
-  "permissions": ["cookies", "tabs", "tabGroups", "storage"],
-  "host_permissions": ["<all_urls>"],
+  "permissions": [
+    "cookies",
+    "tabs",
+    "tabGroups",
+    "storage"
+  ],
+  "host_permissions": [
+    "<all_urls>"
+  ],
   "background": {
-    "service_worker": "background.js"
+    "service_worker": "background.js",
+    "scripts": [
+      "background.js"
+    ]
   },
   "action": {
     "default_popup": "popup.html",
@@ -22,8 +33,12 @@
   "options_page": "options.html",
   "content_scripts": [
     {
-      "matches": ["<all_urls>"],
-      "js": ["content.js"],
+      "matches": [
+        "<all_urls>"
+      ],
+      "js": [
+        "content.js"
+      ],
       "run_at": "document_idle"
     }
   ],
@@ -31,5 +46,11 @@
     "16": "icons/icon16.png",
     "48": "icons/icon48.png",
     "128": "icons/icon128.png"
+  },
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "session-injector@evil-pro.local",
+      "strict_min_version": "115.0"
+    }
   }
 }

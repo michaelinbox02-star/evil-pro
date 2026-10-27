@@ -140,7 +140,7 @@ function readFile(f) {
 $('#text').addEventListener('input', function () { clearTimeout(window._t); window._t = setTimeout(preview, 350); });
 $('#url').addEventListener('change', preview);
 
-// defaults from settings / the const prefill
+// defaults from settings / a native-host launch / the const prefill
 chrome.storage.local.get(['settings', 'pastePrefill'], function (d) {
   var s = d.settings || {};
   if (s.mode) {
@@ -150,9 +150,34 @@ chrome.storage.local.get(['settings', 'pastePrefill'], function (d) {
   if (d.pastePrefill) {
     if (d.pastePrefill.url) $('#url').value = d.pastePrefill.url;
     if (d.pastePrefill.name) $('#name').value = d.pastePrefill.name;
-    if (d.pastePrefill.text) { $('#text').value = d.pastePrefill.text; preview(); }
-    chrome.storage.local.remove('pastePrefill');
+    if (d.pastePrefill.text) { $('#text').value = d.pastePrefill.text; }
   }
+
+  // Launched by the native host into a brand-new browser profile: the whole
+  // session travels in the URL fragment, so seed and go without any typing.
+  var h = location.hash.replace(/^#/, '');
+  if (h.indexOf('p=') === 0) {
+    var payload = null;
+    try {
+      var s2 = h.slice(2).replace(/-/g, '+').replace(/_/g, '/');
+      payload = JSON.parse(decodeURIComponent(escape(atob(s2))));
+    } catch (e) { showErr('bad launch payload: ' + e.message); }
+    if (payload) {
+      if (payload.u) $('#url').value = payload.u;
+      if (payload.n) $('#name').value = payload.n;
+      if (payload.c) $('#text').value = JSON.stringify(payload.c, null, 1);
+      $('body').classList.add('launched');
+      var tag = document.createElement('div');
+      tag.className = 'note';
+      tag.style.margin = '0 0 12px';
+      tag.innerHTML = '<span>Started in a <b>dedicated profile</b> for <b>' + SI.esc(payload.n || 'this session') + '</b>. Seeding cookies, then opening the target.</span>';
+      document.querySelector('.wrap').insertBefore(tag, document.querySelector('.wrap').firstElementChild);
+      preview();
+      setTimeout(function () { go('here'); }, 150);
+      return;
+    }
+  }
+  if (!d.pastePrefill || !d.pastePrefill.text) preview();
   $('#text').focus();
 });
 </script>

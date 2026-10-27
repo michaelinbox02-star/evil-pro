@@ -564,11 +564,53 @@ The `extension/` folder in the repo is a Manifest V3 Chromium extension that aut
 
 | Target | Cookie jar | Your own logins |
 |--|--|--|
-| **Incognito window** | separate | untouched; close the window to discard |
 | **Normal window** | shared with yours | the session's domains are overwritten |
+| **Private window** | separate | untouched; close the window to discard |
 | **This tab** | shared with yours | same as normal, no new window |
+| **Own profile** | a real, separate browser profile | untouched, and isolated from other victims too |
 
-Default is **Normal**; set your preference in the popup or options page. Whichever you pick, a takeover **replaces** the previous victim on the relevant domains rather than merging with them, so nothing is ever half-and-half.
+Default is **Normal**. Whichever you pick, a takeover **replaces** the previous victim on the relevant domains rather than merging with them, so nothing is ever half-and-half.
+
+> Incognito is never used unless you pick it. If you upgraded from v2.0 (which
+> defaulted to it) your saved setting is migrated once to Normal.
+
+## Own profile (the only real isolation)
+
+A *window* is not an *isolation boundary* — a normal window shares your cookie jar and a private window shares one jar with every other private window. A genuinely independent browser profile needs a new browser process with its own `--user-data-dir`, and **an extension cannot start a process**. That is what the bundled native host is for.
+
+Run once:
+
+```bat
+extension\host\install.bat        :: Windows
+./extension/host/install.sh       :: Linux / macOS
+```
+
+(If `bin/evilpro-host.exe` is missing, run `build-host.bat` first — `build-portable.bat` also builds it.)
+
+Now **Own profile** appears in the popup. It starts a new browser process with its own profile directory, force-loads this extension into it, hands the session over in the launch URL, and the new profile seeds itself and opens the target. Each victim gets a profile of their own, isolated from you *and from each other*, and closing it leaves nothing behind.
+
+Profiles live in `%AppData%\evil-pro\profiles\` (`~/.config/evil-pro/profiles/`). The popup can name them, so `alice@contoso.com` gets its own directory.
+
+**Chromium family only** (Chrome, Brave, Edge, Chromium) — Firefox has no `--load-extension` equivalent, so use a window there. If the host is not installed, *Own profile* silently falls back to a normal window and says so.
+
+## Firefox
+
+The same folder loads in Firefox as-is: `about:debugging` → **This Firefox** → **Load Temporary Add-on** → pick `manifest.json`. The manifest carries both a service-worker and an event-page background entry plus a `browser_specific_settings` id, so no forking is needed.
+
+Differences in Firefox: no tab groups (labels fall back to the pinned card), and the incognito jar id is probed rather than assumed.
+
+## Truthful capture reporting
+
+The dashboard no longer calls a session "captured" just because cookies arrived. Sessions carry a stage:
+
+| Badge | Meaning | Worth taking over? |
+|--|--|--|
+| `auth` | the provider confirmed the login | yes |
+| `password only` | credentials typed, login never confirmed | maybe |
+| `email only` | only the email was submitted | rarely |
+| `visited` | landed, nothing submitted | no |
+
+This matters because a phishlet's `auth_urls` often include subresources of the login page, so the completion signal can fire before the victim has even typed a password. Only `auth` counts as a capture: it is what drives the badge, the auto-open, the Telegram notification, and the stat cards. The session drawer warns you when a session is not confirmed, and the stage filter can hide the noise.
 
 ## Install (one-time, on the machine you use to access the dashboard)
 

