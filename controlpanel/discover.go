@@ -255,7 +255,11 @@ func (a *App) handleDiscover(w http.ResponseWriter, r *http.Request) {
 		a.store.Update(p.ID, func(pp *Profile) { pp.LastStatus = "unreachable"; pp.LastError = d.Error })
 	}
 	if d.Found {
-		a.store.Update(p.ID, func(pp *Profile) { pp.LastStatus = "existing deployment found"; pp.LastError = ""; pp.LastSeen = time.Now().Unix() })
+		a.store.Update(p.ID, func(pp *Profile) {
+			pp.LastStatus = "existing deployment found"
+			pp.LastError = ""
+			pp.LastSeen = time.Now().Unix()
+		})
 	}
 	writeJSON(w, 200, d)
 }
@@ -283,10 +287,10 @@ func (a *App) handleAdopt(w http.ResponseWriter, r *http.Request) {
 		ID: p.ID, Name: p.Name,
 		Host: p.Host, Port: p.Port, User: p.User,
 		AuthType: p.AuthType, Password: p.Password, KeyPath: p.KeyPath, KeyPassphrase: p.KeyPassphrase,
-		HostKeyFP:  p.HostKeyFP,
-		InstallDir: orDefault(d.InstallDir, p.InstallDir),
-		Domain:     orDefault(d.Domain, p.Domain),
-		Phishlet:   orDefault(d.Phishlet, p.Phishlet),
+		HostKeyFP:     p.HostKeyFP,
+		InstallDir:    orDefault(d.InstallDir, p.InstallDir),
+		Domain:        orDefault(d.Domain, p.Domain),
+		Phishlet:      orDefault(d.Phishlet, p.Phishlet),
 		DashboardSub:  orDefault(d.DashboardSub, p.DashboardSub),
 		DashboardUser: orDefault(d.DashboardUser, p.DashboardUser),
 		DashboardPass: orDefault(d.DashboardPass, p.DashboardPass),

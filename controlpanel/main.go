@@ -172,6 +172,19 @@ func main() {
 			set.BinArm64 = filepath.Join(*repo, "evilginx-linux-arm64")
 		}
 	})
+	// The repo/portable root can be wrong: some launchers split a -repo path on
+	// its spaces, and a folder can be moved. Only trust it if it actually looks
+	// like the project, otherwise fall back to a location that does. Without this
+	// the extension zip and phishlet folder resolve to the wrong parent.
+	set.RepoDir = resolveRepo(set.RepoDir)
+	for _, b := range []*string{&set.BinAmd64, &set.BinArm64} {
+		if fileExists(*b) {
+			continue
+		}
+		if p := filepath.Join(set.RepoDir, filepath.Base(*b)); fileExists(p) {
+			*b = p
+		}
+	}
 	if set.Bind == "" {
 		set.Bind = "127.0.0.1:8080"
 	}

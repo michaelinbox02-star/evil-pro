@@ -171,3 +171,37 @@ func TestEngineURLEmptyFallsBackToPort5000(t *testing.T) {
 		t.Fatalf("expected empty engine url, got %q", base)
 	}
 }
+
+func TestLookslLikeRepoAndResolve(t *testing.T) {
+	root := t.TempDir()
+	if looksLikeRepo(root) {
+		t.Error("an empty dir should not look like the repo")
+	}
+	// a portable-style layout is detected by the bundled extension
+	if err := os.MkdirAll(filepath.Join(root, "extension"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "extension", "manifest.json"), []byte("{}"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if !looksLikeRepo(root) {
+		t.Error("a dir with extension/manifest.json must be detected")
+	}
+	if got := resolveRepo(root); got != root {
+		t.Errorf("resolveRepo(valid) = %q, want %q", got, root)
+	}
+	// a wrong -repo (e.g. truncated at a space) must not win over a real one
+	if got := resolveRepo(filepath.Join(root, "nope")); !looksLikeRepo(got) {
+		t.Errorf("resolveRepo(fallback) = %q, which is not a repo", got)
+	}
+	if looksLikeRepo("") {
+		t.Error("empty string is not a repo")
+	}
+}
+
+func TestExtensionZipRequiresTheRepo(t *testing.T) {
+	a := &App{store: newTestStore(t)}
+	if got := a.store.Settings().RepoDir; got == "" {
+		t.Error("RepoDir default should be set")
+	}
+}

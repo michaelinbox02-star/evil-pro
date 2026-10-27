@@ -206,6 +206,8 @@ async function mgConfig() {
     '<div class="field"><label>Dashboard subdomain</label><input data-mcfg="dashboardsub" value="' + esc(g.dashboard_sub) + '"></div></div>' +
     sw('unauth_redirect (302 decoy)', 'unauth_redirect', g.unauth_redirect) +
     sw('strip_headers', 'strip_headers', g.strip_headers) +
+    sw('force_login (always show the login form)', 'force_login', g.force_login,
+      'Adds prompt=login to OAuth hops and wfresh=0 to SAML so an already-signed-in visitor still types their password.') +
     sw('autocert (ACME TLS)', 'autocert', g.autocert) +
     sw('block_vpn', 'blockvpn', g.block_vpn) +
     '<div class="row"><div class="field"><label>Telegram chat id</label><input data-mcfg="chatid" value="' + esc(t.chatid) + '"></div>' +

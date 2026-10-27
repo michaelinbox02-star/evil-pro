@@ -9,7 +9,7 @@ import (
 func TelegramMarkdownV2Escape(text string) string {
 	// Order matters - escape backslash first to avoid double-escaping
 	specialChars := []string{"\\", "_", "*", "[", "]", "(", ")", "~", "`", ">", "#", "+", "-", "=", "|", "{", "}", ".", "!"}
-	
+
 	result := text
 	for _, ch := range specialChars {
 		result = strings.ReplaceAll(result, ch, "\\"+ch)

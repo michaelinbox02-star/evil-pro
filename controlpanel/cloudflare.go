@@ -16,9 +16,12 @@ const cfAPI = "https://api.cloudflare.com/client/v4"
 var cfHTTP = &http.Client{Timeout: 20 * time.Second}
 
 type cfEnvelope struct {
-	Success  bool              `json:"success"`
-	Errors   []struct{ Code int; Message string } `json:"errors"`
-	Result   json.RawMessage   `json:"result"`
+	Success bool `json:"success"`
+	Errors  []struct {
+		Code    int
+		Message string
+	} `json:"errors"`
+	Result     json.RawMessage `json:"result"`
 	ResultInfo struct {
 		TotalPages int `json:"total_pages"`
 	} `json:"result_info"`

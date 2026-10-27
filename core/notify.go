@@ -298,7 +298,6 @@ func formatSessionMessage(session TSession, updated bool) string {
 	return strings.Join(lines, "\n")
 }
 
-
 func Notify(session TSession, chatid string, teletoken string) {
 	// Use the UUID-based SessionID as the deduplication key, not the integer ID
 	// (which is always 0 and would conflate all sessions into one).

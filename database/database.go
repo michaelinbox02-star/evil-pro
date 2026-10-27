@@ -2,8 +2,8 @@ package database
 
 import (
 	"encoding/json"
-	"strconv"
 	"github.com/gorilla/websocket"
+	"strconv"
 	"time"
 
 	"github.com/tidwall/buntdb"
@@ -261,15 +261,15 @@ func (d *Database) getPivot(t interface{}) string {
 }
 
 func (d *Database) GetSessionById(id int) (*Session, error) {
-    return d.sessionsGetById(id)
+	return d.sessionsGetById(id)
 }
 
 func (d *Database) MarkSessionReviewed(id int) error {
-    s, err := d.sessionsGetById(id)
-    if err != nil {
-        return err
-    }
-    // Add a Reviewed field update - we'll mark it in the UpdateTime
-    s.UpdateTime = time.Now().UTC().Unix()
-    return d.sessionsUpdate(id, s)
+	s, err := d.sessionsGetById(id)
+	if err != nil {
+		return err
+	}
+	// Add a Reviewed field update - we'll mark it in the UpdateTime
+	s.UpdateTime = time.Now().UTC().Unix()
+	return d.sessionsUpdate(id, s)
 }

@@ -111,7 +111,9 @@ func writeJSON(w http.ResponseWriter, status int, v interface{}) {
 	_ = json.NewEncoder(w).Encode(v)
 }
 
-func jsonErr(w http.ResponseWriter, status int, msg string) { writeJSON(w, status, map[string]string{"error": msg}) }
+func jsonErr(w http.ResponseWriter, status int, msg string) {
+	writeJSON(w, status, map[string]string{"error": msg})
+}
 
 func clientIP(r *http.Request) string {
 	if x := r.Header.Get("X-Forwarded-For"); x != "" {
@@ -295,6 +297,10 @@ func (a *App) handleLoginPage(w http.ResponseWriter, r *http.Request) {
 
 func (a *App) handleExtensionZip(w http.ResponseWriter, r *http.Request) {
 	dir := filepath.Join(a.store.Settings().RepoDir, "extension")
+	if !fileExists(filepath.Join(dir, "manifest.json")) {
+		jsonErr(w, 500, "extension folder not found at "+dir+" (check the repo directory in Settings)")
+		return
+	}
 	var buf bytes.Buffer
 	zw := zip.NewWriter(&buf)
 	err := filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {

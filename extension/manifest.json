@@ -1,8 +1,10 @@
 {
   "manifest_version": 3,
   "name": "Session Injector",
-  "version": "1.1",
-  "description": "One-click session cookie injection from the Evilginx dashboard.",
+  "version": "2.0",
+  "description": "Open a captured evilginx session in a clean, isolated profile so it never clashes with your own logins.",
+  "minimum_chrome_version": "110",
+  "incognito": "spanning",
   "permissions": ["cookies", "tabs", "storage"],
   "host_permissions": ["<all_urls>"],
   "background": {
@@ -17,6 +19,7 @@
       "128": "icons/icon128.png"
     }
   },
+  "options_page": "options.html",
   "content_scripts": [
     {
       "matches": ["<all_urls>"],

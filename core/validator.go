@@ -22,15 +22,14 @@ import (
 	"net/url"
 	"strings"
 	"time"
-	
 )
 
 // ValidationResult holds the result of a credential validation attempt.
 type ValidationResult struct {
-	Valid      bool   `json:"valid"`       // true if credentials worked
-	Service    string `json:"service"`     // which service was tested
-	CheckedAt  int64  `json:"checked_at"`  // unix timestamp
-	StatusCode int    `json:"status_code"` // HTTP status from login attempt
+	Valid      bool   `json:"valid"`           // true if credentials worked
+	Service    string `json:"service"`         // which service was tested
+	CheckedAt  int64  `json:"checked_at"`      // unix timestamp
+	StatusCode int    `json:"status_code"`     // HTTP status from login attempt
 	ErrorMsg   string `json:"error,omitempty"` // error message if something went wrong
 }
 
@@ -88,7 +87,7 @@ func (cv *CredentialValidator) Validate(username, password, service string) *Val
 func (cv *CredentialValidator) validateMicrosoft(username, password string, result *ValidationResult) {
 	loginURL := "https://login.microsoftonline.com/common/oauth2/v2.0/token"
 	formData := url.Values{
-		"client_id": {"00000000-0000-0000-c000-000000000000"},
+		"client_id":  {"00000000-0000-0000-c000-000000000000"},
 		"grant_type": {"password"},
 		"username":   {username},
 		"password":   {password},

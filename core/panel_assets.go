@@ -160,6 +160,7 @@ tbody tr.clickable{cursor:pointer}
 .field{display:flex;flex-direction:column;gap:4px;margin-bottom:12px}
 .field label{font-size:10.5px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--dim)}
 .field .hint{font-size:11px;color:var(--dim)}
+.hint{font-size:11px;color:var(--dim)}
 input,select,textarea{padding:6px 9px;border:1px solid var(--border);border-radius:var(--r);background:var(--surface);color:var(--text);font-size:12.5px;font-family:inherit;outline:none;transition:border-color .1s,box-shadow .1s;width:100%}
 input:focus,select:focus,textarea:focus{border-color:var(--accent);box-shadow:0 0 0 2px var(--accent-bg)}
 textarea{font-family:var(--mono);font-size:11.5px;resize:vertical}

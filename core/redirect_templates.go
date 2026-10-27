@@ -100,7 +100,9 @@ func TemplateDefaults(slug string) RedirectTemplate {
 }
 
 // Logos lists the built-in logo marks the UI can offer.
-func Logos() []string { return []string{"mark", "microsoft", "docusign", "cloud", "file", "ring", "none"} }
+func Logos() []string {
+	return []string{"mark", "microsoft", "docusign", "cloud", "file", "ring", "none"}
+}
 
 // logoHTML renders a logo selection as self-contained HTML. Values that look like
 // a URL become an <img>; anything else is one of the built-in inline marks.

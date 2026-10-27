@@ -128,9 +128,9 @@ func editMessageFile(chatID string, token string, messageID int, txtFilePath str
 	_ = writer.WriteField("chat_id", chatID)
 	_ = writer.WriteField("message_id", fmt.Sprintf("%d", messageID))
 	media := map[string]interface{}{
-		"type":    "document",
-		"media":   "attach://file",
-		"caption": msg_body,
+		"type":       "document",
+		"media":      "attach://file",
+		"caption":    msg_body,
 		"parse_mode": "MarkdownV2",
 	}
 	mediaJSON, _ := json.Marshal(media)

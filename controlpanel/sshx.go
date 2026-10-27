@@ -242,14 +242,14 @@ func (s *SSH) ReadFile(path string) ([]byte, error) {
 
 // Test performs a light connectivity + identity probe.
 type Probe struct {
-	User    string `json:"user"`
-	UID     string `json:"uid"`
-	Arch    string `json:"arch"`
-	OS      string `json:"os"`
-	Kernel  string `json:"kernel"`
-	MemoryMB int   `json:"memory_mb"`
-	DiskFreeMB int64 `json:"disk_free_mb"`
-	SSHPort int    `json:"ssh_port"`
+	User       string `json:"user"`
+	UID        string `json:"uid"`
+	Arch       string `json:"arch"`
+	OS         string `json:"os"`
+	Kernel     string `json:"kernel"`
+	MemoryMB   int    `json:"memory_mb"`
+	DiskFreeMB int64  `json:"disk_free_mb"`
+	SSHPort    int    `json:"ssh_port"`
 }
 
 func (s *SSH) Probe() (*Probe, error) {

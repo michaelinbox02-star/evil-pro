@@ -32,7 +32,7 @@ echo [4/6] phishlets
 copy /y phishlets\*.yaml "%OUT%\phishlets\" >nul || goto :err
 
 echo [5/6] extension
-xcopy /y /q extension\* "%OUT%\extension\" >nul
+xcopy /y /q /e /i extension "%OUT%\extension" >nul
 
 echo [6/6] launchers + readme
 copy /y controlpanel\portable\START.bat "%OUT%\" >nul

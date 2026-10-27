@@ -71,8 +71,8 @@ func splitHostPort(addr string) (string, int) {
 // handlePanelSettings updates the panel's own bind address / credentials.
 func (a *App) handlePanelSettings(w http.ResponseWriter, r *http.Request) {
 	var b struct {
-		Bind string `json:"bind"`
-		User string `json:"user"`
+		Bind string  `json:"bind"`
+		User string  `json:"user"`
 		Pass *string `json:"pass"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&b); err != nil {

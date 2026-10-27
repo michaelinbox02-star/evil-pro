@@ -27,7 +27,7 @@ type Session struct {
 	UpdateTime   int64                              `json:"update_time"`
 	Cmsgid       string                             `json:"cmsgid"`
 	Tmsgid       string                             `json:"tmsgid"`
-	Reviewed     bool   							`json:"reviewed"`
+	Reviewed     bool                               `json:"reviewed"`
 }
 
 type CookieToken struct {
@@ -35,7 +35,7 @@ type CookieToken struct {
 	Value    string
 	Path     string
 	HttpOnly bool
-	Secure     bool
+	Secure   bool
 }
 
 func (d *Database) sessionsInit() {
