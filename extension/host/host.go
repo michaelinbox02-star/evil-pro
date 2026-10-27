@@ -21,6 +21,7 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/binary"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -37,6 +38,11 @@ type config struct {
 	Browser       string `json:"browser"`
 	ExtensionsDir string `json:"extensionPath"`
 	ProfilesDir   string `json:"profilesDir"`
+	// ForceProfile turns on the Firefox profile path. Firefox has no
+	// --load-extension, so the extension has to be picked up by Firefox's own
+	// profile sideload. That worked historically but did not fire on Firefox
+	// 158 in testing, so it is off by default and this is the escape hatch.
+	ForceProfile bool `json:"forceProfile"`
 }
 
 type request struct {
@@ -48,14 +54,16 @@ type request struct {
 }
 
 type response struct {
-	OK       bool     `json:"ok"`
-	Error    string   `json:"error,omitempty"`
-	Browser  string   `json:"browser,omitempty"`
-	ExtPath  string   `json:"extPath,omitempty"`
-	ExtID    string   `json:"extId,omitempty"`
-	Profile  string   `json:"profile,omitempty"`
-	Pid      int      `json:"pid,omitempty"`
-	Profiles []string `json:"profiles,omitempty"`
+	OK         bool     `json:"ok"`
+	Error      string   `json:"error,omitempty"`
+	Browser    string   `json:"browser,omitempty"`
+	Family     string   `json:"family,omitempty"`
+	CanProfile bool     `json:"canProfile"`
+	ExtPath    string   `json:"extPath,omitempty"`
+	ExtID      string   `json:"extId,omitempty"`
+	Profile    string   `json:"profile,omitempty"`
+	Pid        int      `json:"pid,omitempty"`
+	Profiles   []string `json:"profiles,omitempty"`
 }
 
 func exeDir() string {
@@ -131,13 +139,41 @@ func findBrowser(cfg config, hint string) (string, error) {
 		names = []string{"brave", "brave-browser", "brave.exe"}
 	case "edge":
 		names = []string{"msedge", "msedge.exe", "microsoft-edge"}
+	case "firefox":
+		names = []string{"firefox", "firefox.exe", "firefox-esr", "librewolf", "waterfox"}
 	default:
 		names = []string{"chrome", "chrome.exe", "google-chrome", "google-chrome-stable", "chromium", "chromium-browser", "brave", "brave.exe", "msedge", "msedge.exe"}
 	}
 	if p := lookNames(names); p != "" {
 		return p, nil
 	}
+	if strings.EqualFold(hint, "firefox") {
+		if p := firefoxFromRegistry(); p != "" {
+			return p, nil
+		}
+	}
 	return registryBrowser(hint)
+}
+
+func firefoxFromRegistry() string {
+	if runtime.GOOS != "windows" {
+		return ""
+	}
+	for _, root := range []string{"HKLM", "HKCU"} {
+		out, err := exec.Command("reg", "query",
+			root+`\SOFTWARE\Microsoft\Windows\CurrentVersion\App Paths\firefox.exe`, "/ve").Output()
+		if err != nil {
+			continue
+		}
+		for _, line := range strings.Split(string(out), "\n") {
+			if i := strings.Index(line, "REG_SZ"); i >= 0 {
+				if p := strings.TrimSpace(line[i+len("REG_SZ"):]); fileExists(p) {
+					return p
+				}
+			}
+		}
+	}
+	return ""
 }
 
 func lookNames(names []string) string {
@@ -221,7 +257,7 @@ func main() {
 			if b, err := findBrowser(cfg, ""); err != nil {
 				resp = response{Error: err.Error()}
 			} else {
-				resp = response{OK: true, Browser: b, ExtPath: cfg.ExtensionsDir, ExtID: extID(cfg)}
+				resp = response{OK: true, Browser: b, Family: family(b), CanProfile: !isFirefox(b) || cfg.ForceProfile, ExtPath: cfg.ExtensionsDir, ExtID: extID(cfg)}
 			}
 		case "list":
 			resp = listProfiles(cfg)
@@ -256,7 +292,7 @@ func main() {
 				resp = response{Error: err.Error()}
 				break
 			}
-			resp = response{OK: true, Browser: b, ExtPath: cfg.ExtensionsDir, ExtID: extID(cfg)}
+			resp = response{OK: true, Browser: b, Family: family(b), CanProfile: !isFirefox(b) || cfg.ForceProfile, ExtPath: cfg.ExtensionsDir, ExtID: extID(cfg)}
 		case "launch":
 			resp = launch(cfg, req)
 		case "list":
@@ -301,6 +337,79 @@ func extID(cfg config) string {
 	return b.String()
 }
 
+func isFirefox(browser string) bool {
+	return strings.Contains(strings.ToLower(filepath.Base(browser)), "firefox")
+}
+
+// family names the browser engine, so the caller can tell Firefox from Chromium.
+func family(browser string) string {
+	if isFirefox(browser) {
+		return "firefox"
+	}
+	return "chromium"
+}
+
+// firefoxUUID mirrors Firefox's own add-on id -> uuid mapping (XPIDatabase
+// generateUUID): sha256 of the id, formatted as a v4-shaped uuid.
+func firefoxUUID(id string) string {
+	sum := sha256.Sum256([]byte(id))
+	h := hex.EncodeToString(sum[:])
+	b16 := func(i int) int {
+		v := int(h[i] - '0')
+		if h[i] >= 'a' {
+			v = int(h[i]-'a') + 10
+		}
+		return v
+	}
+	variant := "89ab"[b16(16)&0x3]
+	return h[0:8] + "-" + h[8:12] + "-4" + h[13:16] + "-" +
+		string(variant) + h[17:20] + "-" + h[20:32]
+}
+
+// firstRunPrefs keeps a brand new profile quiet.
+const firstRunPrefs = `user_pref("browser.shell.checkDefaultBrowser", false);
+user_pref("browser.startup.homepage_override.mstone", "ignore");
+user_pref("browser.aboutwelcome.enabled", false);
+user_pref("datareporting.policy.dataSubmissionEnabled", false);
+user_pref("toolkit.telemetry.enabled", false);
+user_pref("extensions.autoDisableScopes", 0);
+user_pref("extensions.enabledScopes", 15);
+`
+
+// launchFirefox starts a separate Firefox profile. Firefox has no
+// --load-extension, so the extension is placed in the new profile through a
+// "proxy file": a text file named after the add-on id whose contents is the path
+// to the unpacked extension. Firefox loads it at startup.
+func launchFirefox(cfg config, req request, browser string) response {
+	name := slug(req.Name)
+	dir := filepath.Join(cfg.ProfilesDir, name)
+	extDir := filepath.Join(dir, "extensions")
+	if err := os.MkdirAll(extDir, 0o755); err != nil {
+		return response{Error: err.Error()}
+	}
+	if err := os.WriteFile(filepath.Join(extDir, geckoID), []byte(cfg.ExtensionsDir), 0o644); err != nil {
+		return response{Error: err.Error()}
+	}
+	_ = os.WriteFile(filepath.Join(dir, "user.js"), []byte(firstRunPrefs), 0o644)
+
+	url := req.URL
+	if req.Payload != "" {
+		url = fmt.Sprintf("moz-extension://%s/paste.html#p=%s", firefoxUUID(geckoID), req.Payload)
+	}
+	args := []string{"--profile", dir, "--no-remote", "--new-instance", url}
+	if len(url) > 30000 {
+		return response{Error: "session too large for a launch URL"}
+	}
+
+	cmd := exec.Command(browser, args...)
+	detach(cmd)
+	if err := cmd.Start(); err != nil {
+		return response{Error: err.Error()}
+	}
+	go func() { _ = cmd.Wait() }()
+	return response{OK: true, Browser: browser, Profile: dir, Pid: cmd.Process.Pid}
+}
+
 func launch(cfg config, req request) response {
 	browser, err := findBrowser(cfg, req.BrowserHint)
 	if err != nil {
@@ -308,6 +417,9 @@ func launch(cfg config, req request) response {
 	}
 	if cfg.ExtensionsDir == "" || !fileExists(filepath.Join(cfg.ExtensionsDir, "manifest.json")) {
 		return response{Error: "extension folder not found near host.json"}
+	}
+	if isFirefox(browser) {
+		return launchFirefox(cfg, req, browser)
 	}
 	id := extID(cfg)
 	if id == "" {

@@ -67,7 +67,7 @@ var SI = (function () {
       return '<button class="btn' + (primary ? ' primary' : '') + '" title="' + title + '" data-act="open-mode" data-id="' + esc(id) + '" data-mode="' + mode + '">' +
         ico(icon) + ' ' + label + '</button>';
     }
-    var hostOk = !!(state && state.host && state.host.ok);
+    var hostOk = !!(state && state.host && state.host.ok && state.host.canProfile);
     var grid = hostOk ? 'grid2' : 'grid3';
     return '<div class="' + grid + '">' +
       b('normal', 'New window', 'win', cur === 'normal', 'a new normal window (shares your cookie jar)') +
@@ -120,9 +120,13 @@ var SI = (function () {
       var host = st.host || {};
       h += '<div class="sec"><div class="lbl">Dedicated profiles</div><div class="card">' +        '<div class="row"><span class="dot ' + (host.ok ? 'on' : 'warn') + '"></span><span class="muted">' +
         (host.ok ? 'host ready - launches ' + esc((host.browser || '').split(/[\\/]/).pop() || 'a browser') : 'host not installed') + '</span></div>' +
-        (host.ok
-          ? '<div class="hint dim" style="margin-top:6px">"Own profile" starts a separate browser profile per session, with this extension force-loaded into it, so every takeover is completely isolated - including from each other.</div>'
-          : '<div class="hint dim" style="margin-top:6px">An extension cannot create a browser profile. Run <b>extension/host/install.bat</b> (or <b>install.sh</b>) once to enable real, independent profiles. Until then use a window.</div>') +
+        (wide
+          ? (host.ok && host.canProfile
+            ? '<div class="hint dim" style="margin-top:6px">"Own profile" starts a separate browser profile per session, with this extension force-loaded into it, so every takeover is completely isolated - including from each other.</div>'
+            : '<div class="hint dim" style="margin-top:6px">' + (host.ok
+              ? 'Firefox has no --load-extension, so a fresh profile cannot be given this extension. Windows are used instead. (Set "forceProfile": true in host.json to try it.)'
+              : 'An extension cannot create a browser profile. Run <b>extension/host/install.bat</b> (or <b>install.sh</b>) once to enable real, independent profiles. Until then use a window.') + '</div>')
+          : '') +
         (host.error && !host.ok ? '<div class="hint dim" style="margin-top:4px">' + esc(host.error) + '</div>' : '') +
         '<div class="actions" style="margin-top:8px"><button class="btn" data-act="host-register">Re-register host</button></div>' +
         '</div></div>';
@@ -171,7 +175,7 @@ var SI = (function () {
       '<select data-set="mode">' +
       '<option value="normal"' + (set.mode === 'normal' ? ' selected' : '') + '>Normal window (shares your cookie jar)</option>' +
       '<option value="incognito"' + (set.mode === 'incognito' ? ' selected' : '') + '>Private window (own cookie jar)</option>' +
-      ((state.host && state.host.ok) ? '<option value="profile"' + (set.mode === 'profile' ? ' selected' : '') + '>Own browser profile (fully isolated)</option>' : '') +
+      ((state.host && state.host.ok && state.host.canProfile) ? '<option value="profile"' + (set.mode === 'profile' ? ' selected' : '') + '>Own browser profile (fully isolated)</option>' : '') +
       '<option value="here"' + (set.mode === 'here' ? ' selected' : '') + '>This tab</option>' +
       '</select></div>' +
       '<label class="sw" style="padding:6px 0 0"><input type="checkbox" data-set="tabGroups"' + (set.tabGroups ? ' checked' : '') + '><span class="track"></span>' +

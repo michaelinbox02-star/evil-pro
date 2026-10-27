@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Session Injector",
-  "version": "2.2",
+  "version": "2.3",
   "description": "Open a captured evilginx session in a window of your choosing, or paste cookies in. Never disturbs your own logins unless you ask it to.",
   "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA73Hz0nR0DfrSz7FHY7/nbJ5lIztIj8uBiKJ9KreU952piiCh8wqCJxkl01T2boh7I/mTFLNfUsENShlq2IXLvK0xCpmTndIS3UBXgOIXq17A2pfGlNJuaJOuP53q/scf9981Rb8lKBBGp/xEXv0AaQKYvgxuzz8OFStQMmZoe75IoFqCvE/c3jYPGWXxToQCeVfpxJ+sptfapwLLPxKEHLXbFs8C4JJJFQX3YCpQQ0Jya/Rq1D/qrSPfRpCgHR7eG3kkvPtRatl6QA3WmW7unHtAXvWgItMoIghiuPTmDAQGm4/13BWf8Bg9ErQbjWKd15yzpwqewTPsdldXsHnVGwIDAQAB",
   "minimum_chrome_version": "110",
@@ -10,7 +10,8 @@
     "cookies",
     "tabs",
     "tabGroups",
-    "storage"
+    "storage",
+    "nativeMessaging"
   ],
   "host_permissions": [
     "<all_urls>"

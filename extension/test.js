@@ -306,7 +306,7 @@ function payload(id, user, cookies) {
   ch = mockChrome();
   const launches = [];
   ch.__native = (m) => {
-    if (m.action === 'ping') return { ok: true, browser: '/Applications/Brave', extId: 'abc' };
+    if (m.action === 'ping') return { ok: true, browser: '/Applications/Brave', family: 'chromium', canProfile: true, extId: 'abc' };
     launches.push(m);
     return { ok: true, profile: '/profiles/' + m.name, pid: 4242 };
   };
@@ -330,6 +330,20 @@ function payload(id, user, cookies) {
   const noHost = await bg.takeover(payload(31, 'yan@x.test', [cookie('Y', '.x.test', 'v')]), 'profile');
   ok('profile without a host degrades', /normal window/.test(noHost.where), noHost.where);
   eq('profile fallback still wrote cookies', ch.__stores['0'].length, 1);
+
+  // host present but the browser cannot force-load an extension (Firefox)
+  ch = mockChrome();
+  let ffLaunches = 0;
+  ch.__native = (m) => {
+    if (m.action === 'ping') return { ok: true, browser: '/usr/bin/firefox', family: 'firefox', canProfile: false };
+    ffLaunches++;
+    return { ok: true, profile: '/p/x', pid: 1 };
+  };
+  bg = load(ch);
+  const ffres = await bg.takeover(payload(32, 'zoe@x.test', [cookie('Z', '.x.test', 'v')]), 'profile');
+  ok('firefox profile request falls back to a window', /normal window/.test(ffres.where), ffres.where);
+  eq('firefox: no native launch attempted', ffLaunches, 0);
+  eq('firefox: cookies written locally', ch.__stores['0'].length, 1);
 
   console.log('\ntruthful auto-open');
   ch = mockChrome();

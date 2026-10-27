@@ -76,8 +76,15 @@ function sendNative(msg) {
 async function pingHost() {
   if (hostInfo) return hostInfo;
   const r = await sendNative({ action: 'ping', browserHint: await browserHint() });
-  hostInfo = r && r.ok ? r : { error: r.error || 'host not installed' };
+  hostInfo = r && r.ok ? r : { error: r.error || 'host not installed', ok: false };
   return hostInfo;
+}
+
+// Profiles need the host AND a browser that can force-load an extension into a
+// new profile. Firefox cannot (no --load-extension), so it uses a window.
+async function profileAllowed() {
+  const h = await pingHost();
+  return !!(h.ok && h.canProfile === true);
 }
 
 function b64url(str) {
@@ -345,11 +352,15 @@ async function openTabs(winId, payload, label, useGroups) {
 /* ----------------------------------------------------------------- takeover */
 async function takeover(payload, mode, opts) {
   const st = await getSettings();
-  const where = normMode(mode || st.mode);
+  let where = normMode(mode || st.mode);
   const cookies = payload.cookies || [];
   const label = labelFor(payload, st, opts);
   let res;
   let winId = null;
+
+  // Firefox cannot have the extension force-loaded into a fresh profile, so a
+  // profile request there becomes a window rather than a blank browser.
+  if (where === 'profile' && !(await profileAllowed())) where = 'normal';
 
   if (where === 'here') {
     res = await applyCookies(cookies, undefined);
@@ -578,9 +589,9 @@ async function onMessage(msg) {
       const won = await liveWindows();
       const got = await chrome.storage.local.get([K.recent, K.active, K.last]);
       const host = await pingHost();
-      return {
+    return {
         settings: st, windows: won, recent: got[K.recent] || [], active: got[K.active] || null, last: got[K.last] || null,
-        host: { ok: !!host.ok, browser: host.browser || '', error: host.error || '', extId: host.extId || '' },
+        host: { ok: !!host.ok, canProfile: host.canProfile === true, family: host.family || '', browser: host.browser || '', error: host.error || '', extId: host.extId || '' },
       };
     }
     case 'hostInstall': {

@@ -595,9 +595,29 @@ Profiles live in `%AppData%\evil-pro\profiles\` (`~/.config/evil-pro/profiles/`)
 
 ## Firefox
 
-The same folder loads in Firefox as-is: `about:debugging` → **This Firefox** → **Load Temporary Add-on** → pick `manifest.json`. The manifest carries both a service-worker and an event-page background entry plus a `browser_specific_settings` id, so no forking is needed.
+Firefox loads the same folder - no fork, no separate build.
 
-Differences in Firefox: no tab groups (labels fall back to the pinned card), and the incognito jar id is probed rather than assumed.
+**Quick test (any Firefox, no signing):**
+
+1. `about:debugging#/runtime/this-firefox`
+2. **Load Temporary Add-on…**
+3. Pick `extension/manifest.json` (the file, not the folder)
+
+This disappears when Firefox closes, so it has to be redone after a restart.
+
+**Permanent install:** run `build-extension-xpi.bat` (or `go run ./tools/xpi extension dist/session-injector.xpi`) and then `about:addons` → gear icon → **Install Add-on From File** → pick `dist/session-injector.xpi`.
+
+Release Firefox only installs *signed* add-ons, so if it refuses, either:
+
+- upload the xpi at addons.mozilla.org as an **unlisted** add-on - the signature is free and immediate, and then the signed file it gives back installs normally, or
+- use Developer Edition / ESR / Nightly and set `about:config` → `xpinstall.signatures.required` = `false`.
+
+**What differs in Firefox**
+
+- **No "Own profile".** Firefox has no `--load-extension`, and its own profile sideload of an unsigned add-on did not register the extension in testing on Firefox 158. So a takeover uses a window (trusted/private) instead, and the popup says so. `host.json` has `"forceProfile": true` if you want to try it anyway.
+- No tab groups, so the window is identified by its pinned card instead.
+- The private cookie jar id is probed rather than assumed.
+- Grant the host permission when Firefox asks (*Access your data for all websites*) - without it the cookies API cannot read or write.
 
 ## Truthful capture reporting
 
