@@ -654,7 +654,10 @@ Pull the latest repo on that machine, then:
 
 1. Open the dashboard and click any session row that shows a token indicator
 2. Click **Take over**
-3. Pick **Incognito window**, **Normal window** or **This tab** — the default is sent automatically
+3. Pick a target: **New window**, **Private window**, **This tab** or **Own profile**
+
+Nothing opens until you pick - the extension's default is only highlighted, it is not fired automatically. The target opens already authenticated.
+
 4. The target opens in that window, already authenticated
 
 The window's first tab is a pinned card naming the victim (also used as the tab-group label), so several windows are tellable apart. The modal reports how many cookies went in, how many were cleared first, and flags any that failed — a failed cookie does not always matter.

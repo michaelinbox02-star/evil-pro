@@ -34,15 +34,18 @@ function mockChrome() {
   const ch = {
     storage: {
       local: {
-        async get(k) {
-          if (k == null) return Object.assign({}, storage);
-          const keys = typeof k === 'string' ? [k] : (Array.isArray(k) ? k : Object.keys(k));
-          const out = {};
-          keys.forEach((x) => { if (storage[x] !== undefined) out[x] = storage[x]; });
-          return out;
+        get(k, cb) {
+          let out;
+          if (k == null) out = Object.assign({}, storage);
+          else {
+            const keys = typeof k === 'string' ? [k] : (Array.isArray(k) ? k : Object.keys(k));
+            out = {};
+            keys.forEach((x) => { if (storage[x] !== undefined) out[x] = storage[x]; });
+          }
+          return cb ? cb(out) : Promise.resolve(out);
         },
-        async set(o) { Object.assign(storage, o); },
-        async remove(k) { (Array.isArray(k) ? k : [k]).forEach((x) => delete storage[x]); },
+        set(o, cb) { Object.assign(storage, o); return cb ? cb() : Promise.resolve(); },
+        remove(k, cb) { (Array.isArray(k) ? k : [k]).forEach((x) => delete storage[x]); return cb ? cb() : Promise.resolve(); },
       },
       onChanged: { addListener(fn) { listeners.storage = fn; } },
     },
@@ -64,42 +67,48 @@ function mockChrome() {
     },
     action: { setBadgeText() {}, setBadgeBackgroundColor() {} },
     cookies: {
-      async getAll(f) {
+      getAll(f, cb) {
         f = f || {};
         const out = [];
         Object.keys(stores).forEach((sid) => stores[sid].filter((c) => matches(c, f)).forEach((c) => out.push(Object.assign({}, c))));
+        if (cb) return cb(out);
         return out;
       },
-      async set(d) {
+      set(d, cb) {
         const sid = d.storeId || '0';
         if (!stores[sid]) stores[sid] = [];
         const host = d.domain ? d.domain : d.url.replace(/^https?:\/\//, '').split('/')[0];
         const c = { name: d.name, value: d.value, domain: host, path: d.path, secure: d.secure, httpOnly: d.httpOnly, sameSite: d.sameSite, storeId: sid };
         const i = stores[sid].findIndex((x) => x.name === c.name && strip(x.domain) === strip(c.domain) && x.path === c.path);
         if (i >= 0) stores[sid][i] = c; else stores[sid].push(c);
+        if (cb) return cb(c);
         return c;
       },
-      async remove(d) {
+      remove(d, cb) {
         const sid = d.storeId || '0';
         const host = d.url.replace(/^https?:\/\//, '').split('/')[0];
         const before = (stores[sid] || []).length;
         stores[sid] = (stores[sid] || []).filter((c) => !(c.name === d.name && strip(c.domain) === strip(host)));
-        return before !== stores[sid].length;
+        const removed = before !== stores[sid].length;
+        if (cb) return cb(removed);
+        return removed;
       },
     },
     windows: {
-      async create(o) { const w = { id: ++winSeq, incognito: !!o.incognito }; windows.push(w); return w; },
-      async get(id) { const w = windows.find((x) => x.id === id); if (!w) throw new Error('no window'); return w; },
-      async getAll() { return windows.slice(); },
-      async update() {},
-      async remove(id) { const i = windows.findIndex((x) => x.id === id); if (i >= 0) windows.splice(i, 1); },
+      create(o, cb) { const w = { id: ++winSeq, incognito: !!o.incognito }; windows.push(w); return cb ? cb(w) : w; },
+      get(id, cb) { const w = windows.find((x) => x.id === id); if (cb) return cb(w); if (!w) throw new Error('no window'); return w; },
+      getAll(_o, cb) { return cb ? cb(windows.slice()) : windows.slice(); },
+      update(_id, _o, cb) { if (cb) cb(); },
+      remove(id, cb) { const i = windows.findIndex((x) => x.id === id); if (i >= 0) windows.splice(i, 1); if (cb) cb(); },
       onRemoved: { addListener(fn) { listeners.winRemoved = fn; } },
     },
     tabs: {
-      async query(f) { return tabs.filter((t) => t.windowId === f.windowId); },
-      async create(o) { const t = { id: ++tabSeq, windowId: o.windowId, url: o.url, pinned: !!o.pinned }; tabs.push(t); return t; },
-      async update(id, o) { const t = tabs.find((x) => x.id === id); if (t) Object.assign(t, o); return t; },
+      query(f, cb) { const r = tabs.filter((t) => t.windowId === f.windowId); return cb ? cb(r) : r; },
+      create(o, cb) { const t = { id: ++tabSeq, windowId: o.windowId, url: o.url, pinned: !!o.pinned }; tabs.push(t); return cb ? cb(t) : t; },
+      update(id, o, cb) { const t = tabs.find((x) => x.id === id); if (t) Object.assign(t, o); if (cb) cb(t); },
+      group(_o, cb) { if (cb) cb(1); },
     },
+    tabGroups: { update(_id, _o, cb) { if (cb) cb(); } },
     __stores: stores, __storage: storage, __listeners: listeners, __windows: windows, __tabs: tabs,
   };
   return ch;
@@ -130,7 +139,7 @@ function payload(id, user, cookies) {
   eq('isolated: cookies set', r.success, 2);
   eq('isolated: nothing written to the default profile', ch.__stores['0'].length, 0);
   eq('isolated: both cookies land in the incognito store', ch.__stores['1'].length, 2);
-  ok('isolated: reports the incognito window', r.where === 'incognito window', r.where);
+  ok('isolated: reports the private window', r.where === 'private window', r.where);
   ok('isolated: opened a window with the target tab', ch.__tabs.some((t) => t.url === 'https://www.x.test/'));
 
   // 2. sameSite=none without secure must be upgraded, or Chrome rejects it
@@ -189,6 +198,7 @@ function payload(id, user, cookies) {
 
   // 12. window closed -> isolated state is dropped
   await ch.__listeners.winRemoved(ch.__windows[0].id);
+  await new Promise((r) => setTimeout(r, 20));
   ok('closing the window clears the active victim', !ch.__storage.active);
   ok('closing the window forgets the window', ch.__storage.winIds === undefined);
 

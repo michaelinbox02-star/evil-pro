@@ -199,8 +199,12 @@ var SI = (function () {
     document.getElementById('main').innerHTML = h;
     var f = document.getElementById('foot');
     if (f) {
-      f.innerHTML = '<span class="dim">opens in ' + esc(set.mode === 'incognito' ? 'incognito' : set.mode === 'here' ? 'this tab' : 'a normal window') + '</span>' +
-        '<span style="margin-left:auto"></span>' + (wide ? '' : '<a data-act="options">Settings</a>');
+      f.innerHTML =
+        '<a data-act="open-dash">' + ico('dash') + ' Dashboard</a>' +
+        '<span class="dim" style="margin-left:12px">opens in ' +
+        esc(set.mode === 'incognito' ? 'a private window' : set.mode === 'profile' ? 'its own profile' : set.mode === 'here' ? 'this tab' : 'a new window') +
+        '</span>' +
+        (wide ? '' : '<a data-act="options" style="margin-left:auto">Settings</a>');
     }
   }
 
@@ -219,7 +223,11 @@ var SI = (function () {
   function refresh() {
     return Promise.all([
       send({ action: 'state' }),
-      chrome.storage.local.get(['dashboardConnected', 'currentSession'])
+      new Promise(function (res) {
+        // callback style: Firefox's chrome.* does not return promises
+        try { chrome.storage.local.get(['dashboardConnected', 'currentSession'], function (r) { res(r || {}); }); }
+        catch (e) { res({}); }
+      }),
     ]).then(function (r) {
       var st = r[0] || {};
       var ls = r[1] || {};

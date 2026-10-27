@@ -71,6 +71,15 @@
       // Dashboard tells us which row is selected.
       if (m.type === 'SESSION_SELECT') store({ currentSession: m.payload });
 
+      // Dashboard asks what the extension is set to, so it can mark the default.
+      if (m.type === 'EXT_QUERY') {
+        send({ action: 'state' }, function (r) {
+          var st = (r && r.settings) || {};
+          var host = (r && r.host) || {};
+          window.dispatchEvent(new CustomEvent('ext-state', { detail: { mode: st.mode || '', canProfile: !!host.canProfile } }));
+        });
+      }
+
       // Dashboard pushed its session list: feeds the badge and auto-open.
       if (m.type === 'SESSIONS') send({ action: 'sessions', list: m.payload || [] });
     });

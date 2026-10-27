@@ -233,7 +233,12 @@ async function openSession(id) {
 }
 
 /* ---------------- inject (extension bridge) ---------------- */
-document.addEventListener('ext-ready', function () { S.ext = true; pushSessions(); });
+document.addEventListener('ext-ready', function () { S.ext = true; pushSessions(); window.postMessage({ type: 'EXT_QUERY' }, '*'); });
+window.addEventListener('ext-state', function (e) {
+  var d = e.detail || {};
+  S.extMode = d.mode || '';
+  S.extCanProfile = !!d.canProfile;
+});
 // The extension was reloaded/updated: this tab's content script is now dead.
 document.addEventListener('ext-gone', function () {
   if (!S.ext) return;
@@ -263,18 +268,25 @@ async function inject(id) {
   if (!d.count) { toast('No cookies to inject', 'err'); return; }
   S.injectPayload = d;
   var sess = (S.sessions || []).filter(function (x) { return String(x.id) === String(id); })[0];
+  var mode = S.extMode || '';
+  function mb(m, label, title) {
+    var primary = mode ? (m === mode) : (m === 'normal');
+    return '<button class="btn sm' + (primary ? ' primary' : '') + '" data-act="inj" data-mode="' + m + '" title="' + title + '">' + label + (primary && mode ? ' (default)' : '') + '</button>';
+  }
   if (S.ext) {
+    // nothing opens until a target is picked
     openModal('Session takeover',
-      '<p class="muted mb14">Sending <b>' + d.count + '</b> cookies to the browser extension. It opens the target in the window you have configured (incognito or normal profile), so your own logins are left alone in incognito mode.</p>' +
+      '<p class="muted mb14"><b>' + d.count + '</b> cookies ready. Choose where to open it - nothing happens until you pick.</p>' +
       (sess && !sess.usable ? '<div class="note warn mb14">This session is <b>' + esc(sess.stage_name || 'not authenticated') + '</b>. The provider never confirmed the login, so the cookies may not sign in.</div>' : '') +
-      '<div id="injResult"><span class="dim">working…</span></div>' +
-      '<div class="hint mt14 mb8">Open in:</div>' +
-      '<div class="actions"><button class="btn sm" data-act="inj" data-mode="incognito">Incognito window</button>' +
-      '<button class="btn sm" data-act="inj" data-mode="normal">Normal window</button>' +
-      '<button class="btn sm" data-act="inj" data-mode="here">This tab</button></div>' +
+      '<div class="actions">' +
+        mb('normal', 'New window', 'a new normal window (shares your cookie jar)') +
+        mb('incognito', 'Private window', 'a private window with its own cookie jar') +
+        mb('here', 'This tab', 'reuse this tab, no new window') +
+        (S.extCanProfile ? mb('profile', 'Own profile', 'launch a dedicated browser profile (fully isolated)') : '') +
+      '</div>' +
+      '<div id="injResult" class="mt14"></div>' +
       '<div class="actions mt14"><button class="btn sm" data-act="copy" data-copy="' + esc(d.cookie_header) + '">Copy Cookie header</button>' +
       '<button class="btn sm" data-act="dl-cookies" data-id="' + id + '">Download JSON</button></div>');
-    window.postMessage({ type: 'DO_INJECT', payload: d }, '*');
   } else {
     downloadCookieFile(d);
     openModal('Session takeover',
