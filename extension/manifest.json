@@ -1,11 +1,11 @@
 {
   "manifest_version": 3,
   "name": "Session Injector",
-  "version": "2.0",
-  "description": "Open a captured evilginx session in a clean, isolated profile so it never clashes with your own logins.",
+  "version": "2.1",
+  "description": "Open a captured evilginx session in a window of your choosing (incognito or normal), or paste cookies in. Never disturbs your own logins.",
   "minimum_chrome_version": "110",
   "incognito": "spanning",
-  "permissions": ["cookies", "tabs", "storage"],
+  "permissions": ["cookies", "tabs", "tabGroups", "storage"],
   "host_permissions": ["<all_urls>"],
   "background": {
     "service_worker": "background.js"

@@ -95,7 +95,7 @@ function mockChrome() {
 function load(ch) {
   const src = fs.readFileSync(path.join(__dirname, 'background.js'), 'utf8');
   const factory = new Function('chrome', 'console', 'setTimeout', 'btoa', 'fetch', 'clearTimeout', src +
-    '\n;return { onMessage, takeover, clearDomains, isolatedStoreId, liveWindow, getSettings, fetchSession, cookieDetails };');
+    '\n;return { onMessage, takeover, clearDomains, isolatedStoreId, liveWindow, getSettings, fetchSession, cookieDetails, parseCookies, takeFromText };');
   return factory(ch, { log() {} }, setTimeout, (s) => Buffer.from(s).toString('base64'),
     async () => { throw new Error('no fetch'); }, clearTimeout);
 }
@@ -117,7 +117,7 @@ function payload(id, user, cookies) {
   eq('isolated: cookies set', r.success, 2);
   eq('isolated: nothing written to the default profile', ch.__stores['0'].length, 0);
   eq('isolated: both cookies land in the incognito store', ch.__stores['1'].length, 2);
-  ok('isolated: reports the isolated window', r.where === 'isolated window', r.where);
+  ok('isolated: reports the incognito window', r.where === 'incognito window', r.where);
   ok('isolated: opened a window with the target tab', ch.__tabs.some((t) => t.url === 'https://www.x.test/'));
 
   // 2. sameSite=none without secure must be upgraded, or Chrome rejects it
@@ -165,7 +165,7 @@ function payload(id, user, cookies) {
 
   // 10. settings round-trip + defaults
   let s = await bg.getSettings();
-  eq('default mode is isolated', s.mode, 'isolated');
+  eq('default mode is a normal window', s.mode, 'normal');
   await bg.onMessage({ action: 'settings', patch: { autoOpen: true, dashboardUrl: 'https://panel.test' } });
   s = await bg.getSettings();
   ok('settings persist', s.autoOpen === true && s.dashboardUrl === 'https://panel.test');
@@ -177,11 +177,109 @@ function payload(id, user, cookies) {
   // 12. window closed -> isolated state is dropped
   await ch.__listeners.winRemoved(ch.__windows[0].id);
   ok('closing the window clears the active victim', !ch.__storage.active);
-  ok('closing the window forgets the window', ch.__storage.isolatedWindowId === undefined);
+  ok('closing the window forgets the window', ch.__storage.winIds === undefined);
 
   // 13. unknown action
   const unk = await bg.onMessage({ action: 'nope' });
   ok('unknown action handled', !!unk.error);
+
+  console.log('\nwindow targets');
+  ch = mockChrome();
+  bg = load(ch);
+
+  // normal target: default jar, a normal (non-incognito) window
+  r = await bg.takeover(payload(10, 'dave@x.test', [cookie('N1', '.x.test', 'v')]), 'normal');
+  eq('normal: written to the default jar', ch.__stores['0'].length, 1);
+  ok('normal: window is not incognito', ch.__windows[ch.__windows.length - 1].incognito === false);
+  ok('normal: reported as a normal window', r.where === 'normal window', r.where);
+
+  // incognito and normal are tracked as separate windows
+  r = await bg.takeover(payload(11, 'erin@y.test', [cookie('I1', '.y.test', 'v')]), 'incognito');
+  eq('two windows tracked', Object.keys(ch.__storage.winIds).length, 2);
+  ok('separate jars', ch.__stores['1'].length === 1 && ch.__stores['0'].length === 1);
+
+  // clear only touches the jars we wrote to
+  const touched = ch.__storage.touchedStores;
+  ok('touched stores recorded', touched && touched.incognito && touched.default, JSON.stringify(touched));
+  ok('active carries a name', !!ch.__storage.active.name);
+  await bg.onMessage({ action: 'rename', name: 'alice - tenant A' });
+  eq('rename applied', ch.__storage.active.name, 'alice - tenant A');
+  await bg.onMessage({ action: 'clearIsolated' });
+  eq('clear emptied the incognito jar', ch.__stores['1'].length, 0);
+  eq('clear emptied the normal jar too', ch.__stores['0'].length, 0);
+  ok('clear dropped the live pointer', !ch.__storage.active);
+
+  console.log('\nname prefix');
+  ch = mockChrome();
+  bg = load(ch);
+  await bg.onMessage({ action: 'settings', patch: { namePrefix: 'camp-' } });
+  await bg.takeover(payload(12, 'frank@x.test', [cookie('F', '.x.test', 'v')]), 'normal');
+  eq('prefix applied to the window name', ch.__storage.active.name, 'camp-frank@x.test');
+  await bg.takeover(payload(13, 'gina@x.test', [cookie('G', '.x.test', 'v')]), 'normal', { name: 'explicit' });
+  eq('explicit name wins', ch.__storage.active.name, 'explicit');
+  await bg.onMessage({ action: 'settings', patch: { namePrefix: 'camp' } });
+  await bg.takeover(payload(14, 'h@x.test', [cookie('H', '.x.test', 'v')]), 'normal');
+  eq('prefix without a separator gets a space', ch.__storage.active.name, 'camp h@x.test');
+
+  console.log('\ncookie paste-in parser');
+  ch = mockChrome();
+  bg = load(ch);
+
+  let p = bg.parseCookies('[{"name":"A","value":"1","domain":".contoso.com"},{"name":"B","value":"2"}]', 'https://login.microsoftonline.com/');
+  eq('json array parsed', p.cookies.length, 2);
+  eq('json: only the entry with a domain kept? no - host fallback used', p.cookies[1].domain, 'login.microsoftonline.com');
+  ok('json format labelled', p.format === 'json');
+
+  p = bg.parseCookies('{"cookies":[{"name":"ESTSAUTH","value":"xyz","domain":".contoso.com","sameSite":"no_restriction","secure":true,"expirationDate":1999999999}]}', 'https://x.test/');
+  eq('our export shape parsed', p.cookies.length, 1);
+  eq('sameSite preserved', p.cookies[0].sameSite, 'no_restriction');
+  eq('expiry preserved', p.cookies[0].expirationDate, 1999999999);
+
+  p = bg.parseCookies('{"a":"1","b":"2"}', 'https://x.test/');
+  eq('name/value map parsed', p.cookies.length, 2);
+  eq('map cookies hang off the target host', p.cookies[0].domain, 'x.test');
+
+  p = bg.parseCookies('Cookie: foo=bar; baz=qux', 'https://x.test/');
+  eq('Cookie: header parsed', p.cookies.length, 2);
+  eq('header values split right', p.cookies[1].name, 'baz');
+  eq('header value kept', p.cookies[1].value, 'qux');
+
+  p = bg.parseCookies('a=1;b=2;\nc=3', 'https://x.test/');
+  eq('document.cookie style parsed', p.cookies.length, 3);
+
+  p = bg.parseCookies('a=1; b=2', '');
+  ok('plain text without a target errors', !!p.error, JSON.stringify(p.error));
+
+  p = bg.parseCookies('{not json', 'https://x.test/');
+  ok('invalid json errors', /invalid JSON/.test(p.error), p.error);
+
+  p = bg.parseCookies('', 'https://x.test/');
+  ok('empty errors', !!p.error);
+
+  p = bg.parseCookies('[{"value":"nodomain"}]', 'https://x.test/');
+  ok('nameless entries dropped', p.error !== '' || p.cookies.length === 0, JSON.stringify(p));
+
+  console.log('\npaste-in takeover end to end');
+  ch = mockChrome();
+  bg = load(ch);
+  const pr = await bg.onMessage({
+    action: 'paste', mode: 'incognito',
+    targetUrl: 'https://login.microsoftonline.com/',
+    name: 'pasted victim',
+    text: '[{"name":"ESTSAUTH","value":"tok","domain":".contoso.com","httpOnly":true,"secure":true},{"name":"__Host-ID","value":"h","domain":"login.microsoftonline.com","path":"/","secure":true}]',
+  });
+  eq('paste reported a parse count', pr.parsed, 2);
+  eq('paste wrote both cookies', pr.success, 2);
+  ok('paste went to the incognito jar', ch.__stores['1'].length === 2 && ch.__stores['0'].length === 0);
+  ok('paste opened the target', ch.__tabs.some((t) => t.url === 'https://login.microsoftonline.com/'));
+  eq('paste used the given name', ch.__storage.active.name, 'pasted victim');
+  ok('paste is marked in recent', (ch.__storage.recent || [])[0].id.indexOf('paste-') === 0);
+
+  const bad = await bg.onMessage({ action: 'paste', text: 'a=1', targetUrl: 'nope' });
+  ok('paste rejects a bad target url', /target URL/.test(bad.error), bad.error);
+
+  const dry = await bg.onMessage({ action: 'parse', text: 'a=1; b=2', targetUrl: 'https://x.test/' });
+  eq('parse action previews the count', dry.count, 2);
 
   console.log('\n' + pass + ' passed, ' + fail + ' failed');
   process.exit(fail ? 1 : 0);

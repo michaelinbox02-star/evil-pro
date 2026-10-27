@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<title>Isolated session</title>
+<title>Session</title>
 <link rel="stylesheet" href="ui.css">
 <style>
   body{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px}
@@ -10,11 +10,13 @@
   h1{font-size:15px;font-weight:600;margin-bottom:3px}
   .sub{color:var(--dim);font-size:11.5px;margin-bottom:16px}
   .big{font-size:20px;font-weight:600;font-family:var(--mono);margin:2px 0 14px;word-break:break-all}
+  .tag{display:inline-block;font-size:10px;padding:1px 7px;border-radius:4px;margin-bottom:10px;text-transform:uppercase;letter-spacing:.05em}
 </style>
 </head>
 <body>
 <div class="box">
-  <h1 id="title">Isolated session</h1>
+  <span class="tag" id="tag">isolated</span>
+  <h1 id="title">This window</h1>
   <div class="sub" id="sub">loading…</div>
   <div class="big" id="who">-</div>
   <div class="kv" id="kv"></div>
@@ -37,25 +39,36 @@ function fmt(ts) {
 }
 function row(k, v) { return '<span class="k">' + esc(k) + '</span><span class="v">' + esc(v || '-') + '</span>'; }
 function paint() {
-  chrome.storage.local.get(['active', 'settings'], function (d) {
+  chrome.storage.local.get(['active'], function (d) {
     var a = d.active;
-    var mode = (d.settings || {}).mode || 'isolated';
-    document.getElementById('note').innerHTML = mode === 'isolated'
-      ? 'Cookies for this session live in this window only. Your normal browsing is untouched. Close the window to discard it.'
-      : 'Cookies were written into your normal profile while this window was open.';
     if (!a) {
-      document.getElementById('title').textContent = 'Isolated session';
+      document.title = 'No session';
+      document.getElementById('tag').textContent = 'idle';
+      document.getElementById('tag').className = 'tag badge mut';
+      document.getElementById('title').textContent = 'This window';
       document.getElementById('sub').textContent = 'no session loaded yet';
       document.getElementById('who').textContent = '-';
       document.getElementById('kv').innerHTML = '';
+      document.getElementById('note').textContent = '';
       return;
     }
-    document.getElementById('title').textContent = 'Browsing as';
-    document.getElementById('sub').textContent = 'isolated from your own logins';
+    var incognito = a.where === 'incognito';
+    var label = a.name || a.username || ('session ' + a.id);
+    document.title = label;
+    var tag = document.getElementById('tag');
+    tag.textContent = incognito ? 'incognito jar' : a.where === 'here' ? 'your profile' : 'your profile';
+    tag.className = 'tag ' + (incognito ? 'badge acc' : 'badge mut');
+    document.getElementById('title').textContent = a.name ? 'Browsing as (named)' : 'Browsing as';
+    document.getElementById('sub').textContent = incognito
+      ? 'cookies live in this window only'
+      : 'cookies were written into your normal profile';
     document.getElementById('who').textContent = a.username || ('(' + (a.phishlet || 'unknown') + ')');
     document.getElementById('kv').innerHTML =
-      row('Session', '#' + a.id) + row('Phishlet', a.phishlet) + row('Source IP', a.ip) +
-      row('Cookies', a.count) + row('Captured', fmt(a.at));
+      row('Window', label) + row('Session', '#' + a.id) + row('Phishlet', a.phishlet) +
+      row('Source IP', a.ip) + row('Cookies', a.count) + row('Captured', fmt(a.at));
+    document.getElementById('note').innerHTML = incognito
+      ? 'Close this window to throw the session away. Use the popup to rename or clear it.'
+      : 'These cookies are in your normal jar, so they replaced whatever you had for the same domains. Use Clear in the popup to remove them.';
   });
 }
 chrome.storage.onChanged.addListener(function (c, area) { if (area === 'local') paint(); });

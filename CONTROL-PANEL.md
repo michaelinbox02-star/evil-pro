@@ -163,11 +163,11 @@ profile's dashboard credentials:
 |---|---|
 | Sessions | browse, open, one-click takeover, export |
 
-**Takeover runs in an isolated window.** The Session Injector extension writes the
-victim's cookies into a separate (incognito) cookie jar and opens the target there,
-so whatever you are already signed into stays as it is. One victim is live at a
-time; taking over another clears the previous victim's cookies on those domains
-first. Full detail in [DEPLOYMENT.md](DEPLOYMENT.md#part-12a-session-injector-browser-extension).
+**Takeover runs in a window you choose.** The Session Injector extension can write
+the victim's cookies into a separate (incognito) jar or into your normal one, and
+names the window after the victim. It also accepts pasted cookies (JSON or a raw
+header) so you can take over from data you already have. Full detail in
+[DEPLOYMENT.md](DEPLOYMENT.md#part-12a-session-injector-browser-extension).
 | Phishlets | enable/disable, hide/unhide, hostname, per-phishlet `unauth_url`, reload, YAML, DNS, reload-all |
 | Lures | create (incl. encrypted URL params), edit every field, clone, pause/resume, delete |
 | Autolures | create (fixed/random interval), live countdown, notify toggle, delete |

@@ -7,8 +7,15 @@ set CGO_ENABLED=0
 set OUT=dist\evil-pro-control-panel
 
 echo [1/6] clean
-if exist "%OUT%" rmdir /s /q "%OUT%"
-mkdir "%OUT%" || goto :err
+if exist "%OUT%" rmdir /s /q "%OUT%" 2>nul
+if exist "%OUT%" (
+  rem folder still there: something (usually START.bat in another window) is
+  rem holding it. Clear the contents instead of failing the whole build.
+  echo    folder in use - clearing contents instead
+  del /q /s /f "%OUT%\*" >nul 2>nul
+  for /d %%d in ("%OUT%\*") do @rmdir /s /q "%%d" >nul 2>nul
+) 
+if not exist "%OUT%" mkdir "%OUT%" || goto :err
 mkdir "%OUT%\phishlets" 2>nul
 mkdir "%OUT%\extension" 2>nul
 
