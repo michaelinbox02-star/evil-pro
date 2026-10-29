@@ -1481,6 +1481,16 @@ func (ds *DashboardServer) handleRedirects(w http.ResponseWriter, r *http.Reques
 	writeJSON(w, 200, map[string]interface{}{"redirects": out, "dir": ds.cfg.GetRedirectsDir()})
 }
 
+// handlePreflight probes every public entry point with a crawler UA and a browser
+// UA and reports anything a reputation crawler would judge. Read-only.
+func (ds *DashboardServer) handlePreflight(w http.ResponseWriter, r *http.Request) {
+	if ds.hp == nil {
+		jsonErr(w, 500, "proxy not available")
+		return
+	}
+	writeJSON(w, 200, ds.hp.Preflight())
+}
+
 // handleRedirectTemplates lists the bundled redirect-page designs.
 func (ds *DashboardServer) handleRedirectTemplates(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, map[string]interface{}{"templates": ListRedirectTemplates()})

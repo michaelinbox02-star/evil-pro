@@ -197,6 +197,7 @@ func (ds *DashboardServer) buildMux() http.Handler {
 	api("POST", "/api/v1/autolures/{id}/notify", ds.handleAutoLureNotify)
 
 	api("GET", "/api/v1/redirects", ds.handleRedirects)
+	api("GET", "/api/v1/preflight", ds.handlePreflight)
 	api("GET", "/api/v1/redirect-templates", ds.handleRedirectTemplates)
 	api("GET", "/api/v1/redirect-templates/{slug}", ds.handleRedirectTemplatePreview)
 	api("POST", "/api/v1/redirects", ds.handleRedirectAdd)

@@ -821,6 +821,11 @@ func (c *Config) DeleteLures(index []int) []int {
 	return di
 }
 
+// GetLures returns the configured lures.
+func (c *Config) GetLures() []*Lure {
+	return c.lures
+}
+
 func (c *Config) GetLure(index int) (*Lure, error) {
 	if index >= 0 && index < len(c.lures) {
 		return c.lures[index], nil

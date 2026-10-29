@@ -168,7 +168,8 @@ async function mgRedirects() {
       '<div class="hint">' + esc(t.description) + '</div></div></div>';
   }).join('');
 
-  return '<div class="card pad0 mb14"><div class="card-head"><h3>Active redirect pages</h3><span class="dim mono" style="font-size:11px">' + esc(list.dir) + '</span></div>' +
+  return '<div class="actions mb14"><button class="btn sm" data-act="mg-preflight">Pre-flight (what a crawler sees)</button></div>' +
+    '<div class="card pad0 mb14"><div class="card-head"><h3>Active redirect pages</h3><span class="dim mono" style="font-size:11px">' + esc(list.dir) + '</span></div>' +
     '<table><thead><tr><th>ID</th><th>Host</th><th>File</th><th>Target</th><th>Turnstile</th><th></th></tr></thead><tbody>' + rows + '</tbody></table></div>' +
     '<h3 style="font-size:13px;margin:6px 0 10px">Template library</h3>' +
     '<div class="tplgrid">' + (cards || '<span class="dim">no templates</span>') + '</div>';
@@ -350,6 +351,24 @@ Object.assign(ACTIONS, {
   'mg-lure-unpause': function (id) { run(async function () { await API.post(ep('lures/' + id + '/unpause')); mgRefresh(); }); },
   'mg-auto-notify': function (id, el) { run(async function () { await API.post(ep('autolures/' + id + '/notify'), { on: el.getAttribute('data-on') === '1' }); mgRefresh(); }); },
 
+  'mg-preflight': function () {
+    run(async function () {
+      var r = await API.get(ep('preflight'));
+      var rows = (r.checks || []).map(function (c) {
+        var sc = c.scanner || {};
+        return '<tr><td>' + esc(c.label) + '</td>' +
+          '<td class="mono">' + esc(c.kind) + '</td>' +
+          '<td>' + (c.problem ? '<span class="badge warn">problem</span>' : '<span class="badge ok">ok</span>') + '</td>' +
+          '<td class="mono">' + esc(String(sc.status || '-')) + (sc.external ? ' external' : ' stayed on us') + '</td>' +
+          '<td class="hint">' + esc(c.problem || '') + '</td></tr>';
+      }).join('') || '<tr><td colspan="5" class="dim center">nothing to check</td></tr>';
+      openModal('Pre-flight: ' + (r.base_domain || ''),
+        '<div class="hint mb14">' + esc(r.note || '') + '. A crawler must be sent off our domain; a browser must stay on the phish. Safe Browsing files a deceptive-page report when a crawler evaluates the phish.</div>' +
+        (r.ok ? '<div class="note mb14">All clear: ' + r.checks.length + ' entry point(s), every crawler leaves our domain.</div>'
+              : '<div class="note warn mb14"><b>' + r.problems.length + ' problem(s).</b> Crawlers evaluate our phish on those entry points.</div>') +
+        '<div class="card pad0"><table><thead><tr><th>entry point</th><th>kind</th><th></th><th>crawler</th><th>detail</th></tr></thead><tbody>' + rows + '</tbody></table></div>');
+    });
+  },
   'mg-redir-new': function (slug) { mgNewRedirect(slug); },
   'mg-redir-edit': function (id) { mgRedirEdit(Number(id)); },
   'mg-redir-save': function () {

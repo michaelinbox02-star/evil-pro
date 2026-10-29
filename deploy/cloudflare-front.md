@@ -93,6 +93,38 @@ part of the link. Pages serves static files, so it would need a Worker anyway
 `Strict-Transport-Security` explicitly. Cloudflare still answers plain http with a
 200 rather than redirecting, so always write `https://`.
 
+## Crawler pre-flight
+
+Safe Browsing (and Defender / Safe Links) flag a young domain as **"Deceptive
+pages"** when one of their crawlers follows a link and ends up on our phish. The
+cure is that a crawler must be sent *off* our infrastructure on its very first
+hop, to the genuine provider login. Two things make that reliable:
+
+* Known crawler User-Agents and Google crawler IP ranges are bounced straight to
+  the phishlet's `unauth_url`, on **both** schemes. Over plain `http` a crawler
+  used to get the self-referential `https://<our host>/` upgrade and so never
+  left the domain - and that `http://<apex>/` hop is exactly what Safe Browsing
+  sampled. It now 302s to the real login like the https path does.
+* The UA list covers the runners that actually evaluated us: Google's
+  `Google-Site-Verification`, `GoogleOther`, `APIs-Google`; Bing's `BingPreview`;
+  and the Office/Outlook webviews (`Microsoft Office`, `Microsoft Outlook`,
+  `safelinks`). A real victim's browser is deliberately left unmatched so they
+  still see the phish. Microsoft **IP ranges** are not used - a corporate O365
+  victim usually comes from one, so they must keep seeing the phish.
+
+Run the check before mailing:
+
+```
+preflight
+```
+
+or **Pre-flight (what a crawler sees)** on the Control Panel's *Redirect pages*
+tab, or `GET /api/v1/preflight`. It probes every lure, redirect page, live front
+link and the apex twice - once as a crawler (must leave our domain) and once as a
+browser (must stay on the phish) - and reports anything a crawler would judge.
+`ok: true` means nothing to fix. The front-link probe is skipped for pages whose
+front is off, so a stale `.dev` URL from an earlier deploy is not a false alarm.
+
 ## Notes
 
 * Turning a page's front off restores its plain link exactly; the stored `.dev`
