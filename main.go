@@ -8,7 +8,6 @@ import (
 	"os/signal"
 	"os/user"
 	"path/filepath"
-	"regexp"
 	"strings"
 	"syscall"
 
@@ -187,20 +186,16 @@ func main() {
 	}
 	for _, f := range files {
 		if !f.IsDir() {
-			pr := regexp.MustCompile(`([a-zA-Z0-9\-\.]*)\.yaml`)
-			rpname := pr.FindStringSubmatch(f.Name())
-			if rpname == nil || len(rpname) < 2 {
+			pname, ok := core.PhishletSiteFromFile(f.Name())
+			if !ok {
 				continue
 			}
-			pname := rpname[1]
-			if pname != "" {
-				pl, err := core.NewPhishlet(pname, filepath.Join(phishlets_path, f.Name()), nil, cfg)
-				if err != nil {
-					log.Error("failed to load phishlet '%s': %v", f.Name(), err)
-					continue
-				}
-				cfg.AddPhishlet(pname, pl)
+			pl, err := core.NewPhishlet(pname, filepath.Join(phishlets_path, f.Name()), nil, cfg)
+			if err != nil {
+				log.Error("failed to load phishlet '%s': %v", f.Name(), err)
+				continue
 			}
+			cfg.AddPhishlet(pname, pl)
 		}
 	}
 	cfg.LoadSubPhishlets()

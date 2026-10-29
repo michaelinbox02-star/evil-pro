@@ -1132,6 +1132,23 @@ func (c *Config) SetHttpPort(port int) {
 	c.cfg.WriteConfig()
 }
 
+// PhishletSiteFromFile maps a file in the phishlets directory to its site name.
+//
+// Only an exact "<site>.yaml" counts. A loose regex also accepts backups such as
+// "o365new.yaml.bak-opt", which resolve to the same site name as the real file:
+// both load, the alphabetically later directory entry wins, and editing the
+// visible file then appears to have no effect.
+func PhishletSiteFromFile(filename string) (string, bool) {
+	if !strings.HasSuffix(filename, ".yaml") {
+		return "", false
+	}
+	name := strings.TrimSuffix(filename, ".yaml")
+	if name == "" {
+		return "", false
+	}
+	return name, true
+}
+
 func (c *Config) GetPhishletsDir() string {
 	if c.phishletsDir != "" {
 		return c.phishletsDir

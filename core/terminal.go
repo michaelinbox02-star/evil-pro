@@ -925,16 +925,14 @@ func (t *Terminal) handlePhishlets(args []string) error {
 			if ferr != nil {
 				return fmt.Errorf("refresh: cannot read phishlets directory '%s': %v", pDir, ferr)
 			}
-			pr := regexp.MustCompile(`([a-zA-Z0-9\-\.]*)\.yaml`)
 			for _, f := range files {
 				if f.IsDir() {
 					continue
 				}
-				m := pr.FindStringSubmatch(f.Name())
-				if m == nil || len(m) < 2 || m[1] == "" {
+				name, ok := PhishletSiteFromFile(f.Name())
+				if !ok {
 					continue
 				}
-				name := m[1]
 				fPath := filepath.Join(pDir, f.Name())
 				existing, lookupErr := t.cfg.GetPhishlet(name)
 				if lookupErr == nil && existing.ParentName != "" {

