@@ -422,6 +422,17 @@ func (a *App) handleHandoff(w http.ResponseWriter, r *http.Request) {
 		out["dashboard_https"] = "https://" + p.DashboardSub + "." + p.Domain
 		out["lure"] = "https://login." + p.Domain + "/auth/login"
 	}
+	// Front links, when any page has one deployed: the operator copies these into
+	// a campaign instead of the plain subdomain link.
+	if p.CFToken != "" && p.Domain != "" {
+		if pages, err := a.engineRedirects(p); err == nil {
+			for _, pg := range pages {
+				if pg.FrontOn && pg.FrontURL != "" {
+					out["front_"+pg.Subdomain] = pg.FrontURL
+				}
+			}
+		}
+	}
 	writeJSON(w, 200, out)
 }
 

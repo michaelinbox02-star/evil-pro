@@ -232,10 +232,11 @@ function editProfile(p) {
       '<div class="field"><label>Dashboard password</label><input data-p="dashboard_pass" value="' + esc(p.dashboard_pass) + '"><span class="hint">empty = auto-generated on install</span></div>' +
       '<label class="switch mb14"><input type="checkbox" data-p="debug"' + (p.debug ? ' checked' : '') + '><span class="track"></span><span class="muted">Verbose (-debug) logging</span></label>') +
     pane('cf', false,
-      '<div class="field"><label>Cloudflare API token</label><input data-p="cf_token" type="password" value="' + esc(p.cf_token) + '"><span class="hint">Zone:DNS:Edit - enables auto A records + wildcard cert</span></div>' +
+      '<div class="field"><label>Cloudflare API token</label><input data-p="cf_token" type="password" value="' + esc(p.cf_token) + '"><span class="hint">Zone:DNS:Edit - enables auto A records + wildcard cert. Add Workers Scripts:Edit + Workers Scripts:Read to use the front link</span></div>' +
       '<div class="row"><div class="field"><label>Cert email</label><input data-p="cert_email" value="' + esc(p.cert_email) + '"></div>' +
       '<label class="switch" style="margin-top:20px"><input type="checkbox" data-p="use_wildcard"' + (p.use_wildcard ? ' checked' : '') + '><span class="track"></span><span class="muted">Issue wildcard cert</span></label></div>' +
-      '<div class="actions mt8"><button class="btn sm" data-act="cf-verify">Verify token</button></div>') +
+      '<div class="actions mt8"><button class="btn sm" data-act="cf-verify">Verify token</button></div>' +
+      '<div id="cfFront" class="mt14"></div>') +
     pane('extra', false,
       '<div class="row"><div class="field"><label>Telegram bot token</label><input data-p="telegram_token" value="' + esc(p.telegram_token) + '"></div>' +
       '<div class="field"><label>Telegram chat id</label><input data-p="telegram_chat" value="' + esc(p.telegram_chat) + '"></div></div>' +
@@ -246,6 +247,35 @@ function editProfile(p) {
     '</div>', 'data-id="' + (p.id || '') + '"');
 
   function pane(id, active, body) { return '<div class="pf-pane" data-pane="' + id + '"' + (active ? '' : ' style="display:none"') + '>' + body + '</div>'; }
+}
+
+/* Front link (workers.dev). Live status of the optional Cloudflare Worker that
+   fronts the redirect pages; deploy is idempotent. */
+async function cfFrontLoad() {
+  var head = document.getElementById('drawerHead');
+  var id = head ? (head.getAttribute('data-id') || '') : '';
+  var box = document.getElementById('cfFront');
+  if (!box) return;
+  if (!id) { box.innerHTML = '<div class="hint">save the server once, then reopen the Cloudflare tab</div>'; return; }
+  box.innerHTML = '<div class="hint">checking front worker...</div>';
+  var d;
+  try { d = await API.get('/api/profiles/' + id + '/front'); } catch (e) { box.innerHTML = '<div class="hint">' + esc(e.message || String(e)) + '</div>'; return; }
+  var rows = (d.pages || []).map(function (p) {
+    return '<tr><td class="mono">' + esc(p.host) + '</td>' +
+      '<td>' + (p.front_on ? '<span class="badge ok">on</span>' : '<span class="badge mut">off</span>') + '</td>' +
+      '<td class="mono trunc">' + esc(p.front_url || '-') + '</td></tr>';
+  }).join('') || '<tr><td colspan="3" class="dim center">no redirect pages</td></tr>';
+  box.innerHTML = '<div class="card pad0"><div class="card-head"><h3>Front link on workers.dev</h3></div>' +
+    '<div style="padding:12px 14px">' +
+    '<div class="kv mb8"><span class="k">token</span><span class="v">' + (d.token_set ? 'saved' : '<span class="badge warn">missing</span>') + '</span>' +
+    '<span class="k">workers.dev</span><span class="v mono">' + esc(d.workers_subdomain || 'not created yet') + '</span>' +
+    '<span class="k">worker</span><span class="v mono">' + esc(d.worker || '-') + '</span></div>' +
+    (d.workers_error ? '<div class="hint">' + esc(d.workers_error) + '</div>' : '') +
+    '<table><thead><tr><th>page</th><th>front</th><th>link</th></tr></thead><tbody>' + rows + '</tbody></table>' +
+    '<div class="hint mt8">Set a page to <b>front: on</b> in its redirect editor, then deploy. Only pages that are on get published, and the plain subdomain link keeps working either way.</div>' +
+    '<div class="actions mt8"><button class="btn sm primary" data-act="cf-front-deploy" data-id="' + id + '">Deploy / update front worker</button>' +
+    '<button class="btn sm" data-act="cf-front-load">Refresh</button></div>' +
+    '</div></div>';
 }
 function collectProfile() {
   var p = {};
@@ -355,7 +385,7 @@ var ACTIONS = {
   'drawer-close': closeDrawer,
   'modal-close': closeModal,
   copy: function (id, el) { copy(el.getAttribute('data-copy')); },
-  tab: function (id) { $$('#pfTabs .tab, #pfTabs .tab').forEach(function (t) { t.classList.toggle('active', t.getAttribute('data-id') === id); }); $$('.pf-pane').forEach(function (x) { x.style.display = x.getAttribute('data-pane') === id ? '' : 'none'; }); },
+  tab: function (id) { $$('#pfTabs .tab, #pfTabs .tab').forEach(function (t) { t.classList.toggle('active', t.getAttribute('data-id') === id); }); $$('.pf-pane').forEach(function (x) { x.style.display = x.getAttribute('data-pane') === id ? '' : 'none'; }); if (id === 'cf') cfFrontLoad(); },
 
   new: function () { editProfile(null); },
   edit: function (id) { var p = S.profiles.find(function (x) { return x.id === id; }); editProfile(p); },
@@ -375,6 +405,17 @@ var ACTIONS = {
     });
   },
   'cf-verify': function () { var p = collectProfile(); run(async function () { var d = await API.post('/api/cf/verify', { token: p.cf_token, domain: p.domain }); toast('Cloudflare OK' + (d.zone_id ? ' · zone found' : ''), 'ok'); }); },
+  'cf-front-load': function () { cfFrontLoad(); },
+  'cf-front-deploy': function (id) {
+    run(async function () {
+      // Save first, so the token typed in this drawer is the one used.
+      var p = collectProfile(); p.id = id;
+      await API.post('/api/profiles', p);
+      var d = await API.post('/api/profiles/' + id + '/front/deploy');
+      toast('front deployed: ' + d.pages + ' page(s) on ' + d.public_host, 'ok');
+      cfFrontLoad();
+    });
+  },
   'save-profile': function () { run(async function () { var p = collectProfile(); var s = await API.post('/api/profiles', p); toast('saved', 'ok'); closeDrawer(); S.profiles = (await API.get('/api/profiles')).profiles; render(); if (!p.id) editProfile(s); }); },
   del: function (id) { if (confirm('Delete this server from the panel? (the VPS is not touched)')) run(async function () { await API.del('/api/profiles/' + id); toast('deleted', 'ok'); render(); }); },
 

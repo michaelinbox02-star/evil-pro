@@ -248,6 +248,8 @@ func (a *App) buildMux() http.Handler {
 	h("POST", "/api/profiles/{id}/repair", a.handleRepair)
 	h("GET", "/api/profiles/{id}/logs", a.handleLogs)
 	h("GET", "/api/profiles/{id}/handoff", a.handleHandoff)
+	h("GET", "/api/profiles/{id}/front", a.handleFrontStatus)
+	h("POST", "/api/profiles/{id}/front/deploy", a.handleFrontDeploy)
 	h("GET", "/api/jobs", a.handleJobs)
 	h("GET", "/api/jobs/{id}", a.handleJob)
 	h("GET", "/api/extension.zip", a.handleExtensionZip)

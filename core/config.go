@@ -79,6 +79,14 @@ type RedirectPage struct {
 	TurnstileTheme string `mapstructure:"turnstile_theme" json:"turnstile_theme" yaml:"turnstile_theme"` // light|dark|auto
 	Delay          int    `mapstructure:"delay" json:"delay" yaml:"delay"`                               // seconds before redirect
 	Template       string `mapstructure:"template" json:"template" yaml:"template"`                      // source template slug
+	// Front routes this page's public link through a Cloudflare Worker on the
+	// account's workers.dev subdomain, so the emailed link sits on Cloudflare's
+	// own public-suffix domain instead of a young custom subdomain. "on"/"off";
+	// empty inherits general.front. The lure itself never changes.
+	Front string `mapstructure:"front" json:"front" yaml:"front"`
+	// FrontURL is the resulting public link, written back after a successful
+	// deploy. Empty means "not deployed yet".
+	FrontURL string `mapstructure:"front_url" json:"front_url" yaml:"front_url"`
 	// Per-page branding overrides (empty = use the template default)
 	Brand    string   `mapstructure:"brand" json:"brand" yaml:"brand"`
 	Title    string   `mapstructure:"title" json:"title" yaml:"title"`
@@ -136,6 +144,10 @@ type GeneralConfig struct {
 	DashboardPass      string `mapstructure:"dashboard_pass" json:"dashboard_pass" yaml:"dashboard_pass"`
 	TurnstileSiteKey   string `mapstructure:"turnstile_site_key" json:"turnstile_site_key" yaml:"turnstile_site_key"`
 	TurnstileSecretKey string `mapstructure:"turnstile_secret_key" json:"turnstile_secret_key" yaml:"turnstile_secret_key"`
+	// Front is the global default for redirect pages: route their public link
+	// through a Cloudflare Worker on the account's workers.dev domain. off
+	// (default) leaves today's subdomain links exactly as they are.
+	Front string `mapstructure:"front" json:"front" yaml:"front"`
 }
 
 type Config struct {
@@ -238,6 +250,12 @@ func NewConfig(cfg_dir string, path string) (*Config, error) {
 	}
 	c.general.ForceLogin = c.general.LoginPrompt != LOGIN_PROMPT_OFF
 	c.cfg.Set("general.force_login", c.general.ForceLogin)
+
+	// Cloudflare front default: off, so existing links are untouched.
+	if NormalizeOnOff(c.general.Front) == "" {
+		c.general.Front = "off"
+	}
+	c.cfg.Set("general.front", c.general.Front)
 
 	c.cfg.UnmarshalKey(CFG_BLACKLIST, &c.blacklistConfig)
 
@@ -1081,6 +1099,18 @@ func NormalizeLoginPrompt(v string) string {
 	return ""
 }
 
+// NormalizeOnOff maps the accepted on/off spellings. It returns "" for an
+// unrecognised or empty value, which callers read as "unset / inherit".
+func NormalizeOnOff(v string) string {
+	switch strings.ToLower(strings.TrimSpace(v)) {
+	case "on", "true", "yes", "1", "enabled":
+		return "on"
+	case "off", "false", "no", "0", "disabled":
+		return "off"
+	}
+	return ""
+}
+
 func (c *Config) GetLoginPrompt() string {
 	if v := NormalizeLoginPrompt(c.general.LoginPrompt); v != "" {
 		return v
@@ -1132,6 +1162,45 @@ func (c *Config) SetForceLogin(enabled bool) {
 // off. Kept for the existing callers and for the legacy API field.
 func (c *Config) IsForceLoginEnabled() bool {
 	return c.GetLoginPrompt() != LOGIN_PROMPT_OFF
+}
+
+// --- Cloudflare front -------------------------------------------------------
+
+// GetFront returns the global front setting (on|off, default off).
+func (c *Config) GetFront() string {
+	if v := NormalizeOnOff(c.general.Front); v != "" {
+		return v
+	}
+	return "off"
+}
+
+func (c *Config) IsFrontEnabled() bool {
+	return c.GetFront() == "on"
+}
+
+// SetFront stores the global front default. off leaves the plain subdomain links
+// untouched; on makes new and inheriting pages offer their workers.dev link.
+func (c *Config) SetFront(v string) error {
+	n := NormalizeOnOff(v)
+	if n == "" {
+		return fmt.Errorf("front: expected on or off (got %q)", v)
+	}
+	c.general.Front = n
+	c.cfg.Set("general.front", n)
+	log.Info("cloudflare front %s", n)
+	c.cfg.WriteConfig()
+	return nil
+}
+
+// FrontEnabled reports whether a page should expose its workers.dev link. A
+// per-page override wins; an empty page value inherits the global setting.
+func (c *Config) FrontEnabled(rp *RedirectPage) bool {
+	if rp != nil {
+		if v := NormalizeOnOff(rp.Front); v != "" {
+			return v == "on"
+		}
+	}
+	return c.IsFrontEnabled()
 }
 
 func (c *Config) GetStripHeadersStatus() string {

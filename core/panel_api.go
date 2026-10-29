@@ -1472,6 +1472,9 @@ func (ds *DashboardServer) handleRedirects(w http.ResponseWriter, r *http.Reques
 			"turnstile_theme": rp.TurnstileTheme, "delay": rp.Delay, "template": rp.Template,
 			"brand": rp.Brand, "title": rp.Title, "subtitle": rp.Subtitle,
 			"accent": rp.Accent, "logo": rp.Logo, "button": rp.Button, "messages": rp.Messages,
+			// front_on is the effective switch (per-page override else global);
+			// front_url only ever carries the workers.dev link.
+			"front": rp.Front, "front_on": ds.cfg.FrontEnabled(rp), "front_url": rp.FrontURL,
 		})
 	}
 	writeJSON(w, 200, map[string]interface{}{"redirects": out, "dir": ds.cfg.GetRedirectsDir()})
@@ -1580,6 +1583,7 @@ func (ds *DashboardServer) handleRedirectAdd(w http.ResponseWriter, r *http.Requ
 		Logo           string   `json:"logo"`
 		Button         string   `json:"button"`
 		Messages       []string `json:"messages"`
+		Front          string   `json:"front"`
 	}
 	if err := readJSON(r, &payload); err != nil {
 		jsonErr(w, 400, "invalid body")
@@ -1661,6 +1665,7 @@ func (ds *DashboardServer) handleRedirectAdd(w http.ResponseWriter, r *http.Requ
 		TurnstileTheme: theme, Delay: delay, Template: payload.Template,
 		Brand: payload.Brand, Title: payload.Title, Subtitle: payload.Subtitle,
 		Accent: payload.Accent, Logo: payload.Logo, Button: payload.Button, Messages: payload.Messages,
+		Front: NormalizeOnOff(payload.Front),
 	})
 	if pages := ds.cfg.GetRedirectPages(); len(pages) > 0 {
 		fillBranding(pages[len(pages)-1])
@@ -1700,6 +1705,8 @@ func (ds *DashboardServer) handleRedirectEdit(w http.ResponseWriter, r *http.Req
 		Logo           *string  `json:"logo"`
 		Button         *string  `json:"button"`
 		Messages       []string `json:"messages"`
+		Front          *string  `json:"front"`
+		FrontURL       *string  `json:"front_url"`
 	}
 	if err := readJSON(r, &payload); err != nil {
 		jsonErr(w, 400, "invalid body")
@@ -1716,6 +1723,16 @@ func (ds *DashboardServer) handleRedirectEdit(w http.ResponseWriter, r *http.Req
 	}
 	if payload.Turnstile != nil {
 		rp.Turnstile = *payload.Turnstile
+	}
+	if payload.Front != nil {
+		if *payload.Front != "" && NormalizeOnOff(*payload.Front) == "" {
+			jsonErr(w, 400, "front must be on, off or empty to inherit")
+			return
+		}
+		rp.Front = NormalizeOnOff(*payload.Front)
+	}
+	if payload.FrontURL != nil {
+		rp.FrontURL = strings.TrimSpace(*payload.FrontURL)
 	}
 	if payload.TurnstilePos != nil && validRedirectTSPos[*payload.TurnstilePos] {
 		rp.TurnstilePos = *payload.TurnstilePos
@@ -1923,6 +1940,7 @@ func (ds *DashboardServer) handleConfigGet(w http.ResponseWriter, r *http.Reques
 			"dashboard_pass_set": c.GetDashboardPass() != "",
 			"turnstile_site_key": c.GetTurnstileSiteKey(),
 			"turnstile_set":      c.GetTurnstileSecretKey() != "",
+			"front":              c.GetFront(),
 		},
 		"telegram": map[string]interface{}{
 			"chatid":     c.GetTelegramChatID(),
@@ -2038,6 +2056,8 @@ func (ds *DashboardServer) applyConfig(key, value string) error {
 		c.SetForceLogin(parseBool(value))
 	case "login_prompt":
 		return c.SetLoginPrompt(value)
+	case "front":
+		return c.SetFront(value)
 	case "autocert":
 		c.EnableAutocert(parseBool(value))
 		ds.manageCerts(false)
