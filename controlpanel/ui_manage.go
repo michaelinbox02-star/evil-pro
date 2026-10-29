@@ -215,6 +215,9 @@ async function mgConfig() {
       [['login', 'login - always ask for credentials'], ['select_account', 'select_account - show the account picker'], ['off', 'off - never prompt (session-only)']],
       'login adds prompt=login, select_account shows the account tile so a returning visitor picks their account and skips typing the email, off never prompts and only captures a session. force_login on|off still works as an alias. SAML/WS-Fed hops use wfresh=0 unless off.') +
     sw('autocert (ACME TLS)', 'autocert', g.autocert) +
+    sel('cloudflare front (default for redirect links)', 'front', g.front,
+      [['off', 'off - plain subdomain links'], ['on', 'on - redirect pages may use a workers.dev link']],
+      'Default for the optional Cloudflare front. A redirect page can override it per page in its editor. Deploy or update the Worker from the Cloudflare tab of the server. off leaves every link exactly as it is today.') +
     sw('block_vpn', 'blockvpn', g.block_vpn) +
     '<div class="row"><div class="field"><label>Telegram chat id</label><input data-mcfg="chatid" value="' + esc(t.chatid) + '"></div>' +
     '<div class="field"><label>Telegram token</label><input data-mcfg="teletoken" placeholder="' + esc(t.token_set ? 'saved' : '') + '"></div></div>' +
