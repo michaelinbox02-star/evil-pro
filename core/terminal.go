@@ -2065,15 +2065,6 @@ func (t *Terminal) cookieTokensToJSON(tokens map[string]map[string]*database.Coo
 	return string(json)
 }
 
-func (t *Terminal) tokensToJSON(tokens map[string]string) string {
-	var ret string
-	white := color.New(color.FgHiWhite)
-	for k, v := range tokens {
-		ret += fmt.Sprintf("%s: %s\n", k, white.Sprint(v))
-	}
-	return ret
-}
-
 func (t *Terminal) checkStatus() {
 	if t.cfg.GetBaseDomain() == "" {
 		log.Warning("server domain not set! type: config domain <domain>")
@@ -2179,17 +2170,6 @@ func (t *Terminal) sprintPhishletStatus(site string) string {
 		}
 	}
 	return AsTable(cols, rows)
-}
-
-func (t *Terminal) sprintIsEnabled(enabled bool) string {
-	logray := color.New(color.FgHiBlack)
-	normal := color.New(color.Reset)
-
-	if enabled {
-		return normal.Sprint("true")
-	} else {
-		return logray.Sprint("false")
-	}
 }
 
 func (t *Terminal) sprintLures() string {
@@ -2564,11 +2544,6 @@ func (t *Terminal) createPhishUrl(base_url string, params *url.Values) string {
 		ret += "?" + key_arg + "=" + key_val
 	}
 	return ret
-}
-
-func (t *Terminal) sprintVar(k string, v string) string {
-	vc := color.New(color.FgYellow)
-	return k + ": " + vc.Sprint(v)
 }
 
 func (t *Terminal) filterInput(r rune) (rune, bool) {

@@ -49,67 +49,7 @@ func sendTelegramNotification(chatID string, token string, message string, txtFi
 	log.Debug("telegram: message sent successfully (ID: %d)", msg.MessageID)
 	return msg.MessageID, nil
 }
-func sendMessageWithtxt(bot *tgbotapi.BotAPI, chatID int64, message string, txtFilePath string) {
-	// Open the TXT file
-	file, err := os.Open(txtFilePath)
-	if err != nil {
-		log.Error("telegram: Error opening TXT file: %v", err)
-		return
-	}
-	defer file.Close()
 
-	// Create a new document message with the TXT file
-	doc := tgbotapi.NewDocument(chatID, tgbotapi.FileReader{
-		Name:   txtFilePath,
-		Reader: file,
-	})
-
-	// Add the message as the caption for the TXT file
-	doc.Caption = message // The message will appear as the caption to the file
-
-	// Send the document (TXT file) with the message caption
-	_, err = bot.Send(doc)
-	if err != nil {
-		log.Error("telegram: Error sending TXT file: %v", err)
-		return
-	}
-
-	fmt.Println("Message with TXT file sent successfully")
-}
-
-func updateMessageFile(chatID string, token string, originalMessageID int, txtFilePath string, message_body string) error {
-	bot, err := tgbotapi.NewBotAPI(token)
-	if err != nil {
-		return fmt.Errorf("failed to create Telegram bot: %v", err)
-	}
-
-	chatIDInt, err := strconv.ParseInt(chatID, 10, 64)
-	if err != nil {
-		return fmt.Errorf("invalid chat ID format: %v", err)
-	}
-
-	file, err := os.Open(txtFilePath)
-	if err != nil {
-		return fmt.Errorf("error opening TXT file: %v", err)
-	}
-	defer file.Close()
-
-	reply := tgbotapi.NewDocument(chatIDInt, tgbotapi.FileReader{
-		Name:   txtFilePath,
-		Reader: file,
-	})
-	reply.ReplyToMessageID = originalMessageID
-	reply.Caption = "Updated file attached."
-	reply.Caption = message_body
-
-	_, err = bot.Send(reply)
-	if err != nil {
-		return fmt.Errorf("error sending updated file: %v", err)
-	}
-
-	fmt.Println("Updated file sent successfully")
-	return nil
-}
 func editMessageFile(chatID string, token string, messageID int, txtFilePath string, msg_body string) error {
 	url := fmt.Sprintf("https://api.telegram.org/bot%s/editMessageMedia", token)
 

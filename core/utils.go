@@ -42,16 +42,6 @@ func GenRandomAlphanumString(n int) string {
 	return string(b)
 }
 
-func CreateDir(path string, perm os.FileMode) error {
-	if _, err := os.Stat(path); os.IsNotExist(err) {
-		err = os.Mkdir(path, perm)
-		if err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
 func ReadFromFile(path string) ([]byte, error) {
 	f, err := os.OpenFile(path, os.O_RDONLY, 0644)
 	defer f.Close()

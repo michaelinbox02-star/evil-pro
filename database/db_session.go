@@ -112,30 +112,6 @@ func (d *Database) sessionsList() ([]*Session, error) {
 	return sessions, nil
 }
 
-func (d *Database) sessionsUpdateCmsgid(sid string, cmsgid string) error {
-	s, err := d.sessionsGetBySid(sid)
-	if err != nil {
-		return err
-	}
-	s.Cmsgid = cmsgid
-	s.UpdateTime = time.Now().UTC().Unix()
-
-	err = d.sessionsUpdate(s.Id, s)
-	return err
-}
-
-func (d *Database) sessionsUpdateTmsgid(sid string, tmsgid string) error {
-	s, err := d.sessionsGetBySid(sid)
-	if err != nil {
-		return err
-	}
-	s.Tmsgid = tmsgid
-	s.UpdateTime = time.Now().UTC().Unix()
-
-	err = d.sessionsUpdate(s.Id, s)
-	return err
-}
-
 func (d *Database) sessionsUpdateUsername(sid string, username string) error {
 	s, err := d.sessionsGetBySid(sid)
 	if err != nil {

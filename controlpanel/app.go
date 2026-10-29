@@ -115,17 +115,6 @@ func jsonErr(w http.ResponseWriter, status int, msg string) {
 	writeJSON(w, status, map[string]string{"error": msg})
 }
 
-func clientIP(r *http.Request) string {
-	if x := r.Header.Get("X-Forwarded-For"); x != "" {
-		return strings.TrimSpace(strings.Split(x, ",")[0])
-	}
-	h := r.RemoteAddr
-	if i := strings.LastIndex(h, ":"); i > 0 {
-		return h[:i]
-	}
-	return h
-}
-
 func rndHex(n int) string {
 	b := make([]byte, n)
 	_, _ = rand.Read(b)

@@ -48,10 +48,6 @@ func SetReadline(rl *readline.Instance) {
 	g_rl = rl
 }
 
-func GetOutput() io.Writer {
-	return stdout
-}
-
 func NullLogger() *log.Logger {
 	return log.New(io.Discard, "", 0)
 }

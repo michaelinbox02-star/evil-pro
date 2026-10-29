@@ -42,12 +42,6 @@ func (j *Job) log(line string) {
 
 func (j *Job) logf(f string, a ...interface{}) { j.log(fmt.Sprintf(f, a...)) }
 
-func (j *Job) setStatus(s string) {
-	j.mu.Lock()
-	j.Status = s
-	j.mu.Unlock()
-}
-
 func (j *Job) done(err error) {
 	j.mu.Lock()
 	if err != nil {

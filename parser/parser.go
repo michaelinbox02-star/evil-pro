@@ -4,11 +4,6 @@ import (
 	"errors"
 )
 
-var (
-	ParseEnv      bool = false
-	ParseBacktick bool = false
-)
-
 func isSpace(r rune) bool {
 	switch r {
 	case ' ', '\t', '\r', '\n':

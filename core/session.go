@@ -82,14 +82,6 @@ func (s *Session) SetUsername(username string) {
 	s.Username = username
 }
 
-func (s *Session) SetCmsgid(cmsgid string) {
-	s.Cmsgid = cmsgid
-}
-
-func (s *Session) SetTmsgid(tmsgid string) {
-	s.Tmsgid = tmsgid
-}
-
 func (s *Session) SetPassword(password string) {
 	s.Password = password
 }

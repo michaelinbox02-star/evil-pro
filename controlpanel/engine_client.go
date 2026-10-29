@@ -73,20 +73,13 @@ func (a *App) engineCall(p *Profile, method, path string, body interface{}, out 
 
 // engineRedirect is the subset of the engine's redirect DTO the front needs.
 type engineRedirect struct {
-	ID         int    `json:"id"`
-	Subdomain  string `json:"subdomain"`
-	Host       string `json:"host"`
-	TargetURL  string `json:"target_url"`
-	Front      string `json:"front"`
-	FrontOn    bool   `json:"front_on"`
-	FrontURL   string `json:"front_url"`
-	Turnstile  bool   `json:"turnstile"`
-	Template   string `json:"template"`
-	Delay      int    `json:"delay"`
-	Brand      string `json:"brand"`
-	Title      string `json:"title"`
-	Subtitle   string `json:"subtitle"`
-	FrontKnown bool   `json:"-"`
+	ID        int    `json:"id"`
+	Subdomain string `json:"subdomain"`
+	Host      string `json:"host"`
+	TargetURL string `json:"target_url"`
+	FrontOn   bool   `json:"front_on"`
+	FrontURL  string `json:"front_url"`
+	Turnstile bool   `json:"turnstile"`
 }
 
 func (a *App) engineRedirects(p *Profile) ([]engineRedirect, error) {
