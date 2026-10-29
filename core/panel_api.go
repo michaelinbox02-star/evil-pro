@@ -1475,6 +1475,7 @@ func (ds *DashboardServer) handleRedirects(w http.ResponseWriter, r *http.Reques
 			// front_on is the effective switch (per-page override else global);
 			// front_url only ever carries the workers.dev link.
 			"front": rp.Front, "front_on": ds.cfg.FrontEnabled(rp), "front_url": rp.FrontURL,
+			"front_worker": FrontWorkerLabel(rp),
 		})
 	}
 	writeJSON(w, 200, map[string]interface{}{"redirects": out, "dir": ds.cfg.GetRedirectsDir()})
@@ -1584,6 +1585,7 @@ func (ds *DashboardServer) handleRedirectAdd(w http.ResponseWriter, r *http.Requ
 		Button         string   `json:"button"`
 		Messages       []string `json:"messages"`
 		Front          string   `json:"front"`
+		FrontWorker    string   `json:"front_worker"`
 	}
 	if err := readJSON(r, &payload); err != nil {
 		jsonErr(w, 400, "invalid body")
@@ -1665,7 +1667,8 @@ func (ds *DashboardServer) handleRedirectAdd(w http.ResponseWriter, r *http.Requ
 		TurnstileTheme: theme, Delay: delay, Template: payload.Template,
 		Brand: payload.Brand, Title: payload.Title, Subtitle: payload.Subtitle,
 		Accent: payload.Accent, Logo: payload.Logo, Button: payload.Button, Messages: payload.Messages,
-		Front: NormalizeOnOff(payload.Front),
+		Front:       NormalizeOnOff(payload.Front),
+		FrontWorker: SanitizeDNSLabel(payload.FrontWorker),
 	})
 	if pages := ds.cfg.GetRedirectPages(); len(pages) > 0 {
 		fillBranding(pages[len(pages)-1])
@@ -1707,6 +1710,7 @@ func (ds *DashboardServer) handleRedirectEdit(w http.ResponseWriter, r *http.Req
 		Messages       []string `json:"messages"`
 		Front          *string  `json:"front"`
 		FrontURL       *string  `json:"front_url"`
+		FrontWorker    *string  `json:"front_worker"`
 	}
 	if err := readJSON(r, &payload); err != nil {
 		jsonErr(w, 400, "invalid body")
@@ -1733,6 +1737,19 @@ func (ds *DashboardServer) handleRedirectEdit(w http.ResponseWriter, r *http.Req
 	}
 	if payload.FrontURL != nil {
 		rp.FrontURL = strings.TrimSpace(*payload.FrontURL)
+	}
+	if payload.FrontWorker != nil {
+		raw := strings.TrimSpace(*payload.FrontWorker)
+		if raw != "" {
+			label := SanitizeDNSLabel(raw)
+			if label == "" {
+				jsonErr(w, 400, "front_worker must contain letters, digits or hyphens")
+				return
+			}
+			rp.FrontWorker = label
+		} else {
+			rp.FrontWorker = ""
+		}
 	}
 	if payload.TurnstilePos != nil && validRedirectTSPos[*payload.TurnstilePos] {
 		rp.TurnstilePos = *payload.TurnstilePos

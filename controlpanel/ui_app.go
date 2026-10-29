@@ -263,16 +263,18 @@ async function cfFrontLoad() {
   var rows = (d.pages || []).map(function (p) {
     return '<tr><td class="mono">' + esc(p.host) + '</td>' +
       '<td>' + (p.front_on ? '<span class="badge ok">on</span>' : '<span class="badge mut">off</span>') + '</td>' +
-      '<td class="mono trunc">' + esc(p.front_url || '-') + '</td></tr>';
-  }).join('') || '<tr><td colspan="3" class="dim center">no redirect pages</td></tr>';
+      '<td class="mono">' + esc(p.worker || '-') + '</td>' +
+      '<td class="mono trunc">' + esc(p.front_url || p.preview || '-') + '</td></tr>';
+  }).join('') || '<tr><td colspan="4" class="dim center">no redirect pages</td></tr>';
   box.innerHTML = '<div class="card pad0"><div class="card-head"><h3>Front link on workers.dev</h3></div>' +
     '<div style="padding:12px 14px">' +
     '<div class="kv mb8"><span class="k">token</span><span class="v">' + (d.token_set ? 'saved' : '<span class="badge warn">missing</span>') + '</span>' +
     '<span class="k">workers.dev</span><span class="v mono">' + esc(d.workers_subdomain || 'not created yet') + '</span>' +
     '<span class="k">worker</span><span class="v mono">' + esc(d.worker || '-') + '</span></div>' +
     (d.workers_error ? '<div class="hint">' + esc(d.workers_error) + '</div>' : '') +
-    '<table><thead><tr><th>page</th><th>front</th><th>link</th></tr></thead><tbody>' + rows + '</tbody></table>' +
-    '<div class="hint mt8">Set a page to <b>front: on</b> in its redirect editor, then deploy. Only pages that are on get published, and the plain subdomain link keeps working either way.</div>' +
+    '<table><thead><tr><th>page</th><th>front</th><th>worker</th><th>link</th></tr></thead><tbody>' + rows + '</tbody></table>' +
+    '<div class="hint mt8">Set a page to <b>front: on</b> in its redirect editor and give it a <b>workers.dev label</b> there, then deploy. Each page gets its own worker, so its link is its own hostname. Pages that are off keep the plain subdomain link.</div>' +
+    (d.shared_labels && Object.keys(d.shared_labels).length ? '<div class="hint">shared worker label: ' + esc(Object.keys(d.shared_labels).map(function (k) { return k + ' (' + d.shared_labels[k].join(', ') + ')'; }).join('; ')) + ' - those pages are served by one worker under their own paths</div>' : '') +
     '<div class="actions mt8"><button class="btn sm primary" data-act="cf-front-deploy" data-id="' + id + '">Deploy / update front worker</button>' +
     '<button class="btn sm" data-act="cf-front-load">Refresh</button></div>' +
     '</div></div>';
@@ -412,7 +414,8 @@ var ACTIONS = {
       var p = collectProfile(); p.id = id;
       await API.post('/api/profiles', p);
       var d = await API.post('/api/profiles/' + id + '/front/deploy');
-      toast('front deployed: ' + d.pages + ' page(s) on ' + d.public_host, 'ok');
+      toast('front deployed: ' + d.pages + ' page(s) on ' + ((d.workers || []).join(', ') || 'no workers'), 'ok');
+      if (d.turnstile_warning) toast(d.turnstile_warning, 'err');
       cfFrontLoad();
     });
   },

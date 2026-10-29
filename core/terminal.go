@@ -451,6 +451,8 @@ func (t *Terminal) handleRedirects(args []string) error {
 		log.Info("  redirects add <sub> <file> <url> [on|off]  - add redirect page (Turnstile: on/off, default off)")
 		log.Info("  redirects delete <id>                      - remove redirect page by ID")
 		log.Info("")
+		log.Info("front: per-page workers.dev link (set from the panel; the label defaults to the page subdomain)")
+		log.Info("")
 		log.Info("files must be placed in: %s", redirectsDir)
 		log.Info("each redirect page is served at: https://<sub>.%s", t.cfg.GetBaseDomain())
 	}
@@ -472,11 +474,20 @@ func (t *Terminal) handleRedirects(args []string) error {
 			if t.cfg.GetBaseDomain() != "" {
 				host = rp.Subdomain + "." + t.cfg.GetBaseDomain()
 			}
-			rows = append(rows, []string{fmt.Sprintf("%d", i), host, rp.File, rp.TargetURL, ts})
+			front := "-"
+			if t.cfg.FrontEnabled(rp) {
+				front = FrontWorkerLabel(rp)
+				if rp.FrontURL != "" {
+					front += " -> " + rp.FrontURL
+				} else {
+					front += " (not deployed)"
+				}
+			}
+			rows = append(rows, []string{fmt.Sprintf("%d", i), host, rp.File, rp.TargetURL, ts, front})
 		}
 		_ = keys
 		for _, r := range rows {
-			log.Info("[%s] %s  file:%s  url:%s  turnstile:%s", r[0], r[1], r[2], r[3], r[4])
+			log.Info("[%s] %s  file:%s  url:%s  turnstile:%s  front:%s", r[0], r[1], r[2], r[3], r[4], r[5])
 		}
 		return nil
 	}

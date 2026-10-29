@@ -79,7 +79,9 @@ type engineRedirect struct {
 	TargetURL string `json:"target_url"`
 	FrontOn   bool   `json:"front_on"`
 	FrontURL  string `json:"front_url"`
-	Turnstile bool   `json:"turnstile"`
+	// FrontWorker is the engine's effective workers.dev label for this page.
+	FrontWorker string `json:"front_worker"`
+	Turnstile   bool   `json:"turnstile"`
 }
 
 func (a *App) engineRedirects(p *Profile) ([]engineRedirect, error) {

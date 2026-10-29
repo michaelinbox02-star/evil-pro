@@ -475,7 +475,7 @@ function mgRedirFields(o, isEdit) {
     f('mgRTitle', 'Title', o.title, '') +
     f('mgRSubtitle', 'Subtitle', o.subtitle, '') +
     f('mgRButton', 'Button label', o.button, 'used by templates with a button') +
-    '<div class="row"><div class="field" style="max-width:230px"><label>Cloudflare front</label><select id="mgRFront" data-mgr="mgRFront">' + [['', 'inherit global'], ['on', 'on - publish a workers.dev link'], ['off', 'off - plain subdomain only']].map(function (x) { return '<option value="' + x[0] + '"' + ((o.front || '') === x[0] ? ' selected' : '') + '>' + esc(x[1]) + '</option>'; }).join('') + '</select><span class="hint">emailed-link domain, the lure never changes</span></div>' + (o.front_url ? '<div class="field" style="flex:2"><label>Front link</label><input value="' + esc(o.front_url) + '" readonly><span class="hint">' + (o.front_on ? 'redeploy from the server Cloudflare tab to refresh' : 'currently off') + '</span></div>' : '') + '</div>' +
+    '<div class="row"><div class="field" style="max-width:210px"><label>Cloudflare front</label><select id="mgRFront" data-mgr="mgRFront">' + [['', 'inherit global'], ['on', 'on - publish a workers.dev link'], ['off', 'off - plain subdomain only']].map(function (x) { return '<option value="' + x[0] + '"' + ((o.front || '') === x[0] ? ' selected' : '') + '>' + esc(x[1]) + '</option>'; }).join('') + '</select><span class="hint">the emailed link domain, the lure never changes</span></div>' + '<div class="field" style="max-width:230px"><label>workers.dev label</label><input id="mgRFrontName" data-mgr="mgRFrontName" value="' + esc(o.front_worker || '') + '" placeholder="' + esc(o.subdomain || 'page') + '"><span class="hint">link becomes &lt;label&gt;.&lt;account&gt;.workers.dev, empty = the page subdomain</span></div>' + (o.front_url ? '<div class="field" style="flex:2"><label>Front link</label><input value="' + esc(o.front_url) + '" readonly><span class="hint">' + (o.front_on ? 'redeploy from the server Cloudflare tab to refresh' : 'currently off') + '</span></div>' : '') + '</div>' +
     '<div class="field"><label>Status lines (one per line)</label><textarea id="mgRMsgs" data-mgr="mgRMsgs" rows="3">' + esc((o.messages || []).join('\n')) + '</textarea></div>' +
     '<div class="field"><label>Preview</label><iframe id="mgPrev" style="width:100%;height:240px;border:1px solid var(--border);border-radius:10px;background:#fff" src="' + (o.previewURL || '') + '"></iframe></div>' +
     '<div class="actions"><button class="btn primary" data-act="' + (isEdit ? 'mg-redir-update' : 'mg-redir-save') + '" data-id="' + (o.id || '') + '">' + (isEdit ? 'Save changes' : 'Create') + '</button></div>';
@@ -485,7 +485,7 @@ function mgRedirCollect() {
   function v(id) { var e = document.getElementById(id); return e ? e.value.trim() : ''; }
   function c(id) { var e = document.getElementById(id); return e && e.checked; }
   return {
-    subdomain: v('mgRSub'), target_url: v('mgRUrl'), delay: parseInt(v('mgRDelay') || '3', 10), front: v('mgRFront'),
+    subdomain: v('mgRSub'), target_url: v('mgRUrl'), delay: parseInt(v('mgRDelay') || '3', 10), front: v('mgRFront'), front_worker: v('mgRFrontName'),
     template: (document.getElementById('mgRTpl') || {}).value || '',
     turnstile: c('mgRTs'), turnstile_pos: v('mgRPos') || 'slot', turnstile_type: v('mgRType') || 'managed', turnstile_theme: v('mgRTheme') || 'auto',
     brand: v('mgRBrand'), title: v('mgRTitle'), subtitle: v('mgRSubtitle'), accent: v('mgRAccent'),

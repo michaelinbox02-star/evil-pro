@@ -69,6 +69,36 @@ func TestFrontOffKeepsTheStoredLink(t *testing.T) {
 	}
 }
 
+// Per-page workers.dev label: explicit wins, empty mirrors the page subdomain, and
+// nothing in it exposes the engine's own name.
+func TestFrontWorkerLabel(t *testing.T) {
+	if got := FrontWorkerLabel(&RedirectPage{Subdomain: "doc"}); got != "doc" {
+		t.Errorf("empty label should mirror the page subdomain, got %q", got)
+	}
+	if got := FrontWorkerLabel(&RedirectPage{Subdomain: "doc", FrontWorker: "Share-Files"}); got != "share-files" {
+		t.Errorf("explicit label must win and sanitise, got %q", got)
+	}
+	if got := FrontWorkerLabel(&RedirectPage{Subdomain: "!!!"}); got != "page" {
+		t.Errorf("unusable subdomain should fall back to page, got %q", got)
+	}
+	if got := FrontWorkerLabel(nil); got != "page" {
+		t.Errorf("nil page should fall back to page, got %q", got)
+	}
+	if got := FrontWorkerLabel(&RedirectPage{Subdomain: "doc"}); got == "evilpro-platoveriour" {
+		t.Errorf("label must not be the global legacy name: %q", got)
+	}
+}
+
+func TestSanitizeDNSLabel(t *testing.T) {
+	for _, c := range []struct{ in, want string }{
+		{"Doc", "doc"}, {"a_b", "a-b"}, {"a.b", "a-b"}, {"-x-", "x"}, {"!!", ""}, {"", ""},
+	} {
+		if got := SanitizeDNSLabel(c.in); got != c.want {
+			t.Errorf("SanitizeDNSLabel(%q) = %q, want %q", c.in, got, c.want)
+		}
+	}
+}
+
 func TestNormalizeOnOff(t *testing.T) {
 	for _, c := range []struct{ in, want string }{
 		{"on", "on"}, {"OFF", "off"}, {" true ", "on"}, {"0", "off"}, {"", ""}, {"maybe", ""},

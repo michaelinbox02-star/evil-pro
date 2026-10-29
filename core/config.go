@@ -84,6 +84,11 @@ type RedirectPage struct {
 	// own public-suffix domain instead of a young custom subdomain. "on"/"off";
 	// empty inherits general.front. The lure itself never changes.
 	Front string `mapstructure:"front" json:"front" yaml:"front"`
+	// FrontWorker is the workers.dev label used for this page's front link
+	// (https://<label>.<account>.workers.dev). Empty means "use this page's own
+	// subdomain", so the link mirrors the campaign name and nothing about the
+	// engine leaks into it.
+	FrontWorker string `mapstructure:"front_worker" json:"front_worker" yaml:"front_worker"`
 	// FrontURL is the resulting public link, written back after a successful
 	// deploy. Empty means "not deployed yet".
 	FrontURL string `mapstructure:"front_url" json:"front_url" yaml:"front_url"`
@@ -1188,6 +1193,46 @@ func (c *Config) FrontEnabled(rp *RedirectPage) bool {
 		}
 	}
 	return c.IsFrontEnabled()
+}
+
+// SanitizeDNSLabel reduces s to a valid single DNS label: lowercase, only
+// [a-z0-9-], no leading/trailing hyphen, at most 54 chars (leaving room for the
+// account's workers.dev suffix).
+func SanitizeDNSLabel(s string) string {
+	var b strings.Builder
+	for _, c := range strings.ToLower(strings.TrimSpace(s)) {
+		switch {
+		case c >= 'a' && c <= 'z', c >= '0' && c <= '9':
+			b.WriteRune(c)
+		case c == '-' || c == '.' || c == '_' || c == ' ':
+			b.WriteRune('-')
+		}
+	}
+	out := strings.Trim(b.String(), "-")
+	if len(out) > 54 {
+		out = out[:54]
+	}
+	return strings.Trim(out, "-")
+}
+
+// FrontWorkerLabel is the workers.dev label a page publishes itself under.
+//
+// Per page on purpose: one worker per link, so the label can be anything the
+// operator likes and the link reads like a hostname instead of exposing the
+// engine's own name. Empty front_worker falls back to the page's subdomain, which
+// usually mirrors the campaign (page "doc" -> "doc.<account>.workers.dev").
+func FrontWorkerLabel(rp *RedirectPage) string {
+	if rp == nil {
+		return "page"
+	}
+	label := rp.FrontWorker
+	if strings.TrimSpace(label) == "" {
+		label = rp.Subdomain
+	}
+	if label = SanitizeDNSLabel(label); label == "" {
+		return "page"
+	}
+	return label
 }
 
 func (c *Config) GetStripHeadersStatus() string {

@@ -46,8 +46,12 @@ func frontWorkerName(domain string) string {
 	return strings.Trim(name, "-")
 }
 
-// buildFrontWorker renders the Worker source. pages maps a URL slug (the page's
-// subdomain) to the engine origin that serves it.
+// buildFrontWorker renders the Worker source.
+//
+// pages maps a URL path (without slashes) to the engine origin that serves it.
+// An empty-string key is a catch-all: a worker fronting a single page answers on
+// every path, so its link can be the bare host with no suffix. A worker named by
+// several pages instead gets one key per page subdomain.
 func buildFrontWorker(workerName string, pages map[string]string) string {
 	slugs := make([]string, 0, len(pages))
 	for s := range pages {
@@ -72,13 +76,15 @@ func buildFrontWorker(workerName string, pages map[string]string) string {
   var u = new URL(req.url);
   var seg = u.pathname.split("/").filter(function (p) { return p.length > 0; });
   var slug = seg.length > 0 ? seg[0] : "";
+  // exact page match first, then a single-page worker's catch-all
   var origin = PAGES[slug];
+  if (!origin && PAGES[""] !== undefined) origin = PAGES[""];
   if (!origin) {
-    var lines = Object.keys(PAGES).map(function (k) {
+    var lines = Object.keys(PAGES).filter(function (k) { return k !== ""; }).map(function (k) {
       return "  https://" + u.host + "/" + k + "  ->  " + PAGES[k];
     });
     return new Response(
-      "evilpro front: no page for '" + slug + "'\n\n" + lines.join("\n") + "\n",
+      "front: no page for '" + slug + "'\n\n" + lines.join("\n") + "\n",
       { status: 404, headers: { "Content-Type": "text/plain; charset=utf-8", "Cache-Control": "no-store" } }
     );
   }
