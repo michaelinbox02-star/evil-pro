@@ -626,3 +626,17 @@ Verified live, all with `off_host = 0`:
 | 63 / 60 | still `usable false` |
 | scanners on both lures and on the redirect pages | clean 302 to the real site |
 | browser on the lure | gets the phish |
+
+### 11.5 Cleanup (post-verification)
+
+* LOGIN_PROMPTS is now the single source of truth for the accepted modes: it
+  backs the validation in SetLoginPrompt and the error text, instead of being
+  declared and unused.
+* The duplicate ile-signin redirect page is gone. Both doc and ile had
+  been configured on the same template and the same lure target; doc is kept
+  (the pre-existing one, with Turnstile enabled) and the orphaned ile.html was
+  removed from the redirects directory. All template checks above are against
+  doc.platoveriour.com.
+* 28 verification rows were deleted. Kept on purpose: the acceptance rows
+  (63, 60, 100, 83, 133, 136), the escape evidence (122-126) and the rows this
+  section cites (156, 157, 160, 161). Session count went 87 -> 59.

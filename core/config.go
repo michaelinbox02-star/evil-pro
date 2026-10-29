@@ -1062,6 +1062,8 @@ const (
 	LOGIN_PROMPT_SELECT_ACCOUNT = "select_account"
 )
 
+// LOGIN_PROMPTS is the canonical set of modes, used for validation and for the
+// error message, so there is one source of truth for what is accepted.
 var LOGIN_PROMPTS = []string{LOGIN_PROMPT_OFF, LOGIN_PROMPT_LOGIN, LOGIN_PROMPT_SELECT_ACCOUNT}
 
 // NormalizeLoginPrompt maps the accepted spellings, including the legacy
@@ -1105,8 +1107,8 @@ func (c *Config) LoginPromptFor(l *Lure) string {
 // force_login boolean so pre-existing configs and tooling stay truthful.
 func (c *Config) SetLoginPrompt(prompt string) error {
 	v := NormalizeLoginPrompt(prompt)
-	if v == "" {
-		return fmt.Errorf("login_prompt: expected off, login or select_account (got %q)", prompt)
+	if !stringExists(v, LOGIN_PROMPTS) {
+		return fmt.Errorf("login_prompt: expected %s (got %q)", strings.Join(LOGIN_PROMPTS, ", "), prompt)
 	}
 	c.general.LoginPrompt = v
 	c.general.ForceLogin = v != LOGIN_PROMPT_OFF
