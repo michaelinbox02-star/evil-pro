@@ -179,24 +179,24 @@ func main() {
 		log.Info("geoip: not available — download GeoLite2 databases from https://dev.maxmind.com")
 	}
 
-	files, err := os.ReadDir(phishlets_path)
+	phishletFiles, plWarnings, err := core.ScanPhishletsDir(phishlets_path)
 	if err != nil {
 		log.Fatal("failed to list phishlets directory '%s': %v", phishlets_path, err)
 		return
 	}
-	for _, f := range files {
-		if !f.IsDir() {
-			pname, ok := core.PhishletSiteFromFile(f.Name())
-			if !ok {
-				continue
-			}
-			pl, err := core.NewPhishlet(pname, filepath.Join(phishlets_path, f.Name()), nil, cfg)
-			if err != nil {
-				log.Error("failed to load phishlet '%s': %v", f.Name(), err)
-				continue
-			}
-			cfg.AddPhishlet(pname, pl)
+	for _, w := range plWarnings {
+		log.Warning("phishlets: %s", w)
+	}
+	for _, f := range phishletFiles {
+		pl, err := core.NewPhishlet(f.Site, f.Path, nil, cfg)
+		if err != nil {
+			log.Error("failed to load phishlet '%s': %v", filepath.Base(f.Path), err)
+			continue
 		}
+		for _, w := range pl.DuplicatePhishSubs() {
+			log.Warning("phishlet '%s': %s", f.Site, w)
+		}
+		cfg.AddPhishlet(f.Site, pl)
 	}
 	cfg.LoadSubPhishlets()
 	cfg.CleanUp()

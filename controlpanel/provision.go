@@ -867,6 +867,12 @@ func (a *App) ensureConfig(j *Job, c *SSH, p *Profile) {
 		g["force_login"] = true
 		changed = true
 	}
+	// login_prompt is the real setting now; force_login stays written above so an
+	// older engine can still read it.
+	if _, ok := g["login_prompt"]; !ok {
+		g["login_prompt"] = "login"
+		changed = true
+	}
 	if u, _ := g["unauth_url"].(string); u == "" {
 		g["unauth_url"] = "https://login.microsoftonline.com/"
 		changed = true
