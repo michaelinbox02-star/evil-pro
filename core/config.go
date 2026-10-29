@@ -1547,6 +1547,13 @@ func (c *Config) AddRedirectPage(rp *RedirectPage) {
 	c.cfg.WriteConfig()
 }
 
+// SaveRedirectPages persists the redirect pages. Edits mutate the page in place,
+// so the caller must ask for the write; without it a restart dropped the change.
+func (c *Config) SaveRedirectPages() error {
+	c.cfg.Set(CFG_REDIRECTS, c.redirectPages)
+	return c.cfg.WriteConfig()
+}
+
 func (c *Config) DeleteRedirectPage(idx int) error {
 	if idx < 0 || idx >= len(c.redirectPages) {
 		return fmt.Errorf("index out of bounds: %d", idx)

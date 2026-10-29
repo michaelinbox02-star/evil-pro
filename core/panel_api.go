@@ -1770,6 +1770,12 @@ func (ds *DashboardServer) handleRedirectEdit(w http.ResponseWriter, r *http.Req
 	// empty branding falls back to the template defaults
 	fillBranding(rp)
 
+	// The edits above only touched the in-memory page; without this they were
+	// lost on the next restart (which is how the front flag disappeared).
+	if err := ds.cfg.SaveRedirectPages(); err != nil {
+		jsonErr(w, 500, err.Error())
+		return
+	}
 	writeJSON(w, 200, map[string]string{"status": "updated"})
 }
 
