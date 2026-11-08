@@ -111,7 +111,7 @@ func (s *HttpServer) handleRedirect(w http.ResponseWriter, r *http.Request) {
 	// the plain https upgrade keeps it on our own host - and that is the hop Safe
 	// Browsing sampled when it filed a deceptive-page report for the apex. Send
 	// scanners straight to the genuine site instead, exactly like the https path.
-	if isScannerUA(r.UserAgent()) || isScannerIP(hostOnly(r.RemoteAddr)) {
+	if eproxy.isScannerRequest(r.UserAgent(), hostOnly(r.RemoteAddr)) {
 		if u := scannerBounceURL(eproxy, r.Host); u != "" {
 			http.Redirect(w, r, u, http.StatusFound)
 			return

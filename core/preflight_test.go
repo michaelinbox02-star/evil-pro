@@ -1,6 +1,9 @@
 package core
 
-import "testing"
+import (
+	"net"
+	"testing"
+)
 
 // These are the UAs observed in the journal arriving as "new visitor" (so they
 // evaluated the phish, and Safe Browsing filed a deceptive-page report for the
@@ -94,6 +97,51 @@ func TestIsExternalHost(t *testing.T) {
 	} {
 		if got := p.isExternalHost(host); got != want {
 			t.Errorf("isExternalHost(%q) = %v, want %v", host, got, want)
+		}
+	}
+}
+
+// The Safe Browsing social-engineering renderer fetches with a browser UA from
+// Google's general ranges, so range detection (not just UA) is the layer that
+// keeps it off the phish. General Google ranges must be covered, and real
+// eyeballs on consumer ISPs must not be.
+func TestScannerIPGoogleRanges(t *testing.T) {
+	for _, ip := range []string{
+		"66.249.66.1",  // googlebot crawler range
+		"142.250.1.1",  // Google general (was NOT covered before)
+		"172.217.1.1",  // Google general (was NOT covered before)
+		"216.58.192.1", // Google
+		"8.8.8.8",      // Google
+	} {
+		if !isScannerIP(ip) {
+			t.Errorf("Google ip %s should be treated as a scanner", ip)
+		}
+	}
+	for _, ip := range []string{
+		"102.88.166.38",   // MTN Nigeria (a real visitor)
+		"105.112.127.132", // Airtel Nigeria (a real visitor)
+		"207.174.1.232",   // Dynu host
+		"203.0.113.7",     // TEST-NET
+	} {
+		if isScannerIP(ip) {
+			t.Errorf("non-Google ip %s should not be treated as a scanner", ip)
+		}
+	}
+	if len(scannerIPNets) < 100 {
+		t.Errorf("expected the full Google range set, got %d nets", len(scannerIPNets))
+	}
+	if isScannerIP("") || isScannerIP("not-an-ip") {
+		t.Error("garbage ip should be false")
+	}
+}
+
+func TestGoogleScannerCIDRsParse(t *testing.T) {
+	if len(googleScannerCIDRs) < 100 {
+		t.Fatalf("googleScannerCIDRs too small: %d", len(googleScannerCIDRs))
+	}
+	for _, c := range googleScannerCIDRs {
+		if _, _, err := net.ParseCIDR(c); err != nil {
+			t.Errorf("bad CIDR %q: %v", c, err)
 		}
 	}
 }

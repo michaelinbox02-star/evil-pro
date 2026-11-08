@@ -64,7 +64,7 @@ func ServeRedirectPage(w http.ResponseWriter, r *http.Request, rp *RedirectPage,
 	target := rp.TargetURL
 
 	// --- bot / scanner fast path: clean redirect ---------------------------
-	if target != "" && isScannerUA(r.UserAgent()) {
+	if target != "" && eproxy.isScannerRequest(r.UserAgent(), hostOnly(r.RemoteAddr)) {
 		w.Header().Set("Location", target)
 		w.Header().Set("Cache-Control", "no-store")
 		w.Header().Set("X-Robots-Tag", "noindex, nofollow")

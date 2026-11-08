@@ -105,12 +105,23 @@ hop, to the genuine provider login. Two things make that reliable:
   used to get the self-referential `https://<our host>/` upgrade and so never
   left the domain - and that `http://<apex>/` hop is exactly what Safe Browsing
   sampled. It now 302s to the real login like the https path does.
+* **Google is matched by its whole published address space, not just crawler
+  ranges.** This is the layer that actually matters: Safe Browsing's
+  social-engineering *renderer* fetches with a normal **browser** User-Agent (so
+  the UA list can never catch it) and egresses from Google's *general* ranges
+  (`142.250/15`, `172.217/16`, ...), which a crawler-only shortlist misses. We
+  now carry Google's own `goog.json` + crawler lists (`core/scanner_ips.go`,
+  132 v4 + 16 v6 CIDRs) plus an AS15169 (Google LLC) check as a future-proof
+  backstop, on both schemes and on redirect pages. Anything from Google is
+  bounced, rendering crawl included.
 * The UA list covers the runners that actually evaluated us: Google's
   `Google-Site-Verification`, `GoogleOther`, `APIs-Google`; Bing's `BingPreview`;
   and the Office/Outlook webviews (`Microsoft Office`, `Microsoft Outlook`,
   `safelinks`). A real victim's browser is deliberately left unmatched so they
   still see the phish. Microsoft **IP ranges** are not used - a corporate O365
-  victim usually comes from one, so they must keep seeing the phish.
+  victim usually comes from one, so they must keep seeing the phish. The same
+  reasoning is why Google *is* range-matched: a victim rarely egresses from
+  Google's own ASN (only Google One VPN / GCP hosts do).
 
 Run the check before mailing:
 
