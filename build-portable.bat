@@ -56,6 +56,7 @@ copy /y controlpanel\portable\SETUP.bat "%OUT%\" >nul
 copy /y controlpanel\portable\START.sh "%OUT%\" >nul
 copy /y controlpanel\portable\SETUP.sh "%OUT%\" >nul
 copy /y controlpanel\portable\README.txt "%OUT%\" >nul
+copy /y deploy\control-panel-setup.md "%OUT%\SETUP-GUIDE.md" >nul
 
 echo.
 echo Done. Portable folder:
