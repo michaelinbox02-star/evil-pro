@@ -145,3 +145,18 @@ func TestGoogleScannerCIDRsParse(t *testing.T) {
 		}
 	}
 }
+
+// Microsoft's prefetch beacons must be recognised (so a Content-Type is set and
+// mobile Chrome stops downloading them), and nothing else must be.
+func TestPrefetchBeaconPath(t *testing.T) {
+	for _, p := range []string{"/Prefetch/Prefetch.aspx", "/owa/prefetch.aspx", "/Prefetch/prefetch.aspx", "/foo/PREFETCH.ASPX"} {
+		if !prefetchBeaconPath(p) {
+			t.Errorf("should be a beacon: %s", p)
+		}
+	}
+	for _, p := range []string{"/", "/kmsi", "/common/js/Login.js", "/ppsecure/post.srf"} {
+		if prefetchBeaconPath(p) {
+			t.Errorf("should not be a beacon: %s", p)
+		}
+	}
+}

