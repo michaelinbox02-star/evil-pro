@@ -1,0 +1,13 @@
+{
+  "title": "Outlook splash (animated)",
+  "description": "The real Outlook launching mark: the blue envelope assembles itself on white in a 3s loop, no text, then hands off. Pixel-matched to outlook.live.com, honours the dark themes.",
+  "category": "microsoft",
+  "delay": 3,
+  "accent": "#0f6cbd",
+  "logo": "none",
+  "brand": "Microsoft",
+  "title_text": "Outlook Log In | Microsoft 365",
+  "subtitle": "Loading your mailbox",
+  "button": "Continue",
+  "messages": []
+}
